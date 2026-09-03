@@ -106,6 +106,12 @@ void WaveformOverviewItem::setLeadMeasures(qreal v) {
     update();
 }
 
+void WaveformOverviewItem::setScrubbing(bool v) {
+    if (m_scrubbing == v) return;
+    m_scrubbing = v;
+    emit scrubbingChanged();
+}
+
 QString WaveformOverviewItem::formatTime(double sec) {
     if (sec < 0.0) sec = 0.0;
     const int total = static_cast<int>(std::lround(sec));
@@ -173,6 +179,8 @@ void WaveformOverviewItem::mousePressEvent(QMouseEvent* event) {
 void WaveformOverviewItem::mouseMoveEvent(QMouseEvent* event) {
     if (event->buttons() & Qt::LeftButton) {
         event->accept();
+        // 拖动 = DAW 式 scrub：进入 scrubbing → ChartView 门控音频 seek（静音定位，只滚红线）
+        if (!m_scrubbing) setScrubbing(true);
         const QPointF p = event->position();
         requestSeek(m_orientation == 1 ? p.y() : p.x());
     }
@@ -180,6 +188,12 @@ void WaveformOverviewItem::mouseMoveEvent(QMouseEvent* event) {
 }
 
 void WaveformOverviewItem::mouseReleaseEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton && m_scrubbing) {
+        // 拖动结束：把音频落到最终位置（无位移=单点，press 已跳，不再重复 seek）
+        const QPointF p = event->position();
+        requestSeek(m_orientation == 1 ? p.y() : p.x());
+    }
+    setScrubbing(false);
     QQuickPaintedItem::mouseReleaseEvent(event);
 }
 

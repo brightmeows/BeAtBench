@@ -36,6 +36,9 @@ class WaveformOverviewItem : public QQuickPaintedItem {
     /// 开头留白小节数（M5.2；数值方向与 ChartView 同源）。内容坐标换算拍位须扣它，
     /// 否则视口窗整体往未来偏移（用视口顶/底基准都不准；2026-09 用户）。
     Q_PROPERTY(qreal leadMeasures READ leadMeasures WRITE setLeadMeasures NOTIFY leadMeasuresChanged)
+    /// 是否正在拖动 scrub（M5 收尾 2026-09）：拖动中 → ChartView 门控 audioEngine.seek（静音定位，
+    /// 只滚红线，release 落音频）；单点（无位移）= 未进入 scrub，正常 seek。
+    Q_PROPERTY(bool scrubbing READ scrubbing WRITE setScrubbing NOTIFY scrubbingChanged)
 
 public:
     explicit WaveformOverviewItem(QQuickItem* parent = nullptr);
@@ -60,6 +63,8 @@ public:
     void setViewportHeight(qreal v);
     qreal leadMeasures() const { return m_leadMeasures; }
     void setLeadMeasures(qreal v);
+    bool scrubbing() const { return m_scrubbing; }
+    void setScrubbing(bool v);
 
     /// 视口窗（秒，可能 topHigh 逆序 → 归一 [t0, t1]）。
     struct ViewWindow { double t0 = 0.0, t1 = 0.0; };
@@ -74,6 +79,7 @@ signals:
     void topHighChanged();
     void viewportHeightChanged();
     void leadMeasuresChanged();
+    void scrubbingChanged();
     /// 点击/拖动总览条 → 目标时间（秒）→ QML 滚动视口（ChartView.scrollToTime）。
     void seekRequested(double seconds);
 
@@ -99,6 +105,7 @@ private:
     bool m_topHigh = true;
     qreal m_viewportHeight = 0.0;
     qreal m_leadMeasures = 0.0;
+    bool m_scrubbing = false;
 };
 
 }  // namespace beatbench::app

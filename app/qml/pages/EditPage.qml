@@ -36,7 +36,7 @@ Item {
         if (chartView) chartView.followPlayhead = v
     }
     /// 编辑工具（select/note/ln/mine/pan；Main 会话状态）
-    property string editorTool: "select"
+    property string editorTool: "pan"
     /// 平移开关（拖拽选中 note；默认关=自由 2D，勾选=轴锁定）
     property bool moveMode: false
     /// 放置用采样数值 id（chartSession.sampleValueOf；-1 = 未选）
@@ -67,6 +67,11 @@ Item {
     /// 红线=视口光标——滚动内容滚过红线，值随视口变；2026-09 用户）。
     readonly property real cursorSec: chartView ? chartView.cursorSec : 0
     readonly property string cursorPosText: chartView ? chartView.cursorPosText : ""
+    /// M5 收尾 2026-09：播放头秒（红线标记；-1=未播放）。状态栏时间用它（随播放推进，
+    /// 无视"跟随"开关——跟随只控视口是否滚动跟随红线）。
+    readonly property real playheadSec: chartView ? chartView.playheadSec : -1
+    /// M5 收尾 2026-09：播放头所在小节号（播放中状态栏用；非播放 → 空，回落 cursorPosText）。
+    readonly property string playheadPosText: chartView ? chartView.playheadPosText : ""
     /// 暴露采样面板（Main 在文件编辑后 scrollTo 定位，避免列表回到顶部）
     readonly property var samplePanelObj: samplePanel
     /// 暴露 BGA 面板（Main 打开谱面/编辑后调 reloadBga）

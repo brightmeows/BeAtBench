@@ -36,6 +36,10 @@ class PlayheadOverlayItem : public QQuickPaintedItem {
     /// 开头纯留白小节数（与 ChartView 数据同源）：A/B 标记换算 y 时须扣留白，
     /// 否则标记比实际值早 1-2 小节（2026-09 用户）。
     Q_PROPERTY(qreal leadMeasures READ leadMeasures WRITE setLeadMeasures NOTIFY leadMeasuresChanged)
+    /// 播放头秒（M5 收尾 2026-09）：红线画在内容位置（=播放头），随播放推进、暂停停在原位
+    /// （无论是否开启跟随）；-1 = 未渲染/未播放 → 红线退化为视口光标（固定底部 10%）。
+    /// 无已加载谱面（session 无 chart+timing）时**不画红线**（2026-09 用户：修复无谱面仍显示红线）。
+    Q_PROPERTY(double playheadSec READ playheadSec WRITE setPlayheadSec NOTIFY playheadSecChanged)
 
 public:
     explicit PlayheadOverlayItem(QQuickItem* parent = nullptr);
@@ -60,6 +64,8 @@ public:
     void setRulerWidth(qreal v);
     qreal leadMeasures() const { return m_leadMeasures; }
     void setLeadMeasures(qreal v);
+    double playheadSec() const { return m_playheadSec; }
+    void setPlayheadSec(double v);
 
 signals:
     void sessionChanged();
@@ -71,6 +77,7 @@ signals:
     void loopBSecChanged();
     void rulerWidthChanged();
     void leadMeasuresChanged();
+    void playheadSecChanged();
 
 private:
     ChartSession* sessionObj() const;
@@ -86,6 +93,7 @@ private:
     double m_loopBSec = -1.0;
     qreal m_rulerWidth = 56.0;
     qreal m_leadMeasures = 0.0;
+    double m_playheadSec = -1.0;
 };
 
 }  // namespace beatbench::app

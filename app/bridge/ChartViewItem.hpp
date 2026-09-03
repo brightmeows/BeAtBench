@@ -141,6 +141,9 @@ public:
     /// 红线下方内容所在**小节号**文本（整数；节内拍位为连续量，精确约分分母太夸张，
     /// 用户「不想跳变或近似」→ 只给精确小节号 + 精确秒；无图/无 timing → 空）。
     QString cursorPosText() const;
+    /// M5 收尾 2026-09：**播放头**（playheadSec）所在小节号文本（播放中状态栏用，随播放推进；
+    /// 非播放/未渲染 → 空，回落视口光标 cursorPosText）。与 cursorPosText 区分：后者=视口光标。
+    Q_INVOKABLE QString playheadPosText() const;
     QString previewNoteKind() const { return m_previewNoteKind; }
     void setPreviewNoteKind(const QString& v);
     bool movePreview() const { return m_movePreview; }
@@ -243,6 +246,10 @@ public:
     /// BPM/STOP 列不再拒绝（用户确认「格式可表示 id 就允许移动」——拖到该列 =
     /// note → timing 事件转换）；BGA 图层列同理（note → BGA 事件）。
     Q_INVOKABLE QVariantMap laneAtX(qreal x) const;
+    /// 列下标 → 演出轨道（key/scratch/pedal，同玩家）。连续平移用：note 落点列 → 该列轨道；
+    /// 非演出列（BPM/STOP/BGA/BGM）或越界 → valid=false。与 laneAtX 互补（BMS 通道文件层面无差异，
+    /// 只是 id/效果不同——编辑视图把它们当连续演出轨道，2026-09 用户）。
+    Q_INVOKABLE QVariantMap laneAtColumn(int col) const;
 
     /// 给定 note 引用（{lane:{player,kind,index}, sub_line?}）→ 该 note 当前**显示列下标**
     /// （columnFor 封装：BGM 展开列按 sub_line 精确匹配、玩乐列按 lane 匹配；-1 = 无对应列）。

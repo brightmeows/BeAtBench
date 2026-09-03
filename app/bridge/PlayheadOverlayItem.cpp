@@ -87,6 +87,13 @@ void PlayheadOverlayItem::setLeadMeasures(qreal v) {
     update();
 }
 
+void PlayheadOverlayItem::setPlayheadSec(double v) {
+    if (qFuzzyCompare(m_playheadSec, v)) return;
+    m_playheadSec = v;
+    emit playheadSecChanged();
+    update();
+}
+
 ChartSession* PlayheadOverlayItem::sessionObj() const {
     return qobject_cast<ChartSession*>(m_session);
 }
@@ -126,19 +133,34 @@ void PlayheadOverlayItem::paint(QPainter* p) {
         drawMark(m_loopBSec, kLoopBColor, QStringLiteral("B"));
     }
 
-    // M5.2 播放红线：**视口光标**（剪辑软件时序轴逻辑）——固定在视口底部 10%
-    // （y = h × 0.9），**不随内容滚动**；滚动视口时内容滚过红线，红线的时间读数 =
-    // 红线下方内容拍位（ChartViewItem::currentTimeSec 计算）。
-    // 播放中 followPlayheadTick 滚动内容让红线下方 = 播放时钟（红线看似"推进"）。
+    // M5.2 红线（2026-09 用户：关闭跟随后红线也要随播放推进；"跟随"只控视口是否滚动跟随红线；
+    //   暂停时红线停在播放头位置，不回视口 90%——无论是否开启跟随）。
+    //   有播放头（playheadSec>=0，已渲染/已播放）→ 红线画在内容位置 = 播放头（随播放推进；
+    //     跟随时内容滚动保持 90%；关闭跟随后推进出视口则不画）。暂停时播放头冻结 → 红线停在原位。
+    //   无播放头（未渲染/未播放，playheadSec<0）→ 红线 = **视口光标**（固定底部 10%，内容线索）。
+    //   无已加载谱面（session 无 chart+timing）→ **不画红线**（修复：无谱面时仍显示红线，2026-09 用户）。
     {
-        const qreal py = h * 0.90;
-        p->setPen(QPen(kPlayheadColor, 2.0));
-        p->drawLine(QPointF(0.0, py), QPointF(w, py));
-        QPolygonF tri;
-        tri << QPointF(0.0, py - 8.0) << QPointF(8.0, py) << QPointF(0.0, py + 8.0);
-        p->setBrush(kPlayheadColor);
-        p->setPen(Qt::NoPen);
-        p->drawPolygon(tri);
+        const ChartSession* cs = sessionObj();
+        const bool hasChart = cs && cs->chart() && cs->timing();
+        qreal py = h * 0.90;  // 视口光标退化位
+        bool draw = false;
+        if (hasChart) {
+            if (m_playheadSec >= 0.0) {
+                const qreal pyPlay = yForSec(m_playheadSec);
+                if (pyPlay > -1.0 && pyPlay < h + 1.0) { py = pyPlay; draw = true; }
+            } else {
+                draw = true;
+            }
+        }
+        if (draw) {
+            p->setPen(QPen(kPlayheadColor, 2.0));
+            p->drawLine(QPointF(0.0, py), QPointF(w, py));
+            QPolygonF tri;
+            tri << QPointF(0.0, py - 8.0) << QPointF(8.0, py) << QPointF(0.0, py + 8.0);
+            p->setBrush(kPlayheadColor);
+            p->setPen(Qt::NoPen);
+            p->drawPolygon(tri);
+        }
     }
 }
 

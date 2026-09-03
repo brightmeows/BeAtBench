@@ -116,7 +116,8 @@ ApplicationWindow {
     onDebugShowExtrasChanged: if (debugShowExtras) window.showExtras = true
     // 当前编辑工具（互斥单选，会话状态；M3 接输入/放置，note 类型（普通/LN/地雷）届时
     // 作为正交维度另设「放置类型」组，不并入本组——doc/05 §5 交互）
-    property string editorTool: "select"
+    // 2026-09 用户：默认工具 = 「1 拖拽」(pan)；拖拽工具下点 note 只选中/试听（不移动）。
+    property string editorTool: "pan"
     // 工具切换：进入 LN 放置 → 显示状态栏说明（持久）；离开 → 取消未完成 LN 头 + 恢复就绪
     onEditorToolChanged: {
         if (window.editorTool === "ln") {
@@ -470,22 +471,22 @@ ApplicationWindow {
                                enabled: chartMeta !== null
                                highlighted: audioEngine && audioEngine.loopA >= 0
                                onClicked: {
-                                   var on = audioEngine.setLoopA(editPage.cursorSec)
+                                   var on = audioEngine.setLoopA(window.currentPosSec())
                                    setStatus(on ? qsTr("循环起点 A = %1 秒（再点解除）").arg(audioEngine.loopA.toFixed(2))
                                                 : qsTr("循环起点 A 已解除"))
                                }
                                ToolTip.visible: hovered
-                               ToolTip.text: qsTr("设循环起点 A（红线位置；再点解除）") }
+                               ToolTip.text: qsTr("设循环起点 A（红线/播放头位置；再点解除）") }
                 BbToolButton { text: qsTr("B")
                                enabled: chartMeta !== null
                                highlighted: audioEngine && audioEngine.loopB >= 0
                                onClicked: {
-                                   var on = audioEngine.setLoopB(editPage.cursorSec)
+                                   var on = audioEngine.setLoopB(window.currentPosSec())
                                    setStatus(on ? qsTr("循环终点 B = %1 秒（再点解除）").arg(audioEngine.loopB.toFixed(2))
                                                 : qsTr("循环终点 B 已解除"))
                                }
                                ToolTip.visible: hovered
-                               ToolTip.text: qsTr("设循环终点 B（红线位置；再点解除）") }
+                               ToolTip.text: qsTr("设循环终点 B（红线/播放头位置；再点解除）") }
                 BbToolButton { text: audioEngine && audioEngine.playing ? qsTr("⏸") : qsTr("▶")
                                enabled: chartMeta !== null
                                onClicked: togglePlayback()
@@ -758,12 +759,15 @@ ApplicationWindow {
                     Layout.maximumWidth: 320
                 }
                 // —— 固定长度令牌（右区右段，right-aligned，自然宽度不截断）：SP7K/格式/编码 ——
-                // M5.2 视口光标时间：红线（固定视口底部 10%）下方的拍位+秒，随视口滚动变；
-                // 播放中跟随滚动内容 → 值自然前进（红线=视口光标，非播放时钟；2026-09 用户）。
+                // M5 收尾 2026-09：有播放头（已渲染/已播放，playheadSec>=0）→ 时间/小节 = **播放头**
+                // （随播放推进；暂停停在播放位置，无视"跟随"开关）；未渲染（playheadSec<0）→ 视口光标。
                 Label {
                     visible: typeof chartSession !== "undefined" && chartSession && chartSession.hasChart
-                    text: "小节 " + (editPage.cursorPosText !== "" ? editPage.cursorPosText : "—") +
-                          " ｜ " + window.fmtTime(editPage.cursorSec) +
+                    text: "小节 " + (editPage.playheadPosText !== ""
+                                  ? editPage.playheadPosText
+                                  : (editPage.cursorPosText !== "" ? editPage.cursorPosText : "—")) +
+                          " ｜ " + window.fmtTime(editPage.playheadSec >= 0
+                                  ? editPage.playheadSec : editPage.cursorSec) +
                           (typeof audioEngine !== "undefined" && audioEngine && audioEngine.hasPcm
                                 ? " / " + window.fmtTime(audioEngine.durationSec) : "")
                     color: audioEngine.playing ? Theme.accent : Theme.textFaint
@@ -1023,13 +1027,19 @@ ApplicationWindow {
         return m + ":" + (whole < 10 ? "0" : "") + whole + "." + (cs < 10 ? "0" : "") + cs
     }
 
+    // M5 收尾 2026-09：当前播放位置（红线）秒 = **播放头**（已渲染/已播放用，随播放推进·暂停停原位）
+    // 否则视口光标（未渲染回退）。播放起点/循环 A/B 都用它——保证「从播放线播放/设循环」跟红线一致。
+    function currentPosSec() {
+        return editPage.playheadSec >= 0 ? editPage.playheadSec : editPage.cursorSec
+    }
+
     // ---------- M5：Space = 播放/暂停（渲染代理 PCM）；Ctrl+R = 手动渲染 ----------
-    // ⚠️ 播放起点 = 循环 A（若设）否则**红线（视口光标）**——红线是当前编辑位置（用户 2026-09：
-    // 「没有 A 点则从播放线开始播放」）。点击 A/B 的 setLoopA/B 也传入红线位置（编辑处即循环点）。
+    // ⚠️ 播放起点 = 循环 A（若设）否则当前播放位置（红线=播放头）——红线是当前编辑/播放位置（用户 2026-09：
+    // 「没有 A 点则从播放线开始播放」）。点击 A/B 的 setLoopA/B 也传入当前红线位置（编辑处即循环点）。
     function togglePlayback() {
         if (typeof audioEngine === "undefined" || !audioEngine) return
         if (audioEngine.playing) { audioEngine.pause(); return }
-        var start = (audioEngine.loopA >= 0) ? audioEngine.loopA : editPage.cursorSec
+        var start = (audioEngine.loopA >= 0) ? audioEngine.loopA : window.currentPosSec()
         if (audioEngine.hasPcm) audioEngine.seekSeconds(start)
         audioEngine.play()
     }
@@ -1312,8 +1322,8 @@ ApplicationWindow {
             anchors.fill: parent
             spacing: 6
             Label { text: "BeAtBench " + beatbench.versionString(); font.bold: true }
-            Label { text: qsTr("BMS 谱面编辑器 · Qt Quick/QML · GPL-3.0") }
-            Label { text: qsTr("协议：命令即接口（doc/06 §3）"); color: Theme.textMuted }
+            Label { text: qsTr("BMS 谱面编辑器 · GPL-3.0") }
+            Label { text: qsTr("© 2026 wufe8"); color: Theme.textMuted }
         }
     }
 

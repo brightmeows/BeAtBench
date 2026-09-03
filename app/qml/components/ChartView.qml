@@ -31,7 +31,7 @@ Item {
     /// 当前缩放（相对默认 96px 小节高度；工具条显示用）
     readonly property int zoomPercent: Math.round(root.measureHeight / 96 * 100)
     // ---- 编辑接线（M3） ----
-    property string editorTool: "select" // select/note/ln/mine/pan（Main 会话状态）
+    property string editorTool: "pan" // select/note/ln/mine/pan（Main 会话状态）
     property bool moveMode: false          // 平移开关（默认关，2026-09 用户确认：
                                            // 「默认关闭 note 平移限制」→ 自由 2D 拖动，
                                            // 时间+通道可同时动；勾选后按轴锁定）
@@ -48,6 +48,11 @@ Item {
     /// 状态栏用它（红线=视口光标，滚动内容滚过红线→值随视口变）（2026-09 用户）。
     readonly property real cursorSec: view.cursorSec
     readonly property string cursorPosText: view.cursorPosText
+    /// M5 收尾 2026-09：播放头秒（红线标记位置；-1 = 未播放/未渲染）。状态栏时间用它
+    /// （随播放推进，即使关闭跟随——"跟随=视口是否跟随红线"，2026-09 用户）。
+    readonly property real playheadSec: view.playheadSec
+    /// M5 收尾 2026-09：播放头所在小节号（播放中状态栏"小节"用；非播放 → 空，回落 cursorPosText）。
+    readonly property string playheadPosText: view.playheadPosText
     /// M4.3c：波形条首次渲染后置 true（此后恒真）——内容变化隐藏波形条（stale）时
     /// **保留**右侧预留宽度，视口宽度不变 → 列不重排（用户 2026-09 移动 note 会跳位）。
     property bool waveformShown: false
@@ -126,6 +131,7 @@ Item {
         topHigh: view.topHigh
         rulerWidth: view.rulerWidth
         leadMeasures: view.leadMeasures
+        playheadSec: view.playheadSec  // M5 收尾：红线=播放头位置（随播放推进·暂停停原位；-1=视口光标退化）
         loopASec: -1
         loopBSec: -1
         z: 10
@@ -196,9 +202,23 @@ Item {
                 view.playheadSec = audioEngine.positionSec
                 playheadOverlay.loopASec = audioEngine.loopA
                 playheadOverlay.loopBSec = audioEngine.loopB
-                if (view.followPlayhead && audioEngine.playing)
+                // ⚠️ scrub 拖动中抑制 follow tick：否则红线（视口光标）被音频时钟拉回，静音定位失效。
+                const scrubbing = typeof waveform !== "undefined" && waveform && waveform.scrubbing
+                if (view.followPlayhead && audioEngine.playing && !scrubbing)
                     view.followPlayheadTick()
             }
+        }
+    }
+
+    // ---- M5 收尾 2026-09：不播放时红线跟随视口光标 ----
+    // 播放中红线=播放头（随播放推进，返回上方 audioEngine 处理）；**不播放**时用户滚动视口 → 
+    // 更新"当前位置"（playheadSec = 视口光标 cursorSec），红线跟着走（滚动到哪，当前播放位置就到哪）。
+    // 暂停本身不触发（不滚就不动——保留"暂停停在播放位置"）；仅滚动才同步。播放中不干预（跟随 tick 管）。
+    Connections {
+        target: view
+        function onScrollYChanged() {
+            if (typeof audioEngine !== "undefined" && audioEngine && !audioEngine.playing)
+                view.playheadSec = view.cursorSec
         }
     }
 
@@ -352,9 +372,12 @@ Item {
         // 编辑工具（V 选择 / N 放置 / L LN / M 地雷）命中 note → 选中并进入移动准备。
         // 拖动 note = 移动（任何编辑工具，设计确认 2026-09）；点击（无位移）→ release 时
         // 走工具语义（放置或选中）。pan（H 拖拽=纯滚动）永不进入移动。
-        const isEditTool = root.editorTool === "select" || root.editorTool === "note" ||
-                           root.editorTool === "ln" || root.editorTool === "mine"
-        if (isEditTool) {
+        // 编辑工具 + 拖拽工具（2026-09 用户：默认「1 拖拽」下也能点选/试听 note）命中 note →
+        // 选中并进入移动准备（select/note/ln/mine）；pan 只点选 + 试听（不移动，拖拽保持平移视口语义）。
+        const canHitNote = root.editorTool === "select" || root.editorTool === "pan" ||
+                           root.editorTool === "note" || root.editorTool === "ln" ||
+                           root.editorTool === "mine"
+        if (canHitNote) {
             const obj = view.objectAt(x, y)
             if (obj.valid) {
                 if (obj.kind === "bga" || obj.kind === "bpm" || obj.kind === "stop") {
@@ -381,6 +404,11 @@ Item {
                 // 重复点击（已选中）也播放（用户「重复点击播放」确认）。
                 root.noteClicked(obj, false)
                 _pressedNoteRef = obj
+                if (root.editorTool === "pan") {
+                    // 拖拽工具（2026-09 用户默认「1 拖拽」）：点 note 只选中 +（release 无位移）试听，
+                    // **不进入移动**——拖动保持「平移视口」语义（note 不移动）。
+                    return
+                }
                 _moving = true
                 _moveKind = ""
                 _moveObj = null
@@ -469,6 +497,14 @@ Item {
     }
     function handleRelease(x, y) {
         _lastY = -1
+        // 拖拽工具（pan）：点 note 选中后，release 无位移 → 试听该采样；有位移 → 平移视口（不移动 note）。
+        if (_pressedNoteRef && root.editorTool === "pan") {
+            const moved = Math.abs(y - _pressY) + Math.abs(x - _pressX)
+            if (!_dragged && moved <= 4) root.playNoteSample(_pressedNoteRef)
+            _pressedNoteRef = null
+            _dragged = false
+            return
+        }
         if (_moving) {
             _moving = false
             view.movePreview = false  // M6 编辑预览：结束拖拽 → 关 ghost
@@ -757,7 +793,10 @@ Item {
     /// ② 视口滚到「该时间落红线(90%)」→ 红线读数 = 目标时间（非播放时红线显示就位）。
     /// 点秒标尺 / 波形条点击 / 波形条拖动（DAW 式 scrub）共用此路径。
     function seekTo(sec) {
-        if (typeof audioEngine !== "undefined" && audioEngine && audioEngine.hasPcm)
+        // 拖动静音定位（M5 收尾 2026-09）：scrub 拖动中只滚红线、**不触碰音频**（静音）；
+        // 单点/标尺点击 = 正常 seek（音频跳转）。音频落到 release（WaveformOverviewItem）。
+        const scrubbing = typeof waveform !== "undefined" && waveform && waveform.scrubbing
+        if (!scrubbing && typeof audioEngine !== "undefined" && audioEngine && audioEngine.hasPcm)
             audioEngine.seekSeconds(sec)
         if (view) view.scrollCursorToSec(sec)
     }
@@ -767,6 +806,11 @@ Item {
     function columnIndexForRef(ref) {
         if (!view) return -1
         return view.columnIndexForRef(ref)
+    }
+    /// 列下标 → 演出轨道（转发 ChartViewItem.laneAtColumn；演出轨连续平移用，2026-09 用户）。
+    function laneAtColumn(col) {
+        if (!view) return ({ valid: false })
+        return view.laneAtColumn(col)
     }
 
     // 状态栏用：鼠标位置 + note 信息（hoverText 由 ChartViewItem 计算）

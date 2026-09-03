@@ -581,6 +581,23 @@ QVariantMap ChartViewItem::laneAtX(qreal x) const {
     return res;
 }
 
+QVariantMap ChartViewItem::laneAtColumn(int col) const {
+    QVariantMap res;
+    res.insert(QStringLiteral("valid"), false);
+    if (col < 0 || static_cast<std::size_t>(col) >= m_columns.size()) return res;
+    const Column& c = m_columns[static_cast<std::size_t>(col)];
+    // 只认演出 note 列（key/scratch/pedal）；元事件（BPM/STOP）/BGA/BGM 列不是 note 移动目标。
+    if (c.bpm || c.stop || c.bgaLayer >= 0 || c.bgm) return res;
+    QString kind = QStringLiteral("key");
+    if (c.lane.kind == beatbench::LaneKind::Scratch) kind = QStringLiteral("scratch");
+    else if (c.lane.kind == beatbench::LaneKind::Pedal) kind = QStringLiteral("pedal");
+    res.insert(QStringLiteral("valid"), true);
+    res.insert(QStringLiteral("lanePlayer"), QVariant::fromValue(c.lane.player));
+    res.insert(QStringLiteral("laneIndex"), QVariant::fromValue(c.lane.index));
+    res.insert(QStringLiteral("laneKind"), kind);
+    return res;
+}
+
 QVariantMap ChartViewItem::probe(qreal x, qreal y) const {
     QVariantMap res;
     res.insert(QStringLiteral("noteAt"), noteAt(x, y));
@@ -992,6 +1009,16 @@ QString ChartViewItem::cursorPosText() const {
     return QString::number(p.measure);
 }
 
+QString ChartViewItem::playheadPosText() const {
+    // M5 收尾 2026-09：播放头所在小节号（播放中状态栏用，随播放推进；非播放/未渲染 → 空）。
+    if (m_playheadSec < 0.0) return QString();
+    const ChartSession* cs = sessionObj();
+    if (!cs || !cs->timing()) return QString();
+    const auto pos = cs->timing()->position_at(static_cast<std::int64_t>(m_playheadSec * 1e6));
+    if (!pos) return QString();
+    return QString::number(pos->measure);
+}
+
 qreal ChartViewItem::metaTrackWidth() const {
     qreal w = 0.0;
     for (const auto& c : m_columns)
@@ -1292,22 +1319,19 @@ void ChartViewItem::drawPreview(QPainter* p) const {
                    a.value(QStringLiteral("index")).toInt() ==
                        b.value(QStringLiteral("index")).toInt();
         };
-        // 与实际 moveSelection 的通道逻辑一致：
-        //  BGM 目标（虚拟子通道容器）：所有选中 note 转成 BGM（落具体 bgmN 列 → 该行，
-        //    聚合列 → sub_line=-1 由后端自动分配）；注：ghost 不申请分配，用目标 sub_line 显示；
-        //  key→key（源/目标都是 key）：所有 key note 按 channelOffset 平移（钳 1..7）；
-        //  key→非key（跨 kind）：仅源 lane note 改用目标 kind/index/player。
+        // 与实际 moveSelection 的通道逻辑一致（2026-09 用户：key/皿/踏板 = 一条连续演出轨道，
+        // BMS 文件层面通道无差异，只是 id/效果不同——编辑按连续平移，不再把皿/踏板塌缩成单列）。
         const QString srcKind = m_moveSourceLane.value(QStringLiteral("kind")).toString();
         const QString tgtKind = m_moveTargetLane.value(QStringLiteral("kind")).toString();
         const bool bgmTarget = (tgtKind == QLatin1String("bgm"));
         const bool bgmHasTarget = (bgmTarget &&
                                    m_moveTargetLane.value(QStringLiteral("sub_line")).toInt() >= 0);
-        const bool keyToKey = (srcKind == QLatin1String("key") &&
-                               tgtKind == QLatin1String("key"));
-        const int channelOffset =
-            keyToKey ? (m_moveTargetLane.value(QStringLiteral("index")).toInt() -
-                        m_moveSourceLane.value(QStringLiteral("index")).toInt())
-                     : 0;
+        const bool playTarget = (tgtKind == QLatin1String("key") ||
+                                 tgtKind == QLatin1String("scratch") ||
+                                 tgtKind == QLatin1String("pedal"));
+        const bool srcPlay = (srcKind == QLatin1String("key") ||
+                              srcKind == QLatin1String("scratch") ||
+                              srcKind == QLatin1String("pedal"));
         // ⚠️ BGM 相对间距（2026-09 用户：多轨→BGM 应**保持相对距离**，视为连续轨道）。
         // 统一用「显示列下标」做秩（columnFor：BGM 展开列按 sub_line、玩乐列按 lane——列序即
         // on-screen 连续序，跨通道拖拽即连续平移）。grabCol = 拖起 note 列下标；t0 = 目标 bgm 基线
@@ -1317,6 +1341,16 @@ void ChartViewItem::drawPreview(QPainter* p) const {
         grabLane.kind = laneKindFromString(m_moveSourceLane.value(QStringLiteral("kind")).toString());
         grabLane.index = static_cast<std::uint8_t>(m_moveSourceLane.value(QStringLiteral("index")).toInt());
         const int grabCol = columnFor(grabLane, 0, m_moveSourceSubLine);
+        // 演出轨连续平移：目标列下标 + 拖起列下标 → 列位移（应与 SessionController.moveSelection 一致）。
+        int targetCol = -1, deltaCol = 0;
+        if (playTarget && srcPlay && !m_moveTargetLane.isEmpty()) {
+            beatbench::Lane tgtLane;
+            tgtLane.player = static_cast<std::uint8_t>(m_moveTargetLane.value(QStringLiteral("player")).toInt());
+            tgtLane.kind = laneKindFromString(tgtKind);
+            tgtLane.index = static_cast<std::uint8_t>(m_moveTargetLane.value(QStringLiteral("index")).toInt());
+            targetCol = columnFor(tgtLane, 0, m_moveTargetLane.value(QStringLiteral("sub_line"), -1).toInt());
+            deltaCol = (targetCol >= 0 && grabCol >= 0) ? targetCol - grabCol : 0;
+        }
         const int t0 = bgmHasTarget
                            ? m_moveTargetLane.value(QStringLiteral("sub_line")).toInt()
                            : 0;
@@ -1342,10 +1376,23 @@ void ChartViewItem::drawPreview(QPainter* p) const {
                 lane.kind = beatbench::LaneKind::Bgm;
                 lane.index = static_cast<std::uint8_t>(t.value(QStringLiteral("index")).toInt());
                 ghostBgmLine = std::max(0, t0 + (noteCol - grabCol));
-            } else if (keyToKey && lane.kind == beatbench::LaneKind::Key) {
-                // key→key：整组 key note 平移同距（多选/框选拖动的实际落点）
-                const int ni = std::clamp(static_cast<int>(lane.index) + channelOffset, 1, 7);
-                if (ni != static_cast<int>(lane.index)) lane.index = static_cast<std::uint8_t>(ni);
+            } else if (playTarget && srcPlay && deltaCol != 0 &&
+                       (lane.kind == beatbench::LaneKind::Key ||
+                        lane.kind == beatbench::LaneKind::Scratch ||
+                        lane.kind == beatbench::LaneKind::Pedal) &&
+                       lane.player == static_cast<std::uint8_t>(
+                           m_moveTargetLane.value(QStringLiteral("player")).toInt())) {
+                // 演出轨连续平移（key/皿/踏板，同玩家）：各 note 落 目标列 + (noteCol-grabCol)，映射回该列轨道
+                // （如 key5-7 拖到 S → key5=col2(S)、key6=col3(key1)、key7=col4(key2)）。
+                const QVariantMap li = laneAtColumn(noteCol + deltaCol);
+                if (li.value(QStringLiteral("valid")).toBool() &&
+                        li.value(QStringLiteral("lanePlayer")).toInt() ==
+                            m_moveTargetLane.value(QStringLiteral("player")).toInt() &&
+                        !laneMatches(laneM, li)) {
+                    lane.player = static_cast<std::uint8_t>(li.value(QStringLiteral("lanePlayer")).toInt());
+                    lane.kind = laneKindFromString(li.value(QStringLiteral("laneKind")).toString());
+                    lane.index = static_cast<std::uint8_t>(li.value(QStringLiteral("laneIndex")).toInt());
+                }
             } else if (!m_moveTargetLane.isEmpty() && laneMatches(laneM, m_moveSourceLane)) {
                 // 跨 kind（2026-09 三修）：源 lane note 组改用目标列，且**保持相对距离**（连续轨道
                 // 同款：目标族序 = 族序基数 + (noteCol-grabCol)）。key 目标按列秩间距铺

@@ -492,24 +492,32 @@ QtObject {
             }
         }
         // 普通轨道移动：逐 note 计算 to（绝对位置 = 源 + delta，带进位）。
-        // **通道「同距离偏移」**（2026-09 用户：拖动时每个选中 note 都移动相同距离）：
-        // 拖起轨 key i → 目标轨 key j，偏移 = j-i；所有选中 key note 左/右移相同量（保相对位置），
-        // 不再「全部挤到目标轨」或「只动拖起轨」。非 key note（皿/踏板/BGM）不变；
-        // 跨 kind（如 key→皿）走 sourceLane 兜底（拖起轨 note 改到目标 kind）。
-        let channelOffset = 0
-        const keyToKey = sourceLane && sourceLane.kind === "key" &&
-                         targetLane && targetLane.valid && targetLane.laneKind === "key"
-        if (keyToKey) channelOffset = targetLane.laneIndex - sourceLane.index
+        // 2026-09 用户：BMS 文件里 key/皿/踏板**通道无格式差异**（读写一致，只是 id/效果不同）——
+        // 编辑视图把它们当**一条连续演出轨道**：多选拖动 = 连续平移（各 note 落 目标列 + 列间距），
+        // 不再「只动拖起轨」或「皿/踏板塌缩成单列」。
+        const isBgmTarget = targetLane && targetLane.valid && targetLane.laneKind === "bgm"
+        const isPlayTarget = targetLane && targetLane.valid &&
+            (targetLane.laneKind === "key" || targetLane.laneKind === "scratch" ||
+             targetLane.laneKind === "pedal")
+        const srcIsPlay = sourceLane && (sourceLane.kind === "key" || sourceLane.kind === "scratch" ||
+                                         sourceLane.kind === "pedal")
         // ⚠️ BGM 虚拟子通道（2026-09 重写）：判别必须是 lane.kind==="bgm" 而非 sub_line>=0——后者
         // 对玩乐 note 恒=0（解析器非 ch01 一律写 0），会把「非 BGM」误判成「BGM」→ 先前
         // sourceBgmLine 恒取 0 → bgmOffset=targetBgmLine → 所有选中 note 挤进同一行（用户反复报告
         // 的多轨→BGM 挤成一个通道）。现在统一用「显示列下标」做秩：BGM 展开列按 sub_line、玩乐列
         // 按 lane，列序即 on-screen 连续序 → 跨通道拖拽 = 连续轨道平移，天然**保持相对距离**。
-        const isBgmTarget = targetLane && targetLane.valid && targetLane.laneKind === "bgm"
         const cv = (root.editPage && root.editPage.locateChartView)
             ? root.editPage.locateChartView() : null
         let grabCol = -1
         if (cv && sourceLane) grabCol = cv.columnIndexForRef({ lane: sourceLane, sub_line: sourceBgmLine })
+        // 演出轨连续平移：目标列下标 + 拖起列下标 → 列位移；各 note 落 noteCol + deltaCol，再映射回该列轨道。
+        let targetCol = -1, deltaCol = 0
+        if (cv && isPlayTarget && srcIsPlay) {
+            targetCol = cv.columnIndexForRef({ lane: { player: targetLane.lanePlayer,
+                                                      kind: targetLane.laneKind,
+                                                      index: targetLane.laneIndex } })
+            deltaCol = (targetCol >= 0 && grabCol >= 0) ? targetCol - grabCol : 0
+        }
         // BGM 基线：落展开 bgmN 列 → 该 line；落聚合列（sub_line<0）→ 0（后端/相对秩兜底）。
         const t0 = (isBgmTarget && targetLane.sub_line !== undefined && targetLane.sub_line >= 0)
             ? targetLane.sub_line : 0
@@ -539,19 +547,23 @@ QtObject {
                             index: targetLane.laneIndex }
                 to.sub_line = Math.max(0, t0 + gap)
                 changedLane = true
-            } else if (channelOffset !== 0 && ref.lane.kind === "key") {
-                // 同距离偏移（key 轨；钳到合法 key 范围 1..7）
-                const ni = Math.max(1, Math.min(7, ref.lane.index + channelOffset))
-                if (ni !== ref.lane.index) {
-                    to.lane = { player: ref.lane.player, kind: "key", index: ni }
+            } else if (isPlayTarget && srcIsPlay && deltaCol !== 0 &&
+                    (ref.lane.kind === "key" || ref.lane.kind === "scratch" ||
+                     ref.lane.kind === "pedal") && ref.lane.player === targetLane.lanePlayer) {
+                // 演出轨道连续平移（key/皿/踏板，同玩家）：各 note 落 目标列 + gap，映射回演出轨道。
+                // 如 key5-7 拖到 S → key5=col2(S)、key6=col3(key1)、key7=col4(key2)（列序含 BPM/STOP/S/key…）。
+                const newCol = noteCol + deltaCol
+                const li = (cv && newCol >= 0) ? cv.laneAtColumn(newCol) : null
+                if (li && li.valid && li.lanePlayer === targetLane.lanePlayer &&
+                        !laneEquals(ref.lane, li.laneKind, li.laneIndex, li.lanePlayer)) {
+                    to.lane = { player: li.lanePlayer, kind: li.laneKind, index: li.laneIndex }
                     changedLane = true
                 }
             } else if (targetLane && targetLane.valid && sourceLane &&
                     laneEquals(ref.lane, sourceLane.kind, sourceLane.index, sourceLane.player) &&
                     !laneEquals(ref.lane, targetLane.laneKind, targetLane.laneIndex, targetLane.lanePlayer)) {
-                // 跨 kind 兜底（2026-09 三修）：拖起轨 note 组改成目标 kind，且**保持相对距离**
-                // （连续轨道同款：目标族序 = 族序基数 + gap）。key 目标按间距铺（bgm0+bgm2→key1+key3，
-                // 不再挤到 key1）；scratch/pedal 单列无展开度 → 全部落该列。其余 note（非拖起族）只动时间。
+                // 跨族兜底（非演出轨源，如 BGM 源 → 目标演出轨）：源 lane note 组改成目标 kind，保持相对距离。
+                // key 目标按间距铺；皿/踏板单列落该列（BGM→皿 场景）。其余 note（非拖起族）只动时间。
                 to.lane = { player: targetLane.lanePlayer, kind: targetLane.laneKind,
                             index: targetLane.laneIndex }
                 if (targetLane.laneKind === "key") {
