@@ -27,6 +27,8 @@ class SliceWaveformItem : public QQuickPaintedItem {
     Q_PROPERTY(qreal gridBpm READ gridBpm WRITE setGridBpm NOTIFY gridBpmChanged)
     /// 每拍细分（QML subBox 绑定；>=1）。
     Q_PROPERTY(int gridSubdivision READ gridSubdivision WRITE setGridSubdivision NOTIFY gridSubdivisionChanged)
+    /// 每小节拍数（网格参考线小节分组；默认 4 = 4/4；同 core GridConfig.beatsPerMeasure）。
+    Q_PROPERTY(int gridBeatsPerMeasure READ gridBeatsPerMeasure WRITE setGridBeatsPerMeasure NOTIFY gridBeatsPerMeasureChanged)
 
 public:
     explicit SliceWaveformItem(QQuickItem* parent = nullptr);
@@ -45,6 +47,8 @@ public:
     void setGridBpm(qreal v);
     int gridSubdivision() const { return m_gridSubdivision; }
     void setGridSubdivision(int v);
+    int gridBeatsPerMeasure() const { return m_gridBeatsPerMeasure; }
+    void setGridBeatsPerMeasure(int v);
 
 signals:
     void workspaceChanged();
@@ -53,6 +57,7 @@ signals:
     void gridVisibleChanged();
     void gridBpmChanged();
     void gridSubdivisionChanged();
+    void gridBeatsPerMeasureChanged();
     /// 点击/拖动 → 目标秒（QML 接 audioEngine.refSeek）。
     void seekRequested(double seconds);
 
@@ -66,8 +71,11 @@ private:
     ThemeManager* themeObj() const;
     /// x（widget 坐标）→ 秒，发出 seekRequested。
     void requestSeek(qreal x);
-    /// 画实时拍子网格参考线（BPM/细分/offset；等分；M6.2）。
+    /// 画实时拍子网格参考线（BPM/细分/offset；等分；M6.2）。四级：起点/小节/拍/细分。
     void drawGridLines(QPainter* p, qreal w, qreal h, const SliceWorkspace* ws) const;
+    /// 画起点（time=offset）显眼标记：顶部 tab + 秒数标签。
+    void drawOriginMarker(QPainter* p, qreal x, const ThemeManager* th,
+                          double t, qreal w) const;
 
     QObject* m_workspace = nullptr;
     QObject* m_theme = nullptr;
@@ -76,6 +84,7 @@ private:
     bool m_gridVisible = false;
     qreal m_gridBpm = 120.0;
     int m_gridSubdivision = 4;
+    int m_gridBeatsPerMeasure = 4;
 };
 
 }  // namespace beatbench::app

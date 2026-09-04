@@ -5,6 +5,8 @@
 
 #include <QMouseEvent>
 #include <QPainter>
+#include <QFont>
+#include <QFontMetrics>
 
 #include <algorithm>
 #include <cmath>
@@ -66,6 +68,13 @@ void SliceWaveformItem::setGridSubdivision(int v) {
     if (m_gridSubdivision == v) return;
     m_gridSubdivision = v;
     emit gridSubdivisionChanged();
+    update();
+}
+
+void SliceWaveformItem::setGridBeatsPerMeasure(int v) {
+    if (m_gridBeatsPerMeasure == v) return;
+    m_gridBeatsPerMeasure = v;
+    emit gridBeatsPerMeasureChanged();
     update();
 }
 
@@ -224,6 +233,7 @@ void SliceWaveformItem::drawGridLines(QPainter* p, qreal w, qreal h,
     const double dur = static_cast<double>(ws->audioDurationSec());
     if (dur <= 0.0 || m_gridBpm <= 0.0) return;
     const int sub = std::max(1, m_gridSubdivision);
+    const int bpmCount = std::max(1, m_gridBeatsPerMeasure);
     const double cell = 60.0 / static_cast<double>(m_gridBpm) /
                         static_cast<double>(sub);
     if (!std::isfinite(cell) || cell <= 0.0) return;
@@ -231,13 +241,20 @@ void SliceWaveformItem::drawGridLines(QPainter* p, qreal w, qreal h,
     const double offset = ws->offsetSecD();
     const qreal pxPerSec = w / dur;
     const ThemeManager* th = themeObj();
-    // 拍线（每拍，较强）与细分线（较弱）——均是 1px 细线，叠加在波形上不喧宾夺主
-    QColor beatCol = th ? th->primary() : QColor(QStringLiteral("#8b9cf8"));
-    QColor subCol = th ? th->border() : QColor(QStringLiteral("#2a2f3a"));
-    beatCol.setAlpha(120);
-    subCol.setAlpha(90);
+    // 层级配色（背景 #12151a 深色 → 必须亮色拉开对比，否则看不见）：
+    //   起点线 = accent 青（最显眼）+ 顶部 tab/标签
+    //   小节线 = keyNote(亮靛) 2px；拍线 = keyNote 1px（中亮）；细分线 = textMuted 灰 1px
+    const QColor originCol = th ? th->accent() : QColor(QStringLiteral("#22d3ee"));
+    QColor measureCol = th ? th->keyNote() : QColor(QStringLiteral("#8b9cf8"));
+    QColor beatCol = th ? th->keyNote() : QColor(QStringLiteral("#8b9cf8"));
+    QColor subCol = th ? th->textMuted() : QColor(QStringLiteral("#9aa3b2"));
+    measureCol.setAlpha(250);
+    beatCol.setAlpha(190);
+    subCol.setAlpha(110);
     const qreal top = 4.0;
     const qreal bot = h - 4.0;
+    const int cellsPerBeat = sub;
+    const int cellsPerMeasure = cellsPerBeat * bpmCount;
 
     // 起始 cell 序号：offset 为负时跳过 t<0 的边界（避免 x=0 叠线；同 plan 的夹逼语义）
     double firstK = 0.0;
@@ -250,12 +267,51 @@ void SliceWaveformItem::drawGridLines(QPainter* p, qreal w, qreal h,
         if (t >= dur) break;
         const qreal x = static_cast<qreal>(t * pxPerSec);
         if (x > w) break;
-        if (x >= 0.0) {
-            const bool beat = (k % sub) == 0;
-            p->setPen(QPen(beat ? beatCol : subCol, 1));
-            p->drawLine(QPointF(x, top), QPointF(x, bot));
+        if (x < 0.0) continue;
+        const bool isOrigin = (k == 0);
+        const bool isMeasure = (k % cellsPerMeasure) == 0;
+        const bool isBeat = (k % cellsPerBeat) == 0;
+        QColor col;
+        double penW = 1.0;
+        if (isOrigin) {
+            col = originCol;
+            penW = 2.0;
+        } else if (isMeasure) {
+            col = measureCol;
+            penW = 2.0;
+        } else if (isBeat) {
+            col = beatCol;
+            penW = 1.0;
+        } else {
+            col = subCol;
+            penW = 1.0;
         }
+        p->setPen(QPen(col, penW));
+        p->drawLine(QPointF(x, top), QPointF(x, bot));
+        if (isOrigin) drawOriginMarker(p, x, th, t, w);
     }
+}
+
+void SliceWaveformItem::drawOriginMarker(QPainter* p, qreal x,
+                                         const ThemeManager* th, double t,
+                                         qreal w) const {
+    // 顶部 tab（起点标记）：一条亮色短横 + 秒数标签（mono），clamp 在视口内。
+    const QColor col = th ? th->accent() : QColor(QStringLiteral("#22d3ee"));
+    const qreal tabW = 10.0;
+    const qreal tabH = 8.0;
+    const qreal tabLeft = std::clamp(x - tabW / 2.0, 0.0,
+                                     std::max(0.0, w - tabW));
+    p->fillRect(QRectF(tabLeft, 0.0, tabW, tabH), col);
+    const QString label = QStringLiteral("%1s").arg(t, 0, 'f', 3);
+    QFont f = p->font();
+    f.setFamily(th ? th->fontMono() : QStringLiteral("Consolas"));
+    f.setPixelSize(10);
+    p->setFont(f);
+    p->setPen(col);
+    const int tw = p->fontMetrics().horizontalAdvance(label);
+    qreal lx = x + tabW / 2.0 + 3.0;
+    lx = std::clamp(lx, 4.0, std::max(4.0, w - tw - 4.0));
+    p->drawText(QPointF(lx, tabH - 1.0), label);
 }
 
 }  // namespace beatbench::app
