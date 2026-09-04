@@ -296,4 +296,34 @@ TEST(PlaybackPlanTest, Bpm9999xxxZeroDuration) {
     EXPECT_NEAR(plan.notes()[1].triggerSec, 0.0, 1e-3);
 }
 
+TEST(PcmPlaybackTest, DualInstancesIndependentPlayAndSeek) {
+    // M6.1：谱面播放（kPcmSlot=6）与参考音轨（kRefPcmSlot=5）分槽共存——
+    // play/seek（同槽 Stop+Start）互不影响；pause/stop 的 stopAll 全停语义不变
+    // （GUI 以页面切换互斥兜底，见 Main.qml currentPage）。
+    SamplePlayer player;
+    PcmPlayback chartPb(&player, 44100.0);
+    PcmPlayback refPb(&player, 44100.0, beatbench::audio::kRefPcmSlot);
+    chartPb.load(makePcm(44100.0, 44100 * 2), 44100.0);           // 2s
+    refPb.load(makePcm(44100.0, 44100 * 2, 0.3f), 44100.0);       // 2s（低振幅可区分）
+    ASSERT_TRUE(chartPb.play(1.0f));
+    ASSERT_TRUE(refPb.play(1.0f));
+    // 1s 渲染：两 voice 同时输出（混音峰值验证）+ 时钟前进
+    std::vector<float> out(44100 * 2, 0.0f);
+    player.render(out.data(), 44100, 44100.0);
+    EXPECT_NEAR(chartPb.currentSec(), 1.0, 0.01);
+    EXPECT_NEAR(refPb.currentSec(), 1.0, 0.01);
+    float peak = 0.0f;
+    for (const float v : out) peak = std::max(peak, std::fabs(v));
+    EXPECT_GT(peak, 0.5f);  // 0.5 + 0.3 混音（两 voice 同时活）
+
+    // 参考音轨播放中 seek → 同槽停旧启新；谱面时钟不受影响
+    ASSERT_TRUE(refPb.seek(1.5));
+    renderFrames(player, 44100 * 0.5);  // 0.5s
+    EXPECT_NEAR(refPb.currentSec(), 2.0, 0.02);
+    EXPECT_NEAR(chartPb.currentSec(), 1.5, 0.02);
+
+    refPb.stop();
+    player.drainReclaimed();
+}
+
 }  // namespace

@@ -47,7 +47,9 @@ beatbench::audio::DecodedSample* makeTestToneSample() {
 }  // namespace
 
 AudioEngine::AudioEngine(QObject* parent)
-    : QObject(parent), m_playback(&m_player, 44100.0) {
+    : QObject(parent),
+      m_playback(&m_player, 44100.0),
+      m_refPlayback(&m_player, 44100.0, beatbench::audio::kRefPcmSlot) {
     // 1) 加载持久化设置（设备/采样率/缓冲/音量）
     loadSettings();
     m_player.setMasterVolume(static_cast<float>(masterVolume()));
@@ -68,6 +70,8 @@ AudioEngine::AudioEngine(QObject* parent)
                 static_cast<double>(m_backend->streamInfo().sampleRate));
             m_playback.setDeviceRate(
                 static_cast<double>(m_backend->streamInfo().sampleRate));
+            m_refPlayback.setDeviceRate(
+                static_cast<double>(m_backend->streamInfo().sampleRate));
             m_initialized = true;
         } else {
             // 启动失败（可能设置里设备/采样率不可用）：回退默认（手动再试一次）
@@ -84,6 +88,8 @@ AudioEngine::AudioEngine(QObject* parent)
                 m_renderCtx.deviceRate.store(
                     static_cast<double>(m_backend->streamInfo().sampleRate));
                 m_playback.setDeviceRate(
+                    static_cast<double>(m_backend->streamInfo().sampleRate));
+                m_refPlayback.setDeviceRate(
                     static_cast<double>(m_backend->streamInfo().sampleRate));
                 m_initialized = true;
                 m_statusText = QStringLiteral("指定设备不可用，已回退默认设备");
@@ -125,6 +131,8 @@ AudioEngine::AudioEngine(QObject* parent)
             // M5.2 A-B 循环：播放头越过 B → 绕回 A（playbackChanged 后触发——UI 已刷新）
             if (m_playback.loopTick()) emit playbackChanged();
         }
+        // M6.1 参考音频时钟：播放中 refPositionSec 持续变化（切音页播放头刷新）
+        if (m_refPlayback.playing()) emit refPlaybackChanged();
     });
     poll->start();
 }
@@ -207,6 +215,11 @@ bool AudioEngine::playPreview(const QString& file) {
 
 void AudioEngine::stopAll() {
     m_player.stopAll();
+    // M6.1 参考音频同步状态（内核 voice 已停；状态机复位为停止）
+    if (m_refPlayback.playing()) {
+        m_refPlayback.stop();
+        emit refPlaybackChanged();
+    }
     m_busy = false;
     emit busyChanged();
 }
@@ -275,6 +288,8 @@ bool AudioEngine::reopenStream() {
             static_cast<double>(m_backend->streamInfo().sampleRate));
         m_playback.setDeviceRate(
             static_cast<double>(m_backend->streamInfo().sampleRate));
+        m_refPlayback.setDeviceRate(
+            static_cast<double>(m_backend->streamInfo().sampleRate));
         return true;
     }
     // 失败：回退旧设置重开
@@ -286,6 +301,8 @@ bool AudioEngine::reopenStream() {
             &m_renderCtx, old, &err)) {
         m_settings = old;
         m_renderCtx.deviceRate.store(
+            static_cast<double>(m_backend->streamInfo().sampleRate));
+        m_refPlayback.setDeviceRate(
             static_cast<double>(m_backend->streamInfo().sampleRate));
         return false;  // 回退成功但应用失败
     }
@@ -520,6 +537,52 @@ void AudioEngine::rebuildDevices() {
         }
     }
     emit devicesChanged();
+}
+
+// —— M6.1 参考音频（切音工作台预览；独立于谱面播放） ——
+
+void AudioEngine::setReferencePcm(std::shared_ptr<const std::vector<float>> pcm,
+                                  double sampleRate) {
+    m_refPlayback.load(std::move(pcm), sampleRate);
+    emit refPlaybackChanged();
+}
+
+void AudioEngine::clearReferencePcm() {
+    m_refPlayback.stop();
+    m_refPlayback.load(nullptr, 0.0);
+    emit refPlaybackChanged();
+}
+
+bool AudioEngine::refTogglePlay() {
+    if (!m_initialized) {
+        m_statusText = QStringLiteral("音频不可用（后端初始化失败）");
+        emit statusTextChanged();
+        return false;
+    }
+    if (m_refPlayback.playing()) {
+        m_refPlayback.pause();
+    } else {
+        // 参考播放与谱面播放互斥（共用 PCM 槽 kPcmSlot——切音页时谱面播放已停）
+        if (m_playback.playing()) m_playback.pause();
+        if (!m_refPlayback.play(m_player.masterVolume())) {
+            m_statusText = QStringLiteral("参考音频尚无有效 PCM");
+            emit statusTextChanged();
+            return false;
+        }
+    }
+    emit refPlaybackChanged();
+    return true;
+}
+
+void AudioEngine::refStop() {
+    m_refPlayback.stop();
+    emit refPlaybackChanged();
+}
+
+bool AudioEngine::refSeek(double seconds) {
+    const bool ok = m_refPlayback.seek(seconds);
+    emit refPlaybackChanged();
+    return ok;
 }
 
 }  // namespace beatbench::app

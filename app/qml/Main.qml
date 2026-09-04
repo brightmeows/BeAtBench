@@ -374,7 +374,9 @@ ApplicationWindow {
         spacing: 0
 
         // 页面工具条（随页面变化；工具条 = 皮肤 L2 可声明区，doc/08 §3.1）
+        // M6.1：编辑专属（snap/变换/A-B/谱面播放）；切音/测试页各用自有工具条 → 仅编辑页显示
         ToolBar {
+            visible: currentPage === 0
             Layout.fillWidth: true
             background: Rectangle {
                 color: Theme.surface
@@ -836,6 +838,11 @@ ApplicationWindow {
     // --open 调试参数（main.cpp 注入）：走与 Ctrl+O 相同的调用路径
     property string debugOpenPath: ""
     onDebugOpenPathChanged: if (debugOpenPath !== "") openChart(debugOpenPath)
+    // M6.1 调试参数：--slice-audio / --slice-midi（切音页导入；配 --page 1 --screenshot）
+    property string debugSliceAudio: ""
+    property string debugSliceMidi: ""
+    onDebugSliceAudioChanged: if (debugSliceAudio !== "") sliceWorkspace.loadAudioFile(debugSliceAudio)
+    onDebugSliceMidiChanged: if (debugSliceMidi !== "") sliceWorkspace.loadMidiFile(debugSliceMidi)
     // --wait-render 截图等待标志（main.cpp 轮询；波形验收用）
     property bool debugRenderDone: false
     // 渲染完成次数（--wait-render 增量验收：等待全量 + 增量都完成）
@@ -1264,7 +1271,18 @@ ApplicationWindow {
     onChartMetaChanged: { updateActionStates(); updateCheckedStates() }
     onSelectionRefsChanged: { updateActionStates(); updateCheckedStates() }
     onClipboardLinesChanged: { updateActionStates(); updateCheckedStates() }
-    onCurrentPageChanged: { updateActionStates(); updateCheckedStates() }
+    onCurrentPageChanged: {
+        updateActionStates()
+        updateCheckedStates()
+        // M6.1 页切换音频协调：进切音页 → 谱面播放暂停（共用内核 kPcmSlot，互斥）；
+        // 离开切音页 → 参考播放停止（退出切音页即静音）
+        if (typeof audioEngine === "undefined" || !audioEngine) return
+        if (currentPage === 1) {
+            if (audioEngine.playing) audioEngine.pause()
+        } else if (audioEngine.refPlaying) {
+            audioEngine.refStop()
+        }
+    }
     onMetaSelectionChanged: { updateActionStates(); updateCheckedStates() }
     onShowGridChanged: updateCheckedStates()
     onShowChannelIdsChanged: updateCheckedStates()

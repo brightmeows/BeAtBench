@@ -28,6 +28,11 @@
 
 namespace beatbench::audio {
 
+/// kPcmSlot：PCM 播放专用槽位（不与其他 note/试听抢占）。
+inline constexpr int kPcmSlot = 6;
+/// kRefPcmSlot：参考音轨播放专用槽位（M6.1 切音工作台；与谱面 kPcmSlot 互不挤占）。
+inline constexpr int kRefPcmSlot = 5;
+
 class SamplePlayer {
 public:
     /// 并发原语：命令/事件 ring（单生产者单消费者；容量须为 2 的幂）。
@@ -70,7 +75,7 @@ public:
     /// 回调侧：无空闲槽时丢弃（同样 unref 归还）。
     bool play(DecodedSample* sample, float volume, double startSec);
 
-    /// M5 零拷贝播放：共享 PCM（渲染代理缓冲；专用槽 kPcmSlot）。
+    /// M5 零拷贝播放：共享 PCM（渲染代理缓冲等；专用槽 = slot，默认 kPcmSlot）。
     /// **保活协议**：pcm 缓冲的生命周期由本函数创建的 DecodedSample 包装持有——
     /// 包装存 sharedPcm（引用计数 1 = 本函数持有）→ 所有权转移给命令（同 play）；
     /// voice 结束回调 unref 归零 → 入回收 → **UI 线程 drainReclaimed delete** →
@@ -78,8 +83,9 @@ public:
     /// 调用方把 shared_ptr 的一份持有**转移**给本函数（失败 = 归还）。
     /// startSec = 起始秒（截取窗口 [startSec, 时长)）。volume 0..1。
     /// 重复调用 = 停旧启新（Stop + Start 同槽保序）。返回 false = 队列满（归还）。
+    /// M6.1：新增 slot 参数（参考音轨用 kRefPcmSlot，不与谱面播放 kPcmSlot 挤占）。
     bool playSharedPcm(std::shared_ptr<const std::vector<float>> pcm, double sampleRate,
-                       float volume, double startSec);
+                       float volume, double startSec, int slot = kPcmSlot);
 
     /// 试听专用：停掉试听槽现有 voice 再启动（同采样连点 = 重播）。
     /// 所有权转移同上；volume = 1.0（设定页音量后置）。
@@ -174,8 +180,5 @@ private:
     std::atomic<double> m_pcmStartSec{0.0};
     std::atomic<double> m_pcmDurationSec{0.0};
 };
-
-/// kPcmSlot：PCM 播放专用槽位（不与其他 note/试听抢占）。
-inline constexpr int kPcmSlot = 6;
 
 }  // namespace beatbench::audio

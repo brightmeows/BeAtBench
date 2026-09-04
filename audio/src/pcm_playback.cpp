@@ -9,8 +9,9 @@
 
 namespace beatbench::audio {
 
-PcmPlayback::PcmPlayback(SamplePlayer* player, double deviceRate)
-    : m_player(player), m_deviceRate(deviceRate > 0.0 ? deviceRate : 44100.0) {
+PcmPlayback::PcmPlayback(SamplePlayer* player, double deviceRate, int slot)
+    : m_player(player), m_deviceRate(deviceRate > 0.0 ? deviceRate : 44100.0),
+      m_slot(slot >= 0 ? slot : kPcmSlot) {
     if (!m_player) m_player = nullptr;
 }
 
@@ -49,7 +50,7 @@ bool PcmPlayback::play(float volume) {
     const double start = std::clamp(m_positionSec, 0.0, m_durationSec);
     // 播放窗口 [start, duration)；start 在末尾附近 → 从头（避免 0 长度截取）
     const double s = (m_durationSec - start < 0.01) ? 0.0 : start;
-    if (m_player->playSharedPcm(m_pcm, m_sampleRate, m_volume, s)) {
+    if (m_player->playSharedPcm(m_pcm, m_sampleRate, m_volume, s, m_slot)) {
         m_positionSec = s;
         // 时钟基准：startSec + 当前输出帧（输出帧基准 = 命令入队时点——
         // 消费延迟（≤1 个 buffering 周期）造成的秒级误差忽略；采样级一致）
@@ -91,7 +92,8 @@ bool PcmPlayback::seek(double seconds) {
     m_positionSec = std::clamp(seconds, 0.0, m_durationSec);
     if (m_state == State::Playing) {
         // 就地跳转（截取窗口续播；SamplePlayer 停旧启新）
-        if (m_player->playSharedPcm(m_pcm, m_sampleRate, m_volume, m_positionSec)) {
+        if (m_player->playSharedPcm(m_pcm, m_sampleRate, m_volume, m_positionSec,
+                                    m_slot)) {
             // 时钟基准更新（startSec = 新位置；输出帧基准 = 当前）
             m_playStartSec = m_positionSec;
             m_playFrames0 = m_player->totalFramesRendered();
@@ -142,7 +144,8 @@ bool PcmPlayback::loopTick() {
             if (m_player) m_player->stopAll();
             m_positionSec = m_loopA;
             // 从 A 重新播放（截取窗口）
-            if (m_player->playSharedPcm(m_pcm, m_sampleRate, m_volume, m_loopA)) {
+            if (m_player->playSharedPcm(m_pcm, m_sampleRate, m_volume, m_loopA,
+                                        m_slot)) {
                 m_playStartSec = m_loopA;
                 m_playFrames0 = m_player->totalFramesRendered();
                 m_state = State::Playing;

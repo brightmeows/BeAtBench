@@ -90,6 +90,17 @@ target_link_libraries(m5_playback_test PRIVATE beatbench_core GTest::gtest_main)
 beatbench_set_warnings(m5_playback_test)
 add_test(NAME m5_playback_tests COMMAND m5_playback_test)
 
+# ReferenceTrack 单测（M6.1 参考音轨）：解码 + 金字塔 + 窗口截取（无设备/无 Qt）。
+add_executable(reference_track_test reference_track_test.cpp
+    ${CMAKE_SOURCE_DIR}/audio/src/reference_track.cpp
+    ${CMAKE_SOURCE_DIR}/audio/src/waveform_pyramid.cpp
+    ${CMAKE_SOURCE_DIR}/audio/src/decoder_miniaudio.cpp)
+target_include_directories(reference_track_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/audio/include ${CMAKE_SOURCE_DIR}/third_party/miniaudio)
+target_link_libraries(reference_track_test PRIVATE GTest::gtest_main)
+beatbench_set_warnings(reference_track_test)
+add_test(NAME reference_track_tests COMMAND reference_track_test)
+
 # UiActionRegistry 单测（doc/09 §7 验收 4）：只依赖 Qt6::Core 的轻量目标。
 # 仅在找到 Qt6 的构建配置中启用：MSVC build/（无 Qt）→ 自动跳过；
 # 需要时用 `cmake -S . -B build-uitest -DBEATBENCH_BUILD_TESTS=ON -DCMAKE_PREFIX_PATH=<Qt>`

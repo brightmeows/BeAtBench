@@ -38,11 +38,13 @@ bool SamplePlayer::play(DecodedSample* sample, float volume, double startSec) {
 }
 
 bool SamplePlayer::playSharedPcm(std::shared_ptr<const std::vector<float>> pcm,
-                                 double sampleRate, float volume, double startSec) {
+                                 double sampleRate, float volume, double startSec,
+                                 int slot) {
     if (!pcm || pcm->empty() || sampleRate <= 0.0) return false;
     if (volume < 0.0f) volume = 0.0f;
     if (volume > 1.0f) volume = 1.0f;
     if (startSec < 0.0) startSec = 0.0;
+    if (slot < 0) slot = kPcmSlot;
     // 包装 DecodedSample（引用计数 1 = 本函数持有；sharedPcm 共享缓冲——零拷贝）。
     // 所有权转移给命令：StartSharedPcm → 回调建 voice（sample 挂上）→ 结束 unref
     // 归零 → 入回收 → UI 线程 delete → shared_ptr 随包装析构释放（回调不析构）。
@@ -55,11 +57,11 @@ bool SamplePlayer::playSharedPcm(std::shared_ptr<const std::vector<float>> pcm,
     cmd.volume = volume;
     cmd.startSec = startSec;
     cmd.sampleRate = sampleRate;
-    cmd.slot = kPcmSlot;
-    // 停旧启新（Stop kPcmSlot + StartSharedPcm kPcmSlot 保序）
+    cmd.slot = slot;
+    // 停旧启新（Stop + StartSharedPcm 同槽保序）
     Command stop;
     stop.type = CmdType::Stop;
-    stop.slot = kPcmSlot;
+    stop.slot = slot;
     if (!m_cmdRing.push(stop)) {
         decoded_sample_release(wrap);
         return false;
@@ -157,9 +159,12 @@ void SamplePlayer::render(float* out, int frames, double deviceRate) {
                 slot = cmd.slot;
             else {
                 for (int i = 0; i < kMaxVoices; ++i)
-                    // ⚠️ 普通 play（slot=-1）跳过 kPcmSlot（6 号 = PCM 播放专用，避免被
-                    // keysound/试听抢占——否则 playSharedPcm 的「停旧启新」会误杀它）
-                    if (i != kPcmSlot && !m_voices[i].active) { slot = i; break; }
+                    // ⚠️ 普通 play（slot=-1）跳过 PCM 播放专用槽（6 = 谱面、5 = 参考音轨；
+                    // 避免被 keysound/试听抢占——否则 playSharedPcm 的「停旧启新」会误杀）
+                    if (i != kPcmSlot && i != kRefPcmSlot && !m_voices[i].active) {
+                        slot = i;
+                        break;
+                    }
             }
             if (slot < 0) {
                 // 无空闲槽：归还（不播）

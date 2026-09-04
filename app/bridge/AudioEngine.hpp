@@ -105,6 +105,29 @@ public:
     Q_INVOKABLE void setWaitRenderSetting(bool v);
     bool waitRenderSetting() const { return m_waitRenderSetting; }
 
+    // ---- M6.1 参考音频（切音工作台：外部 stem.wav 预览播放/seek；与谱面播放独立） ----
+    Q_PROPERTY(bool refPlaying READ refPlaying NOTIFY refPlaybackChanged)
+    Q_PROPERTY(qreal refPositionSec READ refPositionSec NOTIFY refPlaybackChanged)
+    Q_PROPERTY(qreal refDurationSec READ refDurationSec NOTIFY refPlaybackChanged)
+    Q_PROPERTY(bool refHasPcm READ refHasPcm NOTIFY refPlaybackChanged)
+
+    /// 装载参考音频 PCM（SliceWorkspace 解码完成后调用；shared_ptr 保活，
+    /// PcmPlayback 借用 + 转移给内核——零拷贝同 M5）。纯 C++ 接口（QML 不经此）。
+    void setReferencePcm(std::shared_ptr<const std::vector<float>> pcm, double sampleRate);
+    /// 清除参考音频（停声 + 卸载）。
+    Q_INVOKABLE void clearReferencePcm();
+    /// 播放/暂停切换（从当前位置）；false = 失败（无 PCM/后端不可用）。
+    Q_INVOKABLE bool refTogglePlay();
+    /// 停止参考播放（位置保留）。
+    Q_INVOKABLE void refStop();
+    /// seek：跳转秒（播放中就跳；暂停/停止 = 定位）。
+    Q_INVOKABLE bool refSeek(double seconds);
+
+    bool refPlaying() const { return m_refPlayback.playing(); }
+    qreal refPositionSec() const { return m_refPlayback.currentSec(); }
+    qreal refDurationSec() const { return m_refPlayback.durationSec(); }
+    bool refHasPcm() const { return m_refPlayback.hasLoaded(); }
+
     // ---- M5.2 A-B 循环 ----
     /// 设循环点 A（**红线/视口光标**位置，由 QML 传入 cursorSec；同点再点 = 解除）。
     /// 返回生效结果（A≥0）。
@@ -168,6 +191,8 @@ signals:
     void playbackChanged();
     /// M5 播放自然结束（PCM 播完；QML 状态栏「已播完」）。
     void playbackFinished();
+    /// M6.1 参考音频播放状态变化（refPlaying/refPositionSec/…）。
+    void refPlaybackChanged();
     /// M5 等待渲染状态变化。
     void waitRenderChanged();
     /// M5 waitRenderSetting 变化（设置面板）。
@@ -204,6 +229,8 @@ private:
     QString m_errorText;                         ///< 设置错误（音频页显示；成功清空）
     // ---- M5 播放 ----
     beatbench::audio::PcmPlayback m_playback;    ///< PCM 播放状态机（UI 线程；设备率随流更新）
+    // ---- M6.1 参考音频 ----
+    beatbench::audio::PcmPlayback m_refPlayback;  ///< 参考音频（stem）预览状态机（独立于谱面播放）
     ChartSession* m_chartSession = nullptr;      ///< 渲染 PCM 来源（ChartSession；不拥有）
     bool m_waitRender = false;                   ///< 等待渲染中（renderFinished 后续播）
     bool m_waitRenderSetting = false;            ///< 设置：Space 等待渲染完成（默认关）

@@ -28,6 +28,7 @@
 #include "bridge/KeyMonitor.hpp"
 #include "bridge/LintListModel.hpp"
 #include "bridge/SampleListModel.hpp"
+#include "bridge/SliceWorkspace.hpp"
 #include "bridge/ThemeManager.hpp"
 #include "bridge/UiActionRegistry.hpp"
 #include "beatbench/core/json/Json.hpp"
@@ -218,6 +219,9 @@ int main(int argc, char** argv) {
     beatbench::app::ChartSession chartSession;
     // 音频引擎（M4.1 试听最小闭环）：采样面板单击播放；QML 经 `audioEngine` 访问
     beatbench::app::AudioEngine audioEngine;
+    // 切音工作台数据桥（M6.1）：参考音频 + MIDI 导入/持有；QML 经 `sliceWorkspace` 访问
+    beatbench::app::SliceWorkspace sliceWorkspace;
+    sliceWorkspace.setAudioEngine(&audioEngine);
     // 全局修饰键监控（Ctrl 按住态；QML Keys 收不到独立修饰键，Alt 又被菜单栏拦截）
     beatbench::app::KeyMonitor keyMonitor;
     app.installEventFilter(&keyMonitor);
@@ -231,6 +235,7 @@ int main(int argc, char** argv) {
     engine.rootContext()->setContextProperty(QStringLiteral("lintModel"), &lintModel);
     engine.rootContext()->setContextProperty(QStringLiteral("chartSession"), &chartSession);
     engine.rootContext()->setContextProperty(QStringLiteral("audioEngine"), &audioEngine);
+    engine.rootContext()->setContextProperty(QStringLiteral("sliceWorkspace"), &sliceWorkspace);
     engine.rootContext()->setContextProperty(QStringLiteral("keyMonitor"), &keyMonitor);
     // M5 播放：AudioEngine 连 ChartSession（渲染完成装载 PCM；编辑即停；waitRender 续播）
     audioEngine.setChartSession(&chartSession);
@@ -419,6 +424,18 @@ int main(int argc, char** argv) {
             if (QObject* root = engine.rootObjects().value(0))
                 root->setProperty("currentPage", p);
         }
+    }
+
+    // --slice-audio <有> / --slice-midi <有>：切音页自动导入（配 --page 1 --screenshot 验收）
+    const int saIdx = args.indexOf(QStringLiteral("--slice-audio"));
+    if (saIdx >= 0 && saIdx + 1 < args.size()) {
+        if (QObject* root = engine.rootObjects().value(0))
+            root->setProperty("debugSliceAudio", args.at(saIdx + 1));
+    }
+    const int smIdx = args.indexOf(QStringLiteral("--slice-midi"));
+    if (smIdx >= 0 && smIdx + 1 < args.size()) {
+        if (QObject* root = engine.rootObjects().value(0))
+            root->setProperty("debugSliceMidi", args.at(smIdx + 1));
     }
 
     // --tab N：左 Dock 标签（0 元信息 1 采样 2 lint 3 BGA；配合 --screenshot 验收面板）

@@ -1,18 +1,184 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// 切音页（Phase C / M6 占位）：横向时间轴 + 波形（DAW / 剪辑思路）。
+// 切音页（M6.1 导入工作台）：参考音频（stem.wav）+ MIDI（notes.mid）导入、
+// 波形预览 + 播放/seek + offset 微调（全局）。M6.2 起叠加切片线/列表。
+// 数据侧全部在 SliceWorkspace（C++）；本页只做装配与交互（doc/08 §2 双语言纪律）。
+// woslicerII 参考（键盘 + 网格节拍 + 末端 fade + 無音切）→ M6.2 切分交互时实现。
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
+import QtQuick.Dialogs
+import BeatBench
 
 Item {
-    Rectangle {
+    id: root
+
+    /// 当前播放头（秒；<0 = 无）。播放中由下方 Timer 刷新（audioEngine 20Hz 信号在此聚合）。
+    property real playheadSec: -1
+
+    Timer {
+        interval: 100
+        running: audioEngine.refPlaying
+        repeat: true
+        onTriggered: root.playheadSec = audioEngine.refPositionSec
+    }
+
+    function urlToPath(url) {
+        var s = url.toString()
+        s = s.replace(/^file:\/\//, "")
+        if (s.charAt(0) === "/" && /^\/[A-Za-z]:/.test(s))
+            s = s.slice(1)
+        return decodeURIComponent(s)
+    }
+
+    function fmtTime(sec) {
+        if (typeof sec !== "number" || !isFinite(sec) || sec < 0) sec = 0
+        var m = Math.floor(sec / 60)
+        var s = sec - m * 60
+        var ss = s < 10 ? "0" + s.toFixed(2) : s.toFixed(2)
+        return m + ":" + ss
+    }
+
+    ColumnLayout {
         anchors.fill: parent
-        color: Theme.bg
-        Label {
-            anchors.centerIn: parent
-            text: qsTr("切音页（占位）\nPhase C / M6：横向时间轴 + 波形 + 采样管理强化")
-            horizontalAlignment: Text.AlignHCenter
-            color: Theme.textFaint
-            font.pixelSize: Theme.fsBase
+        anchors.margins: 10
+        spacing: 8
+
+        // ---- 工具条：导入 / 清除 / offset / 播放控制 ----
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 6
+
+            BbToolButton {
+                text: qsTr("导入音频…")
+                enabled: !sliceWorkspace.busy
+                onClicked: audioFileDialog.open()
+            }
+            BbToolButton {
+                text: qsTr("导入 MIDI…")
+                onClicked: midiFileDialog.open()
+            }
+            BbToolButton {
+                text: qsTr("清除")
+                onClicked: {
+                    sliceWorkspace.clearAll()
+                    root.playheadSec = -1
+                }
+            }
+            Rectangle {
+                Layout.preferredWidth: 1
+                Layout.preferredHeight: 20
+                color: Theme.border
+            }
+            Label {
+                text: qsTr("偏移(ms)")
+                color: Theme.textMuted
+            }
+            SpinBox {
+                id: offsetBox
+                from: -5000
+                to: 5000
+                value: Math.round(sliceWorkspace.offsetSec * 1000)
+                editable: true
+                onValueModified: sliceWorkspace.setOffsetSec(value / 1000.0)
+            }
+            Item { Layout.fillWidth: true }
+            BbToolButton {
+                text: audioEngine.refPlaying ? qsTr("暂停") : qsTr("播放")
+                enabled: audioEngine.refHasPcm
+                onClicked: audioEngine.refTogglePlay()
+            }
+            BbToolButton {
+                text: qsTr("停止")
+                onClicked: {
+                    audioEngine.refStop()
+                    root.playheadSec = audioEngine.refPositionSec
+                }
+            }
+            Label {
+                text: root.playheadSec >= 0
+                      ? (fmtTime(root.playheadSec) + " / " + fmtTime(sliceWorkspace.audioDurationSec))
+                      : fmtTime(sliceWorkspace.audioDurationSec)
+                color: Theme.text
+                font.family: Theme.fontMono
+            }
         }
+
+        // ---- 波形 + note 刻度 + 播放头 ----
+        SliceWaveformItem {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 220
+            workspace: sliceWorkspace
+            theme: Theme
+            playheadSec: root.playheadSec
+            onSeekRequested: {
+                audioEngine.refSeek(seconds)
+                root.playheadSec = audioEngine.refPositionSec
+            }
+        }
+
+        // ---- MIDI note 表 ----
+        Label {
+            text: qsTr("MIDI 音符（%1 个）").arg(sliceWorkspace.midiNotes.length)
+            color: Theme.textMuted
+        }
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            color: Theme.surface
+            border.width: 1
+            border.color: Theme.border
+            radius: Theme.radiusSm
+            clip: true
+            ListView {
+                anchors.fill: parent
+                anchors.margins: 2
+                model: sliceWorkspace.midiNotes
+                clip: true
+                delegate: RowLayout {
+                    required property var modelData
+                    width: ListView.view.width
+                    spacing: 8
+                    Label { text: modelData.pitch; width: 44; color: Theme.text; font.family: Theme.fontMono }
+                    Label { text: modelData.channel + "ch"; width: 40; color: Theme.textMuted }
+                    Label { text: "T" + modelData.track; width: 36; color: Theme.textMuted }
+                    Label {
+                        text: (modelData.startSec + sliceWorkspace.offsetSec).toFixed(3)
+                        width: 72; color: Theme.accent2; font.family: Theme.fontMono
+                    }
+                    Label {
+                        text: modelData.startSec.toFixed(3)
+                        width: 72; color: Theme.textMuted; font.family: Theme.fontMono
+                    }
+                    Label {
+                        text: (modelData.endSec - modelData.startSec).toFixed(3) + "s"
+                        color: Theme.textMuted; font.family: Theme.fontMono
+                    }
+                }
+            }
+        }
+
+        // ---- 状态行 ----
+        Label {
+            Layout.fillWidth: true
+            text: sliceWorkspace.statusText
+            color: Theme.textFaint
+            elide: Text.ElideRight
+        }
+    }
+
+    FileDialog {
+        id: audioFileDialog
+        title: qsTr("导入参考音频")
+        nameFilters: [qsTr("音频文件 (*.wav *.ogg *.mp3 *.flac)"), qsTr("所有文件 (*)")]
+        onAccepted: {
+            sliceWorkspace.loadAudioFile(urlToPath(selectedFile))
+            root.playheadSec = audioEngine.refPositionSec
+        }
+    }
+    FileDialog {
+        id: midiFileDialog
+        title: qsTr("导入 MIDI")
+        nameFilters: [qsTr("MIDI 文件 (*.mid *.midi)"), qsTr("所有文件 (*)")]
+        onAccepted: sliceWorkspace.loadMidiFile(urlToPath(selectedFile))
     }
 }
