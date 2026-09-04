@@ -20,6 +20,13 @@ class SliceWaveformItem : public QQuickPaintedItem {
     Q_PROPERTY(QObject* theme READ theme WRITE setTheme NOTIFY themeChanged)
     /// 播放头秒（<0 = 不显示；QML 定时刷新）。
     Q_PROPERTY(qreal playheadSec READ playheadSec WRITE setPlayheadSec NOTIFY playheadSecChanged)
+    // ---- M6.2 实时拍子网格参考线（offset/BPM/snap 调参的视觉反馈） ----
+    /// 显示开关（QML 绑定「切片源=网格」时 true）。
+    Q_PROPERTY(bool gridVisible READ gridVisible WRITE setGridVisible NOTIFY gridVisibleChanged)
+    /// 网格 BPM（QML bpmBox 绑定；>0 才画）。
+    Q_PROPERTY(qreal gridBpm READ gridBpm WRITE setGridBpm NOTIFY gridBpmChanged)
+    /// 每拍细分（QML subBox 绑定；>=1）。
+    Q_PROPERTY(int gridSubdivision READ gridSubdivision WRITE setGridSubdivision NOTIFY gridSubdivisionChanged)
 
 public:
     explicit SliceWaveformItem(QQuickItem* parent = nullptr);
@@ -32,11 +39,20 @@ public:
     void setTheme(QObject* v);
     qreal playheadSec() const { return m_playheadSec; }
     void setPlayheadSec(qreal v);
+    bool gridVisible() const { return m_gridVisible; }
+    void setGridVisible(bool v);
+    qreal gridBpm() const { return m_gridBpm; }
+    void setGridBpm(qreal v);
+    int gridSubdivision() const { return m_gridSubdivision; }
+    void setGridSubdivision(int v);
 
 signals:
     void workspaceChanged();
     void themeChanged();
     void playheadSecChanged();
+    void gridVisibleChanged();
+    void gridBpmChanged();
+    void gridSubdivisionChanged();
     /// 点击/拖动 → 目标秒（QML 接 audioEngine.refSeek）。
     void seekRequested(double seconds);
 
@@ -50,10 +66,16 @@ private:
     ThemeManager* themeObj() const;
     /// x（widget 坐标）→ 秒，发出 seekRequested。
     void requestSeek(qreal x);
+    /// 画实时拍子网格参考线（BPM/细分/offset；等分；M6.2）。
+    void drawGridLines(QPainter* p, qreal w, qreal h, const SliceWorkspace* ws) const;
 
     QObject* m_workspace = nullptr;
     QObject* m_theme = nullptr;
     qreal m_playheadSec = -1.0;
+    // ---- M6.2 实时拍子网格 ----
+    bool m_gridVisible = false;
+    qreal m_gridBpm = 120.0;
+    int m_gridSubdivision = 4;
 };
 
 }  // namespace beatbench::app

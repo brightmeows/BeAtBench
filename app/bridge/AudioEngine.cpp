@@ -125,14 +125,26 @@ AudioEngine::AudioEngine(QObject* parent)
                 emit playbackFinished();  // 完成信号（QML 状态栏/后续）
             }
         }
-        // M5 播放时钟：播放中 positionSec 持续变化 → playbackChanged（20Hz 状态栏刷新）
+        // M5 播放时钟：播放中 positionSec 持续变化 → playbackChanged（20Hz 状态栏刷新）。
+        // 自然播完检测：reachedEnd → notifyEnded 复位状态机（否则状态卡 Playing →
+        // 「播完需按两下」）。先 loopTick（循环绕回优先，不发生自然结束），再查自然结束。
         if (m_playback.playing()) {
-            emit playbackChanged();
-            // M5.2 A-B 循环：播放头越过 B → 绕回 A（playbackChanged 后触发——UI 已刷新）
-            if (m_playback.loopTick()) emit playbackChanged();
+            if (m_playback.loopTick()) {
+                emit playbackChanged();
+            } else if (m_playback.reachedEnd()) {
+                m_playback.notifyEnded();
+                emit playbackChanged();
+                emit playbackFinished();  // 完成信号（QML 状态栏/后续）
+            } else {
+                emit playbackChanged();
+            }
         }
-        // M6.1 参考音频时钟：播放中 refPositionSec 持续变化（切音页播放头刷新）
-        if (m_refPlayback.playing()) emit refPlaybackChanged();
+        // M6.1 参考音频时钟：播放中 refPositionSec 持续变化（切音页播放头刷新）。
+        // 自然播完 → notifyEnded 复位（修复「参考音频播完需按两下」）。
+        if (m_refPlayback.playing()) {
+            if (m_refPlayback.reachedEnd()) m_refPlayback.notifyEnded();
+            emit refPlaybackChanged();
+        }
     });
     poll->start();
 }

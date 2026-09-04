@@ -60,7 +60,9 @@ public:
 
     /// 微调偏移（秒；正 = MIDI 相对音频延后；全局）。
     qreal offsetSec() const { return m_offsetSec; }
-    void setOffsetSec(qreal v);
+    /// ⚠️ Q_INVOKABLE：QML 经 `setOffsetSec()` 直接调用（SpinBox onValueModified）。
+    /// 若不加 Q_INVOKABLE，QML 调用会 TypeError——offset 调整静默失效（M6.1/M6.2 均受影响）。
+    Q_INVOKABLE void setOffsetSec(qreal v);
     /// 原始秒 → 应用 offset 后的秒（QML 显示/波形刻度用）。
     Q_INVOKABLE double adjustedSec(double rawSec) const { return rawSec + m_offsetSec; }
 

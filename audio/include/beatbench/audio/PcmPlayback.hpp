@@ -78,6 +78,14 @@ public:
     bool hasLoaded() const { return m_pcm != nullptr; }
     std::string lastError() const { return m_lastError; }
 
+    /// 自然播完检测（AudioEngine 轮询用）：播放中且时钟已到末端（>= 时长 - 10ms）。
+    /// 与 ended 事件不同——**不**把「seek/重播发出的 Stop」当自然结束（避免误复位）。
+    bool reachedEnd() const;
+    /// 自然播完复位：状态 → Stopped、位置停末尾。**不发 stopAll**（voice 已自然结束，
+    /// 不误停并行 voice）；下次 play() 从末尾夹逼回开头。AudioEngine 在 reachedEnd()
+    /// 为真时调用（修复「播完需按两下」：状态机卡在 Playing 未复位）。
+    void notifyEnded();
+
     /// 更新设备采样率（设置页重开流后调用；时钟换算用）。
     void setDeviceRate(double rate) {
         if (rate > 0.0) m_deviceRate = rate;

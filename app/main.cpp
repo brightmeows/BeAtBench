@@ -443,6 +443,16 @@ int main(int argc, char** argv) {
         if (QObject* root = engine.rootObjects().value(0))
             root->setProperty("debugSliceDetect", args.at(sdIdx + 1));
     }
+    // --slice-offset <ms>：调试设置 offset（复现网格/MIDI 刻度随 offset 平移；配 --page 1 --screenshot）
+    const int soIdx = args.indexOf(QStringLiteral("--slice-offset"));
+    if (soIdx >= 0 && soIdx + 1 < args.size()) {
+        bool ok = false;
+        const double ms = args.at(soIdx + 1).toDouble(&ok);
+        if (ok) {
+            if (QObject* root = engine.rootObjects().value(0))
+                root->setProperty("debugSliceOffset", ms);
+        }
+    }
 
     // --tab N：左 Dock 标签（0 元信息 1 采样 2 lint 3 BGA；配合 --screenshot 验收面板）
     const int tabIdx = args.indexOf(QStringLiteral("--tab"));

@@ -48,6 +48,27 @@ void SliceWaveformItem::setPlayheadSec(qreal v) {
     update();
 }
 
+void SliceWaveformItem::setGridVisible(bool v) {
+    if (m_gridVisible == v) return;
+    m_gridVisible = v;
+    emit gridVisibleChanged();
+    update();
+}
+
+void SliceWaveformItem::setGridBpm(qreal v) {
+    if (qFuzzyCompare(m_gridBpm, v)) return;
+    m_gridBpm = v;
+    emit gridBpmChanged();
+    update();
+}
+
+void SliceWaveformItem::setGridSubdivision(int v) {
+    if (m_gridSubdivision == v) return;
+    m_gridSubdivision = v;
+    emit gridSubdivisionChanged();
+    update();
+}
+
 SliceWorkspace* SliceWaveformItem::workspaceObj() const {
     return qobject_cast<SliceWorkspace*>(m_workspace);
 }
@@ -145,6 +166,9 @@ void SliceWaveformItem::paint(QPainter* p) {
     p->drawLine(QPointF(0, 0.5), QPointF(w, 0.5));
     p->drawLine(QPointF(0, h - 0.5), QPointF(w, h - 0.5));
 
+    // ---- 实时拍子网格参考线（M6.2：offset/BPM/细分的视觉反馈；等分） ----
+    drawGridLines(p, w, h, ws);
+
     // ---- MIDI note 刻度（startSec+offset → x；1px 竖线；低音/高音不区分） ----
     const double offset = ws->offsetSecD();
     QColor noteCol = th ? th->accent2() : QColor(QStringLiteral("#2dd8c8"));
@@ -192,6 +216,46 @@ void SliceWaveformItem::paint(QPainter* p) {
         }
     }
     Q_UNUSED(axisCol);
+}
+
+void SliceWaveformItem::drawGridLines(QPainter* p, qreal w, qreal h,
+                                      const SliceWorkspace* ws) const {
+    if (!m_gridVisible || !ws || !ws->hasAudio()) return;
+    const double dur = static_cast<double>(ws->audioDurationSec());
+    if (dur <= 0.0 || m_gridBpm <= 0.0) return;
+    const int sub = std::max(1, m_gridSubdivision);
+    const double cell = 60.0 / static_cast<double>(m_gridBpm) /
+                        static_cast<double>(sub);
+    if (!std::isfinite(cell) || cell <= 0.0) return;
+
+    const double offset = ws->offsetSecD();
+    const qreal pxPerSec = w / dur;
+    const ThemeManager* th = themeObj();
+    // 拍线（每拍，较强）与细分线（较弱）——均是 1px 细线，叠加在波形上不喧宾夺主
+    QColor beatCol = th ? th->primary() : QColor(QStringLiteral("#8b9cf8"));
+    QColor subCol = th ? th->border() : QColor(QStringLiteral("#2a2f3a"));
+    beatCol.setAlpha(120);
+    subCol.setAlpha(90);
+    const qreal top = 4.0;
+    const qreal bot = h - 4.0;
+
+    // 起始 cell 序号：offset 为负时跳过 t<0 的边界（避免 x=0 叠线；同 plan 的夹逼语义）
+    double firstK = 0.0;
+    if (offset < 0.0) firstK = std::ceil(-offset / cell);
+    constexpr int kMaxLines = 20000;
+    int drawn = 0;
+    for (int k = static_cast<int>(firstK); ; ++k, ++drawn) {
+        if (drawn > kMaxLines) break;
+        const double t = offset + static_cast<double>(k) * cell;
+        if (t >= dur) break;
+        const qreal x = static_cast<qreal>(t * pxPerSec);
+        if (x > w) break;
+        if (x >= 0.0) {
+            const bool beat = (k % sub) == 0;
+            p->setPen(QPen(beat ? beatCol : subCol, 1));
+            p->drawLine(QPointF(x, top), QPointF(x, bot));
+        }
+    }
 }
 
 }  // namespace beatbench::app

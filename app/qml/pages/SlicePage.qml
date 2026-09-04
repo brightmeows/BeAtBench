@@ -162,13 +162,16 @@ Item {
                 }
             }
 
-        // ---- 波形 + note 刻度 + 播放头 + 切片线 ----
+        // ---- 波形 + note 刻度 + 播放头 + 切片线 + 实时拍子网格参考 ----
         SliceWaveformItem {
             Layout.fillWidth: true
             Layout.preferredHeight: 220
             workspace: sliceWorkspace
             theme: Theme
             playheadSec: root.playheadSec
+            gridVisible: sliceSourceBox.currentIndex === 0
+            gridBpm: bpmBox.value
+            gridSubdivision: subBox.value
             onSeekRequested: {
                 audioEngine.refSeek(seconds)
                 root.playheadSec = audioEngine.refPositionSec

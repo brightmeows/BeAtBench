@@ -119,6 +119,18 @@ double PcmPlayback::currentSec() const {
     return m_positionSec;
 }
 
+bool PcmPlayback::reachedEnd() const {
+    if (m_state != State::Playing || m_durationSec <= 0.0) return false;
+    return currentSec() >= m_durationSec - 0.01;
+}
+
+void PcmPlayback::notifyEnded() {
+    // 自然播完：不复位 voice（已结束）、不 stopAll（不误停并行 voice）；
+    // 仅把状态机复位 + 位置停在末尾。下次 play() 由 play() 内「末尾附近 → 从头」夹逼。
+    if (m_state == State::Playing) m_positionSec = currentSec();
+    m_state = State::Stopped;
+}
+
 void PcmPlayback::setLoopGap(double a, double b) {
     m_loopA = a;
     m_loopB = b;

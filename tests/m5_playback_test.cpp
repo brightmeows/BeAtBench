@@ -132,6 +132,38 @@ TEST(PcmPlaybackTest, DeviceRateClock) {
     player.drainReclaimed();
 }
 
+TEST(PcmPlaybackTest, NaturalEndResetsToStopped) {
+    // 修复「播完需按两下」：PCM 播到头 → reachedEnd 真、notifyEnded 把状态机复位为
+    // Stopped（而非卡在 Playing）。再按播放 → 从末尾夹逼回开头（一次即可起播）。
+    SamplePlayer player;
+    PcmPlayback pb(&player, 44100.0);
+    pb.load(makePcm(44100.0, 44100 * 2), 44100.0);  // 2 秒
+    ASSERT_TRUE(pb.play(1.0f));
+    EXPECT_EQ(pb.state(), PcmPlayback::State::Playing);
+    // 渲染超过时长 → voice 播完、时钟夹在末端
+    renderFrames(player, 44100 * 2 + 44100 / 5);  // 2.2s
+    EXPECT_NEAR(pb.currentSec(), 2.0, 0.01);
+    EXPECT_TRUE(pb.reachedEnd());
+    // 播完前（还没到末端）reachedEnd 应为假——防中途误触发
+    PcmPlayback pb2(&player, 44100.0);
+    pb2.load(makePcm(44100.0, 44100 * 2), 44100.0);
+    ASSERT_TRUE(pb2.play(1.0f));
+    renderFrames(player, 44100);  // 1s（未到末端）
+    EXPECT_FALSE(pb2.reachedEnd());
+    pb2.stop();
+    // notifyEnded 复位
+    pb.notifyEnded();
+    EXPECT_EQ(pb.state(), PcmPlayback::State::Stopped);
+    EXPECT_NEAR(pb.currentSec(), 2.0, 0.01);  // 位置停在末尾
+    // 再按播放 → 一次成功，从末尾夹回开头（≈ +0.2s 渲染后可听到起点）
+    ASSERT_TRUE(pb.play(1.0f));
+    EXPECT_EQ(pb.state(), PcmPlayback::State::Playing);
+    renderFrames(player, 44100 / 5);  // 0.2s
+    EXPECT_NEAR(pb.currentSec(), 0.2, 0.05);
+    pb.stop();
+    player.drainReclaimed();
+}
+
 TEST(PcmPlaybackTest, LoopAtoB) {
     SamplePlayer player;
     PcmPlayback pb(&player, 44100.0);

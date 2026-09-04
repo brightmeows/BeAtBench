@@ -855,6 +855,9 @@ ApplicationWindow {
         sliceWorkspace.detectSlices(debugSliceDetect === "midi" ? "midi" : "grid",
                                     120.0, 4, sliceWorkspace.audioDurationSec)
     }
+    // M6.2 调试参数：--slice-offset <ms>（可复现 offset 实时效果：网格/MIDI 刻度随 offset 平移）
+    property real debugSliceOffset: -1
+    onDebugSliceOffsetChanged: if (debugSliceOffset >= 0) sliceWorkspace.setOffsetSec(debugSliceOffset / 1000.0)
     // --wait-render 截图等待标志（main.cpp 轮询；波形验收用）
     property bool debugRenderDone: false
     // 渲染完成次数（--wait-render 增量验收：等待全量 + 增量都完成）
