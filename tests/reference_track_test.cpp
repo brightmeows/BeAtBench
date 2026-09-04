@@ -109,4 +109,16 @@ TEST_F(ReferenceTrackTest, LoadFailureKeepsOld) {
     EXPECT_FALSE(ref.valid());
 }
 
+TEST_F(ReferenceTrackTest, SliceFadeAttenuatesEnds) {
+    // 1s stereo 恒定 0.5 振幅；fade 0.02s → 首/末 882 帧线性衰减，中段保持 0.5
+    const std::size_t frames = 44100;
+    std::vector<float> pcm(frames * 2, 0.5f);
+    beatbench::audio::ReferenceTrack::apply_slice_fade(pcm, 44100.0, 0.02);
+    const std::size_t fadeFrames = static_cast<std::size_t>(std::ceil(44100.0 * 0.02));
+    EXPECT_NEAR(pcm[0], 0.0f, 1e-3);                                  // 首帧 ≈ 0
+    EXPECT_NEAR(pcm[fadeFrames * 2], 0.5f, 1e-3);                    // 衰减后满幅
+    EXPECT_NEAR(pcm[(frames / 2) * 2], 0.5f, 1e-3);                  // 中段不变
+    EXPECT_NEAR(pcm[(frames - 1) * 2], 0.0f, 1e-2);                  // 末帧 ≈ 0
+}
+
 }  // namespace

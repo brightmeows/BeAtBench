@@ -86,4 +86,26 @@ std::vector<float> ReferenceTrack::window(double startSec, double endSec) const 
     return out;
 }
 
+void ReferenceTrack::apply_slice_fade(std::vector<float>& pcm, double sampleRate,
+                                      double fadeSec) {
+    if (pcm.empty() || sampleRate <= 0.0 || fadeSec <= 0.0) return;
+    const std::size_t frames = pcm.size() / 2;
+    if (frames < 2) return;
+    const std::size_t fadeFrames = static_cast<std::size_t>(
+        std::clamp(std::ceil(sampleRate * fadeSec), 1.0,
+                   static_cast<double>(frames / 2)));
+    for (std::size_t i = 0; i < frames; ++i) {
+        float g = 1.0f;
+        if (i < fadeFrames) {
+            g = static_cast<float>(i) / static_cast<float>(fadeFrames);
+        } else if (i >= frames - fadeFrames) {
+            g = static_cast<float>(frames - i) / static_cast<float>(fadeFrames);
+        }
+        if (g < 1.0f) {
+            pcm[i * 2] *= g;
+            pcm[i * 2 + 1] *= g;
+        }
+    }
+}
+
 }  // namespace beatbench::audio

@@ -49,6 +49,11 @@ public:
     /// M6.3 分片导出的基础原语（fade/重采样由导出层叠加）。
     std::vector<float> window(double startSec, double endSec) const;
 
+    /// 对交错 stereo PCM 应用首/末端线性 fade（fadeSec 秒；防爆音）。
+    /// 窗口短于 2×fadeSec 时两端不重叠地按比例衰减。纯函数（M6.3 分片导出用）。
+    static void apply_slice_fade(std::vector<float>& pcm, double sampleRate,
+                                 double fadeSec);
+
 private:
     bool finish_load(const DecodeResult& r, const std::string& displayPath);
 

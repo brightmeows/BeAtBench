@@ -11,6 +11,7 @@ add_library(beatbench_core STATIC
     src/timing/timing_engine.cpp
     src/midi/midi_parser.cpp
     src/slice/slice_plan.cpp
+    src/slice/slice_export.cpp
     src/json/json.cpp
     src/command/registry.cpp
     src/command/builtins.cpp
