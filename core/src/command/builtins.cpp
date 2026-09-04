@@ -17,6 +17,7 @@
 #include "beatbench/core/codec/Codec.hpp"
 #include "beatbench/core/codec/CodecRegistry.hpp"
 #include "beatbench/core/codec/BmsChannelMaps.hpp"
+#include "beatbench/core/command/Midi.hpp"
 #include "beatbench/core/edit/EditorSession.hpp"
 #include "beatbench/core/edit/Selection.hpp"
 #include "beatbench/core/edit/SessionRegistry.hpp"
@@ -2165,6 +2166,8 @@ void register_builtin_commands(Registry& registry) {
     registry.add(std::make_unique<InfoCommand>());
     registry.add(std::make_unique<CheckCommand>());
     registry.add(std::make_unique<ConvertCommand>());
+    // M6.1 MIDI（切音工作台导入；core 模块 + 命令对象，headless 可测）
+    register_midi_commands(registry);
     // M3 编辑命令（追加；会话命令，作用在 args.session_id 或活动会话）
     registry.add(std::make_unique<SessionLoadCommand>());
     registry.add(std::make_unique<SessionNewCommand>());  // 新建空谱面（2026-09 编辑态小节数）
