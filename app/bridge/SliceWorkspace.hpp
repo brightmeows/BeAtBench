@@ -20,6 +20,7 @@
 
 #include "beatbench/audio/ReferenceTrack.hpp"
 #include "beatbench/core/midi/MidiFile.hpp"
+#include "beatbench/core/slice/Slice.hpp"
 
 namespace beatbench::app {
 
@@ -37,6 +38,11 @@ class SliceWorkspace : public QObject {
     Q_PROPERTY(qreal offsetSec READ offsetSec WRITE setOffsetSec NOTIFY offsetChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
     Q_PROPERTY(QString statusText READ statusText NOTIFY statusChanged)
+    // ---- M6.2 切片 ----
+    Q_PROPERTY(QVariantList slices READ slices NOTIFY slicesChanged)
+    Q_PROPERTY(bool hasSlices READ hasSlices NOTIFY slicesChanged)
+    /// MIDI tempo（首个 tempo 事件 → BPM；无 MIDI/无 tempo → 120）。网格参数默认值。
+    Q_PROPERTY(qreal midiTempoBpm READ midiTempoBpm NOTIFY midiChanged)
 
 public:
     explicit SliceWorkspace(QObject* parent = nullptr);
@@ -58,6 +64,19 @@ public:
     /// 原始秒 → 应用 offset 后的秒（QML 显示/波形刻度用）。
     Q_INVOKABLE double adjustedSec(double rawSec) const { return rawSec + m_offsetSec; }
 
+    // ---- M6.2 切片 ----
+    /// 生成切片：source = "grid" | "midi"；offset 用当前 m_offsetSec（全局）。
+    /// bpm/subdivision 仅网格用；durationSec = 音频时长（夹逼/丢弃越界切片）。
+    Q_INVOKABLE bool detectSlices(const QString& source, qreal bpm, int subdivision,
+                                  qreal durationSec);
+    /// 清除切片（保留参考素材）。
+    Q_INVOKABLE void clearSlices();
+    /// 切片「放置」开关（M6.3 铺放预选；越界忽略）。
+    Q_INVOKABLE void setSliceEnabled(int index, bool v);
+    QVariantList slices() const;
+    bool hasSlices() const { return !m_slices.empty(); }
+    qreal midiTempoBpm() const;
+
     // ---- C++ 消费（SliceWaveformItem 等） ----
     /// 波形金字塔指针（无音频 → nullptr；音频层 ReferenceTrack 持有）。
     const beatbench::audio::WaveformPyramid* waveformPyramid() const {
@@ -65,6 +84,8 @@ public:
     }
     const std::vector<midi::MidiNote>& notes() const { return m_midi.notes; }
     double offsetSecD() const { return m_offsetSec; }
+    /// M6.2 切片表（C++ 消费：SliceWaveformItem 画线等）。
+    const std::vector<beatbench::slice::Slice>& slicesC() const { return m_slices; }
     /// 参考音轨（C++ 消费：M6.3 分片导出 window() 等；无音频 → invalid）。
     const beatbench::audio::ReferenceTrack& track() const { return m_track; }
 
@@ -88,6 +109,8 @@ signals:
     void offsetChanged();
     void busyChanged();
     void statusChanged();
+    /// M6.2 切片表变化（生成/清除/放置开关）。
+    void slicesChanged();
 
 private:
     void setStatus(const QString& text);
@@ -101,6 +124,9 @@ private:
     QString m_midiPath;
     beatbench::audio::ReferenceTrack m_track;  ///< 参考音轨（PCM + 金字塔 + 统计；音频层）
     midi::MidiFile m_midi;  ///< core 解析结果（notes() 供绘制；midiNotes() 供 QML）
+    // ---- M6.2 切片 ----
+    std::vector<beatbench::slice::Slice> m_slices;  ///< 切片表（core 计算结果）
+    std::vector<bool> m_sliceEnabled;               ///< 放置开关（与 m_slices 一一对应）
     qreal m_offsetSec = 0.0;
     bool m_busy = false;
     QString m_statusText;

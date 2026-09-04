@@ -52,7 +52,8 @@ Item {
     /// （随播放推进，即使关闭跟随——"跟随=视口是否跟随红线"，2026-09 用户）。
     readonly property real playheadSec: view.playheadSec
     /// M5 收尾 2026-09：播放头所在小节号（播放中状态栏"小节"用；非播放 → 空，回落 cursorPosText）。
-    readonly property string playheadPosText: view.playheadPosText
+    /// ⚠️ playheadPosText 是 Q_INVOKABLE 方法（非属性）；绑定依赖 playheadSec → 播放推进时重求值。
+    readonly property string playheadPosText: (view && view.playheadSec >= 0) ? view.playheadPosText() : ""
     /// M4.3c：波形条首次渲染后置 true（此后恒真）——内容变化隐藏波形条（stale）时
     /// **保留**右侧预留宽度，视口宽度不变 → 列不重排（用户 2026-09 移动 note 会跳位）。
     property bool waveformShown: false

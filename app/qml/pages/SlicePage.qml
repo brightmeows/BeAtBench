@@ -103,7 +103,66 @@ Item {
             }
         }
 
-        // ---- 波形 + note 刻度 + 播放头 ----
+            // ---- M6.2 切片控制：位置源（网格/MIDI）+ BPM/细分 + 生成/清除 ----
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 6
+
+                Label { text: qsTr("切片源"); color: Theme.textMuted }
+                BbComboBox {
+                    id: sliceSourceBox
+                    model: [qsTr("网格"), qsTr("MIDI")]
+                    implicitWidth: 84
+                }
+                Label {
+                    text: qsTr("BPM")
+                    color: Theme.textMuted
+                    visible: sliceSourceBox.currentIndex === 0
+                }
+                SpinBox {
+                    id: bpmBox
+                    from: 40
+                    to: 300
+                    value: Math.round(sliceWorkspace.midiTempoBpm)
+                    editable: true
+                    visible: sliceSourceBox.currentIndex === 0
+                }
+                Label {
+                    text: qsTr("细分/拍")
+                    color: Theme.textMuted
+                    visible: sliceSourceBox.currentIndex === 0
+                }
+                SpinBox {
+                    id: subBox
+                    from: 1
+                    to: 16
+                    value: 4
+                    editable: true
+                    visible: sliceSourceBox.currentIndex === 0
+                }
+                BbToolButton {
+                    text: qsTr("生成切片")
+                    onClicked: {
+                        sliceWorkspace.detectSlices(
+                            sliceSourceBox.currentIndex === 0 ? "grid" : "midi",
+                            bpmBox.value, subBox.value, sliceWorkspace.audioDurationSec)
+                    }
+                }
+                BbToolButton {
+                    text: qsTr("清除切片")
+                    enabled: sliceWorkspace.hasSlices
+                    onClicked: sliceWorkspace.clearSlices()
+                }
+                Item { Layout.fillWidth: true }
+                Label {
+                    text: sliceWorkspace.hasSlices
+                          ? qsTr("切片 %1 个").arg(sliceWorkspace.slices.length)
+                          : qsTr("（未生成切片——网格需 BPM/细分，MIDI 需已导入）")
+                    color: Theme.textMuted
+                }
+            }
+
+        // ---- 波形 + note 刻度 + 播放头 + 切片线 ----
         SliceWaveformItem {
             Layout.fillWidth: true
             Layout.preferredHeight: 220
@@ -116,9 +175,11 @@ Item {
             }
         }
 
-        // ---- MIDI note 表 ----
+        // ---- 列表：有切片显示切片表（id/时长/位置/放置开关），否则 MIDI note 表 ----
         Label {
-            text: qsTr("MIDI 音符（%1 个）").arg(sliceWorkspace.midiNotes.length)
+            text: sliceWorkspace.hasSlices
+                  ? qsTr("切片表（%1 个）").arg(sliceWorkspace.slices.length)
+                  : qsTr("MIDI 音符（%1 个）").arg(sliceWorkspace.midiNotes.length)
             color: Theme.textMuted
         }
         Rectangle {
@@ -129,11 +190,47 @@ Item {
             border.color: Theme.border
             radius: Theme.radiusSm
             clip: true
+            // 切片表行（model = QVariantList of maps；无切片 = 空模型，不创建 delegate）
+            ListView {
+                anchors.fill: parent
+                anchors.margins: 2
+                model: sliceWorkspace.slices
+                clip: true
+                visible: sliceWorkspace.hasSlices
+                delegate: RowLayout {
+                    required property var modelData
+                    width: ListView.view.width
+                    spacing: 8
+                    CheckBox {
+                        checked: modelData.enabled
+                        onToggled: sliceWorkspace.setSliceEnabled(modelData.index, checked)
+                        implicitHeight: 20
+                    }
+                    Label { text: modelData.index; width: 36; color: Theme.textMuted }
+                    Label {
+                        text: modelData.startSec.toFixed(3)
+                        width: 76; color: Theme.accent2; font.family: Theme.fontMono
+                    }
+                    Label {
+                        text: modelData.durationSec.toFixed(3) + "s"
+                        width: 72; color: Theme.textMuted; font.family: Theme.fontMono
+                    }
+                    Label {
+                        text: modelData.kind === "midi"
+                              ? ("MIDI " + modelData.note)
+                              : qsTr("网格")
+                        width: 90; color: Theme.text
+                    }
+                    Item { Layout.fillWidth: true }
+                }
+            }
+            // MIDI note 行（无切片时）
             ListView {
                 anchors.fill: parent
                 anchors.margins: 2
                 model: sliceWorkspace.midiNotes
                 clip: true
+                visible: !sliceWorkspace.hasSlices
                 delegate: RowLayout {
                     required property var modelData
                     width: ListView.view.width

@@ -140,9 +140,12 @@ void SliceWorkspace::clearAll() {
     m_midiPath.clear();
     m_midi = midi::MidiFile();
     m_offsetSec = 0.0;
+    m_slices.clear();
+    m_sliceEnabled.clear();
     emit audioChanged();
     emit midiChanged();
     emit offsetChanged();
+    emit slicesChanged();
     setStatus(QStringLiteral("已清除参考素材"));
 }
 
@@ -179,6 +182,87 @@ QVariantList SliceWorkspace::midiNotes() const {
         out.append(e);
     }
     return out;
+}
+
+// ---- M6.2 切片 ----
+
+bool SliceWorkspace::detectSlices(const QString& source, qreal bpm, int subdivision,
+                                  qreal durationSec) {
+    beatbench::slice::SlicePlan plan;
+    if (source == QLatin1String("grid")) {
+        beatbench::slice::GridConfig cfg;
+        cfg.bpm = bpm;
+        cfg.subdivision = subdivision;
+        cfg.offsetSec = m_offsetSec;
+        cfg.durationSec = durationSec;
+        plan = beatbench::slice::plan_from_grid(cfg);
+    } else if (source == QLatin1String("midi")) {
+        if (!hasMidi()) {
+            setStatus(QStringLiteral("尚无 MIDI（请先导入 notes.mid）"));
+            return false;
+        }
+        plan = beatbench::slice::plan_from_midi(m_midi, m_offsetSec, durationSec);
+    } else {
+        setStatus(QStringLiteral("未知切片源: %1").arg(source));
+        return false;
+    }
+
+    m_slices = std::move(plan.slices);
+    m_sliceEnabled.assign(m_slices.size(), true);
+    emit slicesChanged();
+
+    if (!plan.warnings.empty()) {
+        QStringList ws;
+        for (const auto& w : plan.warnings) ws << QString::fromStdString(w);
+        setStatus(QStringLiteral("切片生成（%1 个）— %2")
+                      .arg(m_slices.size())
+                      .arg(ws.join(QStringLiteral("；"))));
+    } else {
+        setStatus(QStringLiteral("切片生成：%1 个（%2 源）")
+                      .arg(m_slices.size())
+                      .arg(source));
+    }
+    return true;
+}
+
+void SliceWorkspace::clearSlices() {
+    if (m_slices.empty()) return;
+    m_slices.clear();
+    m_sliceEnabled.clear();
+    emit slicesChanged();
+    setStatus(QStringLiteral("已清除切片"));
+}
+
+void SliceWorkspace::setSliceEnabled(int index, bool v) {
+    if (index < 0 || index >= static_cast<int>(m_sliceEnabled.size())) return;
+    if (m_sliceEnabled[static_cast<std::size_t>(index)] == v) return;
+    m_sliceEnabled[static_cast<std::size_t>(index)] = v;
+    emit slicesChanged();
+}
+
+QVariantList SliceWorkspace::slices() const {
+    QVariantList out;
+    for (std::size_t i = 0; i < m_slices.size(); ++i) {
+        const auto& s = m_slices[i];
+        QVariantMap e;
+        e.insert(QStringLiteral("index"), s.index);
+        e.insert(QStringLiteral("startSec"), s.startSec);
+        e.insert(QStringLiteral("endSec"), s.endSec);
+        e.insert(QStringLiteral("durationSec"), s.endSec - s.startSec);
+        e.insert(QStringLiteral("kind"), QString::fromStdString(s.kind));
+        e.insert(QStringLiteral("note"), s.note);
+        e.insert(QStringLiteral("enabled"),
+                 i < m_sliceEnabled.size() && m_sliceEnabled[i]);
+        out.append(e);
+    }
+    return out;
+}
+
+qreal SliceWorkspace::midiTempoBpm() const {
+    if (m_midi.tempos.empty()) return 120.0;
+    const auto& t = m_midi.tempos.front();  // 已按 tick 排序；首个（通常 tick0）
+    if (t.usPerQuarter <= 0) return 120.0;
+    return 60.0 * 1e6 / static_cast<double>(t.usPerQuarter);
 }
 
 }  // namespace beatbench::app

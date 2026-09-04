@@ -24,10 +24,11 @@ void SliceWaveformItem::setWorkspace(QObject* v) {
     if (auto* old = workspaceObj()) disconnect(old, nullptr, this, nullptr);
     m_workspace = v;
     if (auto* ws = workspaceObj()) {
-        // 数据变更（解码完成/MIDI 导入/offset 变化）→ 重绘（信号均在 UI 线程发）
+        // 数据变更（解码完成/MIDI 导入/offset/切片变化）→ 重绘（信号均在 UI 线程发）
         connect(ws, &SliceWorkspace::audioChanged, this, [this] { update(); });
         connect(ws, &SliceWorkspace::midiChanged, this, [this] { update(); });
         connect(ws, &SliceWorkspace::offsetChanged, this, [this] { update(); });
+        connect(ws, &SliceWorkspace::slicesChanged, this, [this] { update(); });
     }
     emit workspaceChanged();
     update();
@@ -159,6 +160,26 @@ void SliceWaveformItem::paint(QPainter* p) {
             QColor tail = noteCol;
             tail.setAlpha(90);
             p->fillRect(QRectF(std::clamp(x1, 0.0, w), 4.0, 1.5, h - 8.0), tail);
+        }
+    }
+
+    // ---- 切片边界线（M6.2：grid = 主色；midi = 强调；淡色 = 切片末端） ----
+    // 切片 startSec 已含 offset（core plan 应用过），此处直接换算。
+    if (ws->hasSlices()) {
+        QColor gridLine = th ? th->primary() : QColor(QStringLiteral("#8b9cf8"));
+        gridLine.setAlpha(210);
+        QColor midiLine = th ? th->accent2() : QColor(QStringLiteral("#2dd8c8"));
+        midiLine.setAlpha(230);
+        for (const auto& s : ws->slicesC()) {
+            const bool isMidi = s.kind == "midi";
+            QColor col = isMidi ? midiLine : gridLine;
+            const qreal x0 = static_cast<qreal>(s.startSec * pxPerSec);
+            const qreal x1 = static_cast<qreal>(s.endSec * pxPerSec);
+            if (x1 < 0.0 || x0 > w) continue;
+            p->fillRect(QRectF(std::clamp(x0, 0.0, w), 1.0, 1.0, h - 2.0), col);
+            QColor tail = col;
+            tail.setAlpha(80);
+            p->fillRect(QRectF(std::clamp(x1, 0.0, w), 1.0, 1.0, h - 2.0), tail);
         }
     }
 

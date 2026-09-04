@@ -437,6 +437,12 @@ int main(int argc, char** argv) {
         if (QObject* root = engine.rootObjects().value(0))
             root->setProperty("debugSliceMidi", args.at(smIdx + 1));
     }
+    // --slice-detect grid|midi：解码完成后自动生成切片（M6.2 验收；配 --slice-audio --screenshot）
+    const int sdIdx = args.indexOf(QStringLiteral("--slice-detect"));
+    if (sdIdx >= 0 && sdIdx + 1 < args.size()) {
+        if (QObject* root = engine.rootObjects().value(0))
+            root->setProperty("debugSliceDetect", args.at(sdIdx + 1));
+    }
 
     // --tab N：左 Dock 标签（0 元信息 1 采样 2 lint 3 BGA；配合 --screenshot 验收面板）
     const int tabIdx = args.indexOf(QStringLiteral("--tab"));

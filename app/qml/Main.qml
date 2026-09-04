@@ -843,6 +843,18 @@ ApplicationWindow {
     property string debugSliceMidi: ""
     onDebugSliceAudioChanged: if (debugSliceAudio !== "") sliceWorkspace.loadAudioFile(debugSliceAudio)
     onDebugSliceMidiChanged: if (debugSliceMidi !== "") sliceWorkspace.loadMidiFile(debugSliceMidi)
+    // M6.2 调试参数：--slice-detect grid|midi（解码完成后自动生成切片；配 --page 1 --screenshot）
+    property string debugSliceDetect: ""
+    onDebugSliceDetectChanged: if (debugSliceDetect !== "") doDebugSliceDetect()
+    Timer { id: sliceDetectRetry; interval: 300; repeat: false; onTriggered: doDebugSliceDetect() }
+    function doDebugSliceDetect() {
+        if (!sliceWorkspace.hasAudio) {
+            sliceDetectRetry.start()
+            return
+        }
+        sliceWorkspace.detectSlices(debugSliceDetect === "midi" ? "midi" : "grid",
+                                    120.0, 4, sliceWorkspace.audioDurationSec)
+    }
     // --wait-render 截图等待标志（main.cpp 轮询；波形验收用）
     property bool debugRenderDone: false
     // 渲染完成次数（--wait-render 增量验收：等待全量 + 增量都完成）

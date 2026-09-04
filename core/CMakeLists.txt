@@ -10,10 +10,12 @@ add_library(beatbench_core STATIC
     src/bms/chart_check.cpp
     src/timing/timing_engine.cpp
     src/midi/midi_parser.cpp
+    src/slice/slice_plan.cpp
     src/json/json.cpp
     src/command/registry.cpp
     src/command/builtins.cpp
     src/command/midi_commands.cpp
+    src/command/slice_commands.cpp
     src/codec/codec_registry.cpp
     src/codec/bms_adapter.cpp
     src/codec/bms_channel_maps.cpp
