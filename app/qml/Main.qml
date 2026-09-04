@@ -846,18 +846,35 @@ ApplicationWindow {
     // M6.2 调试参数：--slice-detect grid|midi（解码完成后自动生成切片；配 --page 1 --screenshot）
     property string debugSliceDetect: ""
     onDebugSliceDetectChanged: if (debugSliceDetect !== "") doDebugSliceDetect()
-    Timer { id: sliceDetectRetry; interval: 300; repeat: false; onTriggered: doDebugSliceDetect() }
+    // 解码为异步（QThreadPool），音频就绪时间不定 → repeat 直到 hasAudio（不再只试一次）
+    Timer { id: sliceDetectRetry; interval: 300; repeat: true; onTriggered: doDebugSliceDetect() }
     function doDebugSliceDetect() {
         if (!sliceWorkspace.hasAudio) {
             sliceDetectRetry.start()
             return
         }
+        sliceDetectRetry.stop()
         sliceWorkspace.detectSlices(debugSliceDetect === "midi" ? "midi" : "grid",
                                     120.0, 4, sliceWorkspace.audioDurationSec)
     }
     // M6.2 调试参数：--slice-offset <ms>（可复现 offset 实时效果：网格/MIDI 刻度随 offset 平移）
     property real debugSliceOffset: -1
     onDebugSliceOffsetChanged: if (debugSliceOffset >= 0) sliceWorkspace.setOffsetSec(debugSliceOffset / 1000.0)
+    // M6.3 调试参数：--slice-export <起始id>（切片就绪后自动导出分片 + 输出可复制 raw；配 --slice-detect）
+    property int debugSliceExport: -1
+    onDebugSliceExportChanged: if (debugSliceExport >= 0) doDebugSliceExport()
+    Timer { id: sliceExportRetry; interval: 300; repeat: true; onTriggered: doDebugSliceExport() }
+    function doDebugSliceExport() {
+        if (!sliceWorkspace.hasAudio || !sliceWorkspace.hasSlices) { sliceExportRetry.start(); return }
+        var dir = ""
+        var base = sliceWorkspace.audioPath
+        var i = Math.max(base.lastIndexOf("/"), base.lastIndexOf("\\"))
+        if (i >= 0) dir = base.substring(0, i)
+        var r = sliceWorkspace.exportSlices(120.0, 4, 4, debugSliceExport, dir, 1.0)
+        console.log("debug slice export: ok=" + r.ok + " count=" + r.count +
+                    (r.error ? " err=" + r.error : "") + "\n" + r.raw)
+        sliceExportRetry.stop()
+    }
     // --wait-render 截图等待标志（main.cpp 轮询；波形验收用）
     property bool debugRenderDone: false
     // 渲染完成次数（--wait-render 增量验收：等待全量 + 增量都完成）

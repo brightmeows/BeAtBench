@@ -14,6 +14,7 @@
 #include <QObject>
 #include <QString>
 #include <QVariantList>
+#include <QVariantMap>
 
 #include <memory>
 #include <vector>
@@ -25,6 +26,7 @@
 namespace beatbench::app {
 
 class AudioEngine;
+class ChartSession;
 
 class SliceWorkspace : public QObject {
     Q_OBJECT
@@ -49,6 +51,23 @@ public:
 
     /// 播放/seek 委托目标（main.cpp 接线；不拥有）。
     void setAudioEngine(AudioEngine* engine);
+    /// 当前谱面会话（main.cpp 接线；用于 #WAV 占用检测 + 输出目录；不拥有；可空）。
+    void setChartSession(ChartSession* session);
+
+    // ---- M6.3 导出（分片 → .wav + 可复制 BMS raw） ----
+    /// 当前谱面已占用的 #WAV id（数值；无谱面 → 空）。供起始 id 默认值/占用视图。
+    Q_INVOKABLE QVariantList occupiedWavIds() const;
+    /// 下一个空闲 #WAV id（从 1 起跳过 occupied；无谱面 → 1）。
+    Q_INVOKABLE int nextFreeWavId() const;
+    /// 导出：对每个「放置开关=开」的切片 → window()+fade → 写 <outDir>/<name>.wav，
+    /// 分配 #WAV id（从 startId 起，跳过 occupied），并生成可复制 BMS raw。
+    /// bpm/beatsPerMeasure/subdivision 用于拍位换算；offset 用当前 m_offsetSec。
+    /// 返回 {ok, raw, count, error}（raw = #WAVxx 定义 + ch01 铺放行）。
+    Q_INVOKABLE QVariantMap exportSlices(qreal bpm, int subdivision,
+                                         int beatsPerMeasure, int startId,
+                                         const QString& outDir, qreal fadeMs);
+    /// 复制文本到系统剪贴板（QML「复制 raw」按钮用；Qt 6 QML 无内置剪贴板 API）。
+    Q_INVOKABLE void copyToClipboard(const QString& text);
 
     /// 导入参考音频（异步解码；完成 → 波形金字塔 + 交给 AudioEngine 预览）。
     /// 返回 false = 立即失败（无文件/格式不支持）；解码失败异步报 statusText。
@@ -122,6 +141,7 @@ private:
                       const QString& path);
 
     AudioEngine* m_engine = nullptr;
+    ChartSession* m_chartSession = nullptr;  ///< 当前谱面（#WAV 占用/输出目录；不拥有）
     QString m_audioPath;
     QString m_midiPath;
     beatbench::audio::ReferenceTrack m_track;  ///< 参考音轨（PCM + 金字塔 + 统计；音频层）

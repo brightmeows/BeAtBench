@@ -6,17 +6,35 @@
 // - offset 仅数据（画 note 刻度/列表显示时 +offsetSec）；切片边界推导（M6.2）再消费。
 #include "bridge/SliceWorkspace.hpp"
 
+#include <QClipboard>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QMetaObject>
 #include <QThreadPool>
 #include <QVariantMap>
 
+#include <set>
+
 #include "bridge/AudioEngine.hpp"
+#include "bridge/ChartSession.hpp"
+#include "beatbench/audio/ChartRenderer.hpp"
+#include "beatbench/core/slice/SliceExport.hpp"
 
 namespace beatbench::app {
 
 namespace {
+
+/// 当前谱面已占用的 #WAV id（数值；无 chart → 空）。
+std::vector<std::uint32_t> occupied_wav_ids(const ChartSession* session) {
+    std::vector<std::uint32_t> out;
+    if (!session || !session->chart()) return out;
+    for (const auto& [key, def] : session->chart()->samples) {
+        if (key.first == SampleKind::Wav) out.push_back(key.second);
+    }
+    return out;
+}
 
 QVariantMap pyramid_info(const beatbench::audio::WaveformPyramid* p) {
     QVariantMap m;
@@ -38,6 +56,88 @@ QVariantMap pyramid_info(const beatbench::audio::WaveformPyramid* p) {
 SliceWorkspace::SliceWorkspace(QObject* parent) : QObject(parent) {}
 
 void SliceWorkspace::setAudioEngine(AudioEngine* engine) { m_engine = engine; }
+
+void SliceWorkspace::setChartSession(ChartSession* session) { m_chartSession = session; }
+
+QVariantList SliceWorkspace::occupiedWavIds() const {
+    QVariantList out;
+    for (const std::uint32_t id : occupied_wav_ids(m_chartSession)) out.append(id);
+    return out;
+}
+
+int SliceWorkspace::nextFreeWavId() const {
+    std::set<std::uint32_t> taken(occupied_wav_ids(m_chartSession).begin(),
+                                  occupied_wav_ids(m_chartSession).end());
+    std::uint32_t cand = 1;
+    while (taken.count(cand)) ++cand;
+    return static_cast<int>(cand);
+}
+
+QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
+                                         int beatsPerMeasure, int startId,
+                                         const QString& outDir, qreal fadeMs) {
+    QVariantMap res;
+    res.insert(QStringLiteral("ok"), false);
+    if (m_slices.empty()) {
+        res.insert(QStringLiteral("error"), QStringLiteral("无切片可导出"));
+        return res;
+    }
+    if (!m_track.valid()) {
+        res.insert(QStringLiteral("error"), QStringLiteral("无参考音频（无法分片导出）"));
+        return res;
+    }
+    if (outDir.isEmpty()) {
+        res.insert(QStringLiteral("error"), QStringLiteral("输出目录为空"));
+        return res;
+    }
+
+    const auto items = slice::build_export_layout(
+        m_slices, m_sliceEnabled, occupied_wav_ids(m_chartSession),
+        static_cast<std::uint32_t>(startId), "slices/slice", bpm, beatsPerMeasure,
+        subdivision, m_offsetSec);
+
+    // 输出：<outDir>/slices/slice_NNN.wav（文件名含子目录，raw 引用相对 outDir 的路径）
+    QDir().mkpath(QDir(outDir).filePath(QStringLiteral("slices")));
+    const double sr = m_track.sampleRate();
+    const double fade = fadeMs / 1000.0;
+    int written = 0;
+    QStringList errors;
+    for (const auto& it : items) {
+        if (!it.enabled || it.wavId == 0) continue;
+        if (it.sliceIndex < 0 || it.sliceIndex >= static_cast<int>(m_slices.size()))
+            continue;
+        const auto& s = m_slices[static_cast<std::size_t>(it.sliceIndex)];
+        const QString outPath = QDir(outDir).filePath(QString::fromStdString(it.fileName));
+        auto pcm = m_track.window(s.startSec, s.endSec);
+        if (pcm.empty()) {
+            errors << outPath + QStringLiteral(": 空窗口");
+            continue;
+        }
+        beatbench::audio::ReferenceTrack::apply_slice_fade(pcm, sr, fade);
+        beatbench::audio::RenderedAudio ra;
+        ra.sampleRate = sr;
+        ra.interleavedStereo = std::move(pcm);
+        std::string msg;
+        const bool ok = beatbench::audio::write_wav_file_w(outPath.toStdWString(), ra, &msg);
+        if (!ok) {
+            errors << outPath + QStringLiteral(": ") + QString::fromStdString(msg);
+            continue;
+        }
+        ++written;
+    }
+
+    const std::string rawStr = slice::build_placement_raw(items, bpm, beatsPerMeasure);
+    res.insert(QStringLiteral("ok"), errors.isEmpty());
+    res.insert(QStringLiteral("count"), written);
+    res.insert(QStringLiteral("raw"), QString::fromStdString(rawStr));
+    if (!errors.isEmpty())
+        res.insert(QStringLiteral("error"), errors.join(QStringLiteral("; ")));
+    return res;
+}
+
+void SliceWorkspace::copyToClipboard(const QString& text) {
+    QGuiApplication::clipboard()->setText(text);
+}
 
 void SliceWorkspace::setStatus(const QString& text) {
     m_statusText = text;

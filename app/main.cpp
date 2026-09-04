@@ -222,6 +222,7 @@ int main(int argc, char** argv) {
     // 切音工作台数据桥（M6.1）：参考音频 + MIDI 导入/持有；QML 经 `sliceWorkspace` 访问
     beatbench::app::SliceWorkspace sliceWorkspace;
     sliceWorkspace.setAudioEngine(&audioEngine);
+    sliceWorkspace.setChartSession(&chartSession);  // M6.3：#WAV 占用检测 + 输出目录
     // 全局修饰键监控（Ctrl 按住态；QML Keys 收不到独立修饰键，Alt 又被菜单栏拦截）
     beatbench::app::KeyMonitor keyMonitor;
     app.installEventFilter(&keyMonitor);
@@ -451,6 +452,16 @@ int main(int argc, char** argv) {
         if (ok) {
             if (QObject* root = engine.rootObjects().value(0))
                 root->setProperty("debugSliceOffset", ms);
+        }
+    }
+    // --slice-export <起始id>：切片就绪后自动导出分片 + 生成可复制 raw（M6.3 验收；配 --slice-detect）
+    const int seIdx = args.indexOf(QStringLiteral("--slice-export"));
+    if (seIdx >= 0 && seIdx + 1 < args.size()) {
+        bool ok = false;
+        const int sid = args.at(seIdx + 1).toInt(&ok);
+        if (ok) {
+            if (QObject* root = engine.rootObjects().value(0))
+                root->setProperty("debugSliceExport", sid);
         }
     }
 

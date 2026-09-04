@@ -14,6 +14,24 @@ Item {
 
     /// 当前播放头（秒；<0 = 无）。播放中由下方 Timer 刷新（audioEngine 20Hz 信号在此聚合）。
     property real playheadSec: -1
+    /// M6.3 导出结果（exportSlices 返回 map）+ 可复制 raw。
+    property var exportResult: null
+    property string rawText: ""
+
+    function defaultOutDir() {
+        var cPath = (typeof chartSession !== "undefined" && chartSession.path) ? chartSession.path : ""
+        var base = cPath.length ? cPath : sliceWorkspace.audioPath
+        var i = Math.max(base.lastIndexOf("/"), base.lastIndexOf("\\"))
+        return i >= 0 ? base.substring(0, i) : ""
+    }
+    function doExport() {
+        var dir = defaultOutDir()
+        var r = sliceWorkspace.exportSlices(bpmBox.value, subBox.value, 4,
+                                            exportIdBox.value, dir, 1.0)
+        exportResult = r
+        rawText = (typeof r.raw === "string") ? r.raw : ""
+        if (r.ok) exportIdBox.value = sliceWorkspace.nextFreeWavId()
+    }
 
     Timer {
         interval: 100
@@ -159,6 +177,57 @@ Item {
                           ? qsTr("切片 %1 个").arg(sliceWorkspace.slices.length)
                           : qsTr("（未生成切片——网格需 BPM/细分，MIDI 需已导入）")
                     color: Theme.textMuted
+                }
+            }
+
+            // ---- M6.3 导出：起始 #WAV id + 导出分片 + 复制 raw ----
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 6
+                Label { text: qsTr("导出起始"); color: Theme.textMuted }
+                SpinBox {
+                    id: exportIdBox
+                    from: 1
+                    to: 1295
+                    value: sliceWorkspace.nextFreeWavId()
+                    editable: true
+                }
+                BbToolButton {
+                    text: qsTr("导出分片")
+                    enabled: sliceWorkspace.hasSlices && sliceWorkspace.hasAudio
+                    onClicked: root.doExport()
+                }
+                BbToolButton {
+                    text: qsTr("复制 raw")
+                    enabled: root.rawText.length > 0
+                    onClicked: sliceWorkspace.copyToClipboard(root.rawText)
+                }
+                Item { Layout.fillWidth: true }
+                Label {
+                    text: root.exportResult && root.exportResult.ok
+                          ? qsTr("已导出 %1 片").arg(root.exportResult.count)
+                          : (root.exportResult
+                             ? (qsTr("导出失败：") + root.exportResult.error)
+                             : (sliceWorkspace.hasSlices ? "" : qsTr("（先生成切片）")))
+                    color: (root.exportResult && root.exportResult.ok) ? Theme.success : Theme.warning
+                    elide: Text.ElideRight
+                    Layout.maximumWidth: 420
+                }
+            }
+            // 可复制 BMS raw（#WAV 定义 + ch01 铺放行；粘贴到编辑区）
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.preferredHeight: root.rawText.length > 0 ? 110 : 0
+                visible: root.rawText.length > 0
+                clip: true
+                TextArea {
+                    text: root.rawText
+                    readOnly: true
+                    wrapMode: TextEdit.NoWrap
+                    font.family: Theme.fontMono
+                    font.pixelSize: Theme.fsTiny
+                    color: Theme.text
+                    background: Rectangle { color: Theme.surface; border.color: Theme.border }
                 }
             }
 
