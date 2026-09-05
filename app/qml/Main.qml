@@ -68,8 +68,27 @@ ApplicationWindow {
         if (m === "bms14") return "BMS14"
         return m.toUpperCase()
     }
-    // 轨道列头显示实际 BMS 通道 id（debug 用；Ctrl 临时切换在 ChartView 内处理）
+    // 轨道列头显示实际 BMS 通道 id（debug 用；Ctrl 临时切换经下方 Connections 同路径翻转）
     property bool showChannelIds: false
+    /// Ctrl 临时勾选状态机（同 SlicePage MIDI 线）：按下 → channelIdCheck.toggle()
+    /// （与用户点击同路径：toggled → uiActions.invoke → showChannelIds）；松开 → 仍处
+    /// 翻转态则 toggle() 还原；按住期间用户点过 = 以其为准。
+    property bool _channelIdCtrlActive: false
+    property bool _channelIdCtrlSave: false
+    Connections {
+        target: keyMonitor
+        function onCtrlHeldChanged() {
+            if (keyMonitor.ctrlHeld && !window._channelIdCtrlActive && channelIdCheck.enabled) {
+                window._channelIdCtrlActive = true
+                window._channelIdCtrlSave = window.showChannelIds
+                channelIdCheck.toggle()
+            } else if (!keyMonitor.ctrlHeld && window._channelIdCtrlActive) {
+                window._channelIdCtrlActive = false
+                if (window.showChannelIds === !window._channelIdCtrlSave)
+                    channelIdCheck.toggle()
+            }
+        }
+    }
     // note 上显示所用采样：0 隐藏 / 1 id / 2 文件名
     property int noteSampleMode: 0
     // 更多轨道（BGA 图层通道列，iBMSC 式；游玩轨与背景轨之间）

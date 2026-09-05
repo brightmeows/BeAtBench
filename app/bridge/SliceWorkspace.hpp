@@ -64,8 +64,9 @@ public:
     /// prefix = 落盘前缀（可含 `/` 或 `\` 作子目录，如 "slices/slice" 或 "slice"）；
     /// 自动识别正反斜杠。bpm/beatsPerMeasure/subdivision 用于拍位换算；offset 用当前 m_offsetSec。
     /// startMeasure = ch01 铺放起始小节（1-based；第 N 小节 = 文件 `#(N-1)01:`）。
-    /// 返回 {ok, raw, count, error, startMeasure, endMeasure, placementText}
-    /// （raw = #WAVxx 定义 + ch01 铺放行）。
+    /// 返回 {ok, raw, count, error, startMeasure, endMeasure, placementText, nextStartId}
+    /// （nextStartId = 连续导出下一起始 id：本次分配最大 id + 1 跳过已占用；导出框自动刷新用；
+    /// raw = #WAVxx 定义 + ch01 铺放行）。
     Q_INVOKABLE QVariantMap exportSlices(qreal bpm, int subdivision,
                                          int beatsPerMeasure, int startId,
                                          int startMeasure,

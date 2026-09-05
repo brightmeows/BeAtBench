@@ -12,6 +12,12 @@ SpinBox {
     /// 2026-09 用户：snap 上下按钮 ×2/÷2（音乐常用拍子）；manual 输入不受影响（1/3、1/5 可手填）。
     /// 0 = 默认 ±1；>0 = 点击上下箭头时 value ×/÷ stepFactor（整数除，下限 from / 上限 to）。
     property int stepFactor: 0
+    /// 2026-09：文本输入校验器覆盖。SpinBox 内置 validator（IntValidator，按 locale 只放行
+    /// 数字）会在**键入层**拦截字母——36 进制 id（A0-ZZ）需放行字母，用
+    /// `validatorOverride: RegExpValidator { regExp: /^[0-9A-Za-z]{0,3}$/ }` 覆盖。
+    /// 不能写 root.validator（SpinBox 该属性为 CONSTANT 只读）；contentItem 择其一。
+    /// null（默认）= 用 SpinBox 默认数字校验，原行为不变。
+    property var validatorOverride: null
     /// 2026-09：Esc 行为钩子（同 BbTextField）。对话框内 SpinBox 需一次 Esc 即关整个 Dialog——
     /// 默认内部 TextInput 的 Esc=释放焦点会让第二次 Esc 才到 Dialog（用户报告「要按两次才关」）。
     /// 设置后先调用该钩子（对话框自己 reject），再释放焦点。非对话框场景保持 null → 原行为不变。
@@ -46,7 +52,7 @@ SpinBox {
         color: root.textColor
         font: root.font
         readOnly: !root.editable
-        validator: root.validator
+        validator: root.validatorOverride ? root.validatorOverride : root.validator
         inputMethodHints: Qt.ImhFormattedNumbersOnly
         // 提交：走 valueFromText（**不是 textFromValue**——前者 文本→数值，后者 数值→文本；
         // 旧代码用反导致手填值解析错误），再补发 valueModified（用户驱动）。

@@ -20,11 +20,14 @@ Item {
     /// M6.3 导出结果（exportSlices 返回 map）+ 可复制 raw。
     property var exportResult: null
     property string rawText: ""
-    /// 「MIDI 线」开关实际态（网格模式默认关；Ctrl 按住临时取反 = 显示/隐藏，
-    /// Adobe 式，同编辑页「显示实际通道序号」）。
+    /// 「MIDI 线」开关实际态（网格模式默认关；Ctrl 临时勾选 = 经 checkbox.toggle() 同路径翻
+    /// 转，松开还原——与正常点击走同一条 onToggled 链路，checkbox 视觉同步真实状态）。
     property bool midiLinesOn: false
     /// 左 dock 页签：0 = MIDI 音符 / 1 = 切片（放置开关）/ 2 = 网格（手动切片占位）。
     property int dockTab: 0
+    /// Ctrl 临时勾选状态机：保存按下前状态；松开仍处翻转态才还原（期间用户点过 = 以其为准）。
+    property bool _midiCtrlActive: false
+    property bool _midiCtrlSave: false
 
     function defaultOutDir() {
         var cPath = (typeof chartSession !== "undefined" && chartSession.path) ? chartSession.path : ""
@@ -47,7 +50,9 @@ Item {
             if (!ok) return -1
         }
         var v = parseInt(t, 36)
-        return isNaN(v) || v < 1 ? 1 : v
+        if (isNaN(v) || v < 1) v = 1
+        if (v > 1295) v = 1295   // ZZ 上限（与 SpinBox to 一致）
+        return v
     }
     function doExport() {
         var dir = defaultOutDir()
@@ -57,7 +62,11 @@ Item {
                                             dir, prefix, 1.0)
         exportResult = r
         rawText = (typeof r.raw === "string") ? r.raw : ""
-        if (r.ok) exportIdBox.value = sliceWorkspace.nextFreeWavId()
+        if (r.ok) {
+            // 连续导入导出：起始 id = 本次分配的最大 id + 1（跳过已占用；无谱面也是连续）
+            exportIdBox.value = (typeof r.nextStartId === "number" && r.nextStartId >= 1)
+                                ? r.nextStartId : sliceWorkspace.nextFreeWavId()
+        }
     }
     // ---- 调试（main.cpp --slice-detect/--slice-export 同路径）----
     /// 切换切片源 UI（MIDI/网格；连带 MIDI 线默认态），供 --slice-detect 注入。
@@ -98,6 +107,24 @@ Item {
         startMeasureBox.value = sliceWorkspace.suggestedStartMeasure()
         // MIDI 线默认随切片源（MIDI = 显示；网格 = 隐藏）
         root.midiLinesOn = sliceSourceBox.currentIndex === 1
+    }
+
+    // Ctrl 临时勾选：按下 → midiLinesBox.toggle()（与用户点击同一条路径：toggled →
+    // midiLinesOn = checked 更新状态与显示）；松开 → 仍处翻转态则 toggle() 还原。
+    // 按住期间用户点过 checkbox = 用户意图优先（松开不还原）。同编辑页「通道ID」。
+    Connections {
+        target: keyMonitor
+        function onCtrlHeldChanged() {
+            if (keyMonitor.ctrlHeld && !root._midiCtrlActive && midiLinesBox.enabled) {
+                root._midiCtrlActive = true
+                root._midiCtrlSave = root.midiLinesOn
+                midiLinesBox.toggle()
+            } else if (!keyMonitor.ctrlHeld && root._midiCtrlActive) {
+                root._midiCtrlActive = false
+                if (root.midiLinesOn === !root._midiCtrlSave)
+                    midiLinesBox.toggle()
+            }
+        }
     }
 
     ColumnLayout {
@@ -404,8 +431,8 @@ Item {
                     gridVisible: sliceSourceBox.currentIndex === 0
                     gridBpm: bpmBox.value
                     gridSubdivision: subBox.value
-                    // Ctrl 按住临时取反（同编辑页「显示实际通道序号」）
-                    midiVisible: root.midiLinesOn !== keyMonitor.ctrlHeld
+                    // Ctrl 临时勾选已写入 midiLinesOn（checkbox.toggle 同路径），此处直连
+                    midiVisible: root.midiLinesOn
                     onSeekRequested: {
                         audioEngine.refSeek(seconds)
                         root.playheadSec = audioEngine.refPositionSec
@@ -496,8 +523,13 @@ Item {
                 to: 1295
                 value: sliceWorkspace.nextFreeWavId()
                 editable: true
+                // 36 进制 id 输入：默认 IntValidator 只放行数字 → 覆盖为字母可入（A0-ZZ/a0-zz）
+                // ⚠️ Qt 6.11 起 RegExpValidator 已移除 → 用 RegularExpressionValidator
+                validatorOverride: RegularExpressionValidator { regularExpression: /^[0-9A-Za-z]{0,3}$/ }
                 textFromValue: function(value) { return root.idTextOf(value) }
                 valueFromText: function(text, locale) { return root.idValueOf(text) }
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("起始 #WAV id（36 进制：01-99/A0-ZZ；可填字母）")
             }
             Label { text: qsTr("起始小节"); color: Theme.textMuted }
             BbSpinBox {

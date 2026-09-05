@@ -8,7 +8,8 @@
 //   地雷/LN 工具暂提示（M3 命令无 kind 语义）。
 // - 选中高亮：Main 把 selection 回填 → view.selection（ChartViewItem 绘制）。
 // BGM 列头点击 → 展开为按 #WAV id 分列（iBMSC 式后台轨分开显示，BMS 笔记 ch01 注）；
-// 列头显示实际 BMS 通道 id = 工具条勾选 / Ctrl 临时（C++ KeyMonitor 事件过滤器，Adobe 式）。
+// 列头显示实际 BMS 通道 id = 工具条勾选 / Ctrl 临时（Main.qml 经 checkbox.toggle() 同路径
+// 翻转 + 松开还原（C++ KeyMonitor 事件过滤器，Adobe 式）；此处只透传状态）。
 // 皮肤边界（doc/08 §3.6 / doc/05 §8）：本组件 = 默认皮肤 surface「viewport」的组件库成员，
 // L3 可按组件覆写。
 import QtQuick
@@ -107,8 +108,9 @@ Item {
         // （EditPage.followPlayhead 绑定 root → 工具条 checkbox 自动更新）
         // ⚠️ 不写 onFollowPlayheadChanged 回写——双向回写 QML 会断绑定（2026-09 实测）
         followPlayhead: root.followPlayhead
-        // Ctrl 按住临时切换（C++ KeyMonitor 应用级事件过滤；QML Keys 收不到独立修饰键）
-        showChannelIds: root.showChannelIds !== keyMonitor.ctrlHeld
+        // Ctrl 临时切换已在状态层完成（Main.qml Connections → checkbox.toggle()），
+        // 此处纯透传（不 XOR）——checkbox 视觉/视图状态始终一致（2026-09 用户）
+        showChannelIds: root.showChannelIds
         // M6 编辑预览：放置工具 → ghost note 类型（note/ln/mine）；其它工具 = 关
         previewNoteKind: root.editorTool === "note" ? "normal"
                        : root.editorTool === "ln" ? "ln"

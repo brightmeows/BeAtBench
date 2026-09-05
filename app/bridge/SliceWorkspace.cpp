@@ -163,6 +163,22 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
             placement += QStringLiteral("（至第 %1 小节）").arg(endMeasureFile + 1);
         res.insert(QStringLiteral("placementText"), placement);
     }
+    // 连续导入导出（用户 2026-09）：下一起始 id = 本次分配的最大 id + 1（跳过谱面已占用；
+    // 无启用切片 → 起始不变；分配达上限 ZZ → 兜底最低空闲）
+    int nextStartId = std::clamp(startId, 1, 1295);
+    int maxAllocId = -1;
+    for (const auto& it : items)
+        if (it.enabled && it.wavId > 0)
+            maxAllocId = std::max(maxAllocId, static_cast<int>(it.wavId));
+    if (maxAllocId >= 0) {
+        const auto occ = occupied_wav_ids(m_chartSession);
+        int cand = maxAllocId + 1;
+        while (cand <= 1295 && std::find(occ.begin(), occ.end(),
+                                         static_cast<std::uint32_t>(cand)) != occ.end())
+            ++cand;
+        nextStartId = (cand <= 1295) ? cand : nextFreeWavId();
+    }
+    res.insert(QStringLiteral("nextStartId"), std::clamp(nextStartId, 1, 1295));
     if (!errors.isEmpty())
         res.insert(QStringLiteral("error"), errors.join(QStringLiteral("; ")));
     return res;
