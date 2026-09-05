@@ -17,6 +17,7 @@ ApplicationWindow {
     height: 800
     title: qsTr("BeAtBench")
     visible: true
+    color: Theme.bg  // 窗口底 = 主题 token（启动即深色；不依赖平台 palette 继承）
     font.family: Theme.fontSans
     font.pixelSize: Theme.fsBase
 
@@ -246,6 +247,8 @@ ApplicationWindow {
 
     // ---------- 菜单栏（固定全局；doc/09：从 uiActions 注册表查表） ----------
     menuBar: MenuBar {
+        // 菜单栏底 = 主题 token（启动即深色；Fusion 默认/平台 palette 兜底不可靠）
+        background: Rectangle { color: Theme.surface2 }
         Menu {
             title: qsTr("文件")
             // 枚举渲染（doc/09 §7 验收 2）：文件菜单动作按注册表 idsByCategory("file") 生成，

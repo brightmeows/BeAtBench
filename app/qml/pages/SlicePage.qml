@@ -213,7 +213,7 @@ Item {
                     valueFromText: function(text, locale) { return root.idValueOf(text) }
                 }
                 Label { text: qsTr("前缀"); color: Theme.textMuted }
-                TextField {
+                BbTextField {
                     id: prefixBox
                     text: "slice"
                     placeholderText: qsTr("slice 或 slices/slice")

@@ -16,6 +16,7 @@
 #include <QQmlContext>
 #include <QQuickStyle>
 #include <QQuickWindow>
+#include <QQuickItem>
 #include <QStringList>
 #include <QTextStream>
 #include <QTimer>
@@ -332,6 +333,12 @@ int main(int argc, char** argv) {
     }
 
     engine.loadFromModule(QStringLiteral("BeatBench"), QStringLiteral("Main"));
+
+    // ⚠️ Windows 平台主题会在窗口创建时覆盖启动时设置的 QPalette，导致 Fusion 默认控件
+    // （菜单/组合框 popup 等）首帧用平台浅色——loadFromModule 后重刷一次（值来自 Theme token，
+    // 与上方 pal 同源；运行时换肤走 rebuildPalette lambda）。注：窗口底色/菜单栏改由 QML
+    // 显式绑 Theme token（`ApplicationWindow.color` / `MenuBar.background`），不依赖 palette 继承。
+    app.setPalette(pal);
 
     // ---- 运行时换肤（doc/08 §3.3）：Theme.token 是 NOTIFY 属性，tokensChanged → QML 绑定重算。
     // 应用级 QPalette（Fusion 内置控件：菜单/对话框/默认按钮）与 token 脱钩，需在此同步重建——
