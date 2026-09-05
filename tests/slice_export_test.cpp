@@ -47,7 +47,7 @@ TEST(SliceExportTest, LayoutAssignsIdsAndPositions) {
     const auto slices = make_slices({0.0, 0.5, 2.0, 2.5}, {0.125, 0.625, 2.125, 2.625});
     // 只启用前两个
     const std::vector<bool> enabled = {true, true, false, false};
-    const auto items = build_export_layout(slices, enabled, {}, 1, "slice", 120.0, 4, 4, 0.0);
+    const auto items = build_export_layout(slices, enabled, {}, 1, "slice", 120.0, 4, 4, 0.0, 1);
     ASSERT_EQ(items.size(), 4u);
     // 文件命名按切片序号补零
     EXPECT_EQ(items[0].fileName, "slice_000.wav");
@@ -66,10 +66,28 @@ TEST(SliceExportTest, LayoutAssignsIdsAndPositions) {
     EXPECT_EQ(items[2].pos, beatbench::Rational(0, 1));
 }
 
+TEST(SliceExportTest, LayoutShiftsByStartMeasure) {
+    // 起始小节 = 5（1-based）→ 文件小节整体 +4：startSec=0 → #00401:
+    const auto slices = make_slices({0.0, 0.5, 2.0}, {0.125, 0.625, 2.125});
+    const std::vector<bool> enabled = {true, true, true};
+    const auto items = build_export_layout(slices, enabled, {}, 1, "slice",
+                                           120.0, 4, 4, 0.0, 5);
+    ASSERT_EQ(items.size(), 3u);
+    EXPECT_EQ(items[0].measure, 4);   // beat0 → derived 0 + 4
+    EXPECT_EQ(items[0].pos, beatbench::Rational(0, 1));
+    EXPECT_EQ(items[1].measure, 4);   // beat1 → derived 0 + 4
+    EXPECT_EQ(items[1].pos, beatbench::Rational(1, 4));
+    EXPECT_EQ(items[2].measure, 5);   // beat4 → derived 1 + 4
+    // raw 的 ch01 行落在 #00401:
+    const auto raw = build_placement_raw(items, 120.0, 4);
+    EXPECT_NE(raw.find("#00401:"), std::string::npos);
+    EXPECT_EQ(raw.find("#00001:"), std::string::npos);
+}
+
 TEST(SliceExportTest, PlacementRawHasWavDefAndCh01Line) {
     const auto slices = make_slices({0.0, 0.5}, {0.125, 0.625});
     const std::vector<bool> enabled = {true, true};
-    const auto items = build_export_layout(slices, enabled, {1}, 1, "slice", 120.0, 4, 4, 0.0);
+    const auto items = build_export_layout(slices, enabled, {1}, 1, "slice", 120.0, 4, 4, 0.0, 1);
     // occupied {1} → 从 start 1 起跳 1 → id 2,3
     ASSERT_EQ(items.size(), 2u);
     EXPECT_EQ(items[0].wavId, 2u);

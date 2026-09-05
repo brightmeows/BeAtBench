@@ -78,6 +78,13 @@ void SliceWaveformItem::setGridBeatsPerMeasure(int v) {
     update();
 }
 
+void SliceWaveformItem::setMidiVisible(bool v) {
+    if (m_midiVisible == v) return;
+    m_midiVisible = v;
+    emit midiVisibleChanged();
+    update();
+}
+
 SliceWorkspace* SliceWaveformItem::workspaceObj() const {
     return qobject_cast<SliceWorkspace*>(m_workspace);
 }
@@ -179,20 +186,23 @@ void SliceWaveformItem::paint(QPainter* p) {
     drawGridLines(p, w, h, ws);
 
     // ---- MIDI note 刻度（startSec+offset → x；1px 竖线；低音/高音不区分） ----
+    // M6.3c：midiVisible=false（网格模式默认）时隐藏——切片线已表达分段，MIDI 线只作参考。
     const double offset = ws->offsetSecD();
     QColor noteCol = th ? th->accent2() : QColor(QStringLiteral("#2dd8c8"));
     noteCol.setAlpha(170);
-    for (const auto& n : ws->notes()) {
-        const qreal x0 = static_cast<qreal>((n.startSec + offset) * pxPerSec);
-        const qreal x1 = static_cast<qreal>((n.endSec + offset) * pxPerSec);
-        if (x1 < 0.0 || x0 > w) continue;
-        const qreal cx = std::clamp(x0, 0.0, w);
-        p->fillRect(QRectF(cx, 4.0, 1.5, h - 8.0), noteCol);
-        if (x1 > x0 + 1.0) {
-            // 时长>~1ms：末刻度淡色（区分「音符段」与「起始点」）
-            QColor tail = noteCol;
-            tail.setAlpha(90);
-            p->fillRect(QRectF(std::clamp(x1, 0.0, w), 4.0, 1.5, h - 8.0), tail);
+    if (m_midiVisible) {
+        for (const auto& n : ws->notes()) {
+            const qreal x0 = static_cast<qreal>((n.startSec + offset) * pxPerSec);
+            const qreal x1 = static_cast<qreal>((n.endSec + offset) * pxPerSec);
+            if (x1 < 0.0 || x0 > w) continue;
+            const qreal cx = std::clamp(x0, 0.0, w);
+            p->fillRect(QRectF(cx, 4.0, 1.5, h - 8.0), noteCol);
+            if (x1 > x0 + 1.0) {
+                // 时长>~1ms：末刻度淡色（区分「音符段」与「起始点」）
+                QColor tail = noteCol;
+                tail.setAlpha(90);
+                p->fillRect(QRectF(std::clamp(x1, 0.0, w), 4.0, 1.5, h - 8.0), tail);
+            }
         }
     }
 

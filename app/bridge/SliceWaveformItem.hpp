@@ -29,6 +29,8 @@ class SliceWaveformItem : public QQuickPaintedItem {
     Q_PROPERTY(int gridSubdivision READ gridSubdivision WRITE setGridSubdivision NOTIFY gridSubdivisionChanged)
     /// 每小节拍数（网格参考线小节分组；默认 4 = 4/4；同 core GridConfig.beatsPerMeasure）。
     Q_PROPERTY(int gridBeatsPerMeasure READ gridBeatsPerMeasure WRITE setGridBeatsPerMeasure NOTIFY gridBeatsPerMeasureChanged)
+    /// MIDI note 刻度线显示（M6.3c：网格模式下默认关；QML「MIDI 线」开关 + Ctrl 临时取反）。
+    Q_PROPERTY(bool midiVisible READ midiVisible WRITE setMidiVisible NOTIFY midiVisibleChanged)
 
 public:
     explicit SliceWaveformItem(QQuickItem* parent = nullptr);
@@ -49,6 +51,8 @@ public:
     void setGridSubdivision(int v);
     int gridBeatsPerMeasure() const { return m_gridBeatsPerMeasure; }
     void setGridBeatsPerMeasure(int v);
+    bool midiVisible() const { return m_midiVisible; }
+    void setMidiVisible(bool v);
 
 signals:
     void workspaceChanged();
@@ -58,6 +62,7 @@ signals:
     void gridBpmChanged();
     void gridSubdivisionChanged();
     void gridBeatsPerMeasureChanged();
+    void midiVisibleChanged();
     /// 点击/拖动 → 目标秒（QML 接 audioEngine.refSeek）。
     void seekRequested(double seconds);
 
@@ -85,6 +90,7 @@ private:
     qreal m_gridBpm = 120.0;
     int m_gridSubdivision = 4;
     int m_gridBeatsPerMeasure = 4;
+    bool m_midiVisible = true;  ///< MIDI note 刻度（M6.3c 网格模式默认关）
 };
 
 }  // namespace beatbench::app

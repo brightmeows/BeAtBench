@@ -42,7 +42,7 @@ std::vector<SliceExportItem> build_export_layout(
     const std::vector<Slice>& slices, const std::vector<bool>& enabled,
     const std::vector<std::uint32_t>& occupied, std::uint32_t start_id,
     const std::string& baseName, double bpm, int beatsPerMeasure,
-    int subdivision, double offset, int width) {
+    int subdivision, double offset, int startMeasure, int width) {
     std::vector<SliceExportItem> items;
     // 启用切片数 → 分配 #WAV id（只分配给「放置开关=开」的切片；未启用仍列出但 wavId=0）
     int need = 0;
@@ -54,6 +54,8 @@ std::vector<SliceExportItem> build_export_layout(
     const int beatsPerMeas = std::max(1, beatsPerMeasure);
     const int sub = std::max(1, subdivision);
     const std::int64_t den = static_cast<std::int64_t>(beatsPerMeas) * sub;
+    // 起始小节整体平移（1-based → 0-based 位移；夹逼 [1,999] = 文件 3 位小节号上限）
+    const std::int64_t shift = std::clamp(startMeasure, 1, 999) - 1;
 
     for (std::size_t i = 0; i < slices.size(); ++i) {
         const bool en = (i < enabled.size()) && enabled[i];
@@ -73,8 +75,8 @@ std::vector<SliceExportItem> build_export_layout(
         // 拍位换算：beat = (startSec - offset) * bpm / 60；吸附到细分网格
         double beat = (s.startSec - offset) * bpm / 60.0;
         if (beat < 0.0) beat = 0.0;
-        std::int64_t measure = static_cast<std::int64_t>(std::floor(beat / beatsPerMeas + 1e-9));
-        double fracBeat = beat - static_cast<double>(measure) * beatsPerMeas;
+        std::int64_t measure = shift + static_cast<std::int64_t>(std::floor(beat / beatsPerMeas + 1e-9));
+        double fracBeat = beat - static_cast<double>(measure - shift) * beatsPerMeas;
         if (fracBeat < 0.0) fracBeat = 0.0;
         std::int64_t num = static_cast<std::int64_t>(std::llround(fracBeat * sub));
         if (num >= den) {  // 恰落小节边界 → 归入下一小节 pos 0

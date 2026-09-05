@@ -715,7 +715,7 @@ ApplicationWindow {
                 onBmpDeleteRequested: (id) => bmpDelete(id)
                 onBmpSelected: (id) => setCurrentBmp(id)
             }
-            SlicePage {}
+            SlicePage { id: slicePage }
             TestPage {}
         }
 
@@ -862,8 +862,9 @@ ApplicationWindow {
             return
         }
         sliceDetectRetry.stop()
-        sliceWorkspace.detectSlices(debugSliceDetect === "midi" ? "midi" : "grid",
-                                    120.0, 4, sliceWorkspace.audioDurationSec)
+        const src = (debugSliceDetect === "midi") ? "midi" : "grid"
+        slicePage.debugSetSource(src)   // 与 UI 同态（切片源 + MIDI 线默认）
+        sliceWorkspace.detectSlices(src, 120.0, 4, sliceWorkspace.audioDurationSec)
     }
     // M6.2 调试参数：--slice-offset <ms>（可复现 offset 实时效果：网格/MIDI 刻度随 offset 平移）
     property real debugSliceOffset: -1
@@ -874,15 +875,16 @@ ApplicationWindow {
     Timer { id: sliceExportRetry; interval: 300; repeat: true; onTriggered: doDebugSliceExport() }
     function doDebugSliceExport() {
         if (!sliceWorkspace.hasAudio || !sliceWorkspace.hasSlices) { sliceExportRetry.start(); return }
-        var dir = ""
-        var base = sliceWorkspace.audioPath
-        var i = Math.max(base.lastIndexOf("/"), base.lastIndexOf("\\"))
-        if (i >= 0) dir = base.substring(0, i)
-        var r = sliceWorkspace.exportSlices(120.0, 4, 4, debugSliceExport, dir, "slice", 1.0)
+        sliceExportRetry.stop()
+        // 走页面同一路径（导出 + raw 进右 dock + 状态行）；结果打日志备查
+        slicePage.debugExport(debugSliceExport)
+        const r = slicePage.exportResult
         console.log("debug slice export: ok=" + r.ok + " count=" + r.count +
                     (r.error ? " err=" + r.error : "") + "\n" + r.raw)
-        sliceExportRetry.stop()
     }
+    // M6.3c 调试参数：--slice-tab N（切音页左 dock 页签验收）
+    property int debugSliceDockTab: -1
+    onDebugSliceDockTabChanged: if (debugSliceDockTab >= 0) slicePage.dockTab = debugSliceDockTab
     // --wait-render 截图等待标志（main.cpp 轮询；波形验收用）
     property bool debugRenderDone: false
     // 渲染完成次数（--wait-render 增量验收：等待全量 + 增量都完成）

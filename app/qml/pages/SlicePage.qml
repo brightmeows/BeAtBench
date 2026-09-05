@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // 切音页（M6.1 导入工作台）：参考音频（stem.wav）+ MIDI（notes.mid）导入、
 // 波形预览 + 播放/seek + offset 微调（全局）。M6.2 起叠加切片线/列表。
+// M6.3c UI 改良（用户 2026-09）：控件瘦身 + 左 dock（MIDI 音符/切片/网格三页签，
+// 网格页留待手动切片）、raw 右 dock（IDE 式输出）、「MIDI 线」Ctrl 临时开关
+// （网格模式参考 MIDI 线，为手动切片做准备）、导出加「起始小节」。
 // 数据侧全部在 SliceWorkspace（C++）；本页只做装配与交互（doc/08 §2 双语言纪律）。
 // woslicerII 参考（键盘 + 网格节拍 + 末端 fade + 無音切）→ M6.2 切分交互时实现。
 import QtQuick
@@ -17,6 +20,11 @@ Item {
     /// M6.3 导出结果（exportSlices 返回 map）+ 可复制 raw。
     property var exportResult: null
     property string rawText: ""
+    /// 「MIDI 线」开关实际态（网格模式默认关；Ctrl 按住临时取反 = 显示/隐藏，
+    /// Adobe 式，同编辑页「显示实际通道序号」）。
+    property bool midiLinesOn: false
+    /// 左 dock 页签：0 = MIDI 音符 / 1 = 切片（放置开关）/ 2 = 网格（手动切片占位）。
+    property int dockTab: 0
 
     function defaultOutDir() {
         var cPath = (typeof chartSession !== "undefined" && chartSession.path) ? chartSession.path : ""
@@ -45,10 +53,21 @@ Item {
         var dir = defaultOutDir()
         var prefix = prefixBox.text.length ? prefixBox.text : "slice"
         var r = sliceWorkspace.exportSlices(bpmBox.value, subBox.value, 4,
-                                            exportIdBox.value, dir, prefix, 1.0)
+                                            exportIdBox.value, startMeasureBox.value,
+                                            dir, prefix, 1.0)
         exportResult = r
         rawText = (typeof r.raw === "string") ? r.raw : ""
         if (r.ok) exportIdBox.value = sliceWorkspace.nextFreeWavId()
+    }
+    // ---- 调试（main.cpp --slice-detect/--slice-export 同路径）----
+    /// 切换切片源 UI（MIDI/网格；连带 MIDI 线默认态），供 --slice-detect 注入。
+    function debugSetSource(source) {
+        sliceSourceBox.currentIndex = (source === "midi") ? 1 : 0
+    }
+    /// 以指定起始 #WAV id 导出（与页面「导出分片」同一路径；raw 进右 dock）。
+    function debugExport(startId) {
+        exportIdBox.value = startId
+        doExport()
     }
 
     Timer {
@@ -72,6 +91,13 @@ Item {
         var s = sec - m * 60
         var ss = s < 10 ? "0" + s.toFixed(2) : s.toFixed(2)
         return m + ":" + ss
+    }
+
+    Component.onCompleted: {
+        // 起始小节默认 = 下一空小节（当前谱面已用小节数 + 1；无谱面 = 1）
+        startMeasureBox.value = sliceWorkspace.suggestedStartMeasure()
+        // MIDI 线默认随切片源（MIDI = 显示；网格 = 隐藏）
+        root.midiLinesOn = sliceSourceBox.currentIndex === 1
     }
 
     ColumnLayout {
@@ -139,228 +165,375 @@ Item {
             }
         }
 
-            // ---- M6.2 切片控制：位置源（网格/MIDI）+ BPM/细分 + 生成/清除 ----
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 6
+        // ---- M6.2 切片控制：位置源（网格/MIDI）+ BPM/细分 + 生成/清除 + MIDI 线开关 ----
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 6
 
-                Label { text: qsTr("切片源"); color: Theme.textMuted }
-                BbComboBox {
-                    id: sliceSourceBox
-                    model: [qsTr("网格"), qsTr("MIDI")]
-                    implicitWidth: 84
-                }
-                Label {
-                    text: qsTr("BPM")
-                    color: Theme.textMuted
-                    visible: sliceSourceBox.currentIndex === 0
-                }
-                BbSpinBox {
-                    id: bpmBox
-                    from: 40
-                    to: 300
-                    value: Math.round(sliceWorkspace.midiTempoBpm)
-                    editable: true
-                    visible: sliceSourceBox.currentIndex === 0
-                }
-                Label {
-                    text: qsTr("细分/拍")
-                    color: Theme.textMuted
-                    visible: sliceSourceBox.currentIndex === 0
-                }
-                BbSpinBox {
-                    id: subBox
-                    from: 1
-                    to: 16
-                    value: 4
-                    editable: true
-                    visible: sliceSourceBox.currentIndex === 0
-                }
-                BbToolButton {
-                    text: qsTr("生成切片")
-                    onClicked: {
-                        sliceWorkspace.detectSlices(
+            Label { text: qsTr("切片源"); color: Theme.textMuted }
+            BbComboBox {
+                id: sliceSourceBox
+                model: [qsTr("网格"), qsTr("MIDI")]
+                implicitWidth: 84
+                onCurrentIndexChanged: root.midiLinesOn = (currentIndex === 1)
+            }
+            Label {
+                text: qsTr("BPM")
+                color: Theme.textMuted
+                visible: sliceSourceBox.currentIndex === 0
+            }
+            BbSpinBox {
+                id: bpmBox
+                from: 40
+                to: 300
+                value: Math.round(sliceWorkspace.midiTempoBpm)
+                editable: true
+                visible: sliceSourceBox.currentIndex === 0
+            }
+            Label {
+                text: qsTr("细分/拍")
+                color: Theme.textMuted
+                visible: sliceSourceBox.currentIndex === 0
+            }
+            BbSpinBox {
+                id: subBox
+                from: 1
+                to: 16
+                value: 4
+                editable: true
+                visible: sliceSourceBox.currentIndex === 0
+            }
+            BbToolButton {
+                text: qsTr("生成切片")
+                onClicked: {
+                    if (sliceWorkspace.detectSlices(
                             sliceSourceBox.currentIndex === 0 ? "grid" : "midi",
-                            bpmBox.value, subBox.value, sliceWorkspace.audioDurationSec)
+                            bpmBox.value, subBox.value, sliceWorkspace.audioDurationSec)) {
+                        root.dockTab = 1   // 生成成功 → 切到「切片」页签核对放置开关
                     }
                 }
-                BbToolButton {
-                    text: qsTr("清除切片")
-                    enabled: sliceWorkspace.hasSlices
-                    onClicked: sliceWorkspace.clearSlices()
-                }
-                Item { Layout.fillWidth: true }
-                Label {
-                    text: sliceWorkspace.hasSlices
-                          ? qsTr("切片 %1 个").arg(sliceWorkspace.slices.length)
-                          : qsTr("（未生成切片——网格需 BPM/细分，MIDI 需已导入）")
-                    color: Theme.textMuted
-                }
             }
-
-            // ---- M6.3 导出：起始 #WAV id + 导出前缀 + 导出分片 + 复制 raw ----
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 6
-                Label { text: qsTr("导出起始ID"); color: Theme.textMuted }
-                BbSpinBox {
-                    id: exportIdBox
-                    from: 1
-                    to: 1295
-                    value: sliceWorkspace.nextFreeWavId()
-                    editable: true
-                    textFromValue: function(value) { return root.idTextOf(value) }
-                    valueFromText: function(text, locale) { return root.idValueOf(text) }
-                }
-                Label { text: qsTr("前缀"); color: Theme.textMuted }
-                BbTextField {
-                    id: prefixBox
-                    text: "slice"
-                    placeholderText: qsTr("slice 或 slices/slice")
-                    implicitWidth: 130
-                }
-                BbToolButton {
-                    text: qsTr("导出分片")
-                    enabled: sliceWorkspace.hasSlices && sliceWorkspace.hasAudio
-                    onClicked: root.doExport()
-                }
-                BbToolButton {
-                    text: qsTr("复制 raw")
-                    enabled: root.rawText.length > 0
-                    onClicked: sliceWorkspace.copyToClipboard(root.rawText)
-                }
-                Item { Layout.fillWidth: true }
-                Label {
-                    text: root.exportResult && root.exportResult.ok
-                          ? (qsTr("已导出 %1 片").arg(root.exportResult.count)
-                             + (root.exportResult.placementText
-                                ? (" · " + root.exportResult.placementText) : ""))
-                          : (root.exportResult
-                             ? (qsTr("导出失败：") + root.exportResult.error)
-                             : (sliceWorkspace.hasSlices ? "" : qsTr("（先生成切片）")))
-                    color: (root.exportResult && root.exportResult.ok) ? Theme.success : Theme.warning
-                    elide: Text.ElideRight
-                    Layout.maximumWidth: 420
-                }
+            BbToolButton {
+                text: qsTr("清除切片")
+                enabled: sliceWorkspace.hasSlices
+                onClicked: sliceWorkspace.clearSlices()
             }
-            // 可复制 BMS raw（#WAV 定义 + ch01 铺放行；粘贴到编辑区）
-            ScrollView {
-                Layout.fillWidth: true
-                Layout.preferredHeight: root.rawText.length > 0 ? 110 : 0
-                visible: root.rawText.length > 0
-                clip: true
-                TextArea {
-                    text: root.rawText
-                    readOnly: true
-                    wrapMode: TextEdit.NoWrap
-                    font.family: Theme.fontMono
-                    font.pixelSize: Theme.fsTiny
-                    color: Theme.text
-                    background: Rectangle { color: Theme.surface; border.color: Theme.border }
-                }
+            // M6.3c：网格模式下显示 MIDI 线参考（Ctrl 按住临时取反；同编辑页「通道序号」）
+            BbCheckBox {
+                id: midiLinesBox
+                text: qsTr("MIDI 线")
+                checked: root.midiLinesOn
+                enabled: sliceWorkspace.hasMidi
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("显示 MIDI 音符线（Ctrl 按住临时切换；网格模式下手动切片参考）")
+                onToggled: root.midiLinesOn = checked
             }
-
-        // ---- 波形 + note 刻度 + 播放头 + 切片线 + 实时拍子网格参考 ----
-        SliceWaveformItem {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 220
-            workspace: sliceWorkspace
-            theme: Theme
-            playheadSec: root.playheadSec
-            gridVisible: sliceSourceBox.currentIndex === 0
-            gridBpm: bpmBox.value
-            gridSubdivision: subBox.value
-            onSeekRequested: {
-                audioEngine.refSeek(seconds)
-                root.playheadSec = audioEngine.refPositionSec
+            Item { Layout.fillWidth: true }
+            Label {
+                text: sliceWorkspace.hasSlices
+                      ? qsTr("切片 %1 个").arg(sliceWorkspace.slices.length)
+                      : qsTr("（未生成切片——网格需 BPM/细分，MIDI 需已导入）")
+                color: Theme.textMuted
+                elide: Text.ElideRight
             }
         }
 
-        // ---- 列表：有切片显示切片表（id/时长/位置/放置开关），否则 MIDI note 表 ----
-        Label {
-            text: sliceWorkspace.hasSlices
-                  ? qsTr("切片表（%1 个）").arg(sliceWorkspace.slices.length)
-                  : qsTr("MIDI 音符（%1 个）").arg(sliceWorkspace.midiNotes.length)
-            color: Theme.textMuted
-        }
-        Rectangle {
+        // ---- 三栏：左 dock（MIDI 音符/切片/网格页签）｜中央波形｜右 dock（raw） ----
+        SplitView {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            color: Theme.surface
-            border.width: 1
-            border.color: Theme.border
-            radius: Theme.radiusSm
-            clip: true
-            // 切片表行（model = QVariantList of maps；无切片 = 空模型，不创建 delegate）
-            ListView {
-                anchors.fill: parent
-                anchors.margins: 2
-                model: sliceWorkspace.slices
-                clip: true
-                visible: sliceWorkspace.hasSlices
-                delegate: RowLayout {
-                    required property var modelData
-                    width: ListView.view.width
-                    spacing: 8
-                    CheckBox {
-                        checked: modelData.enabled
-                        onToggled: sliceWorkspace.setSliceEnabled(modelData.index, checked)
-                        implicitHeight: 20
+            spacing: 6
+
+            handle: Rectangle {
+                implicitWidth: 4
+                color: SplitView.hovered ? Theme.accent : Theme.border
+            }
+
+            // ================= 左 dock =================
+            Item {
+                SplitView.preferredWidth: 250
+                SplitView.minimumWidth: 180
+                SplitView.maximumWidth: 360
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 4
+
+                    BbTabStrip {
+                        id: dockTabs
+                        Layout.fillWidth: true
+                        model: [qsTr("MIDI 音符"), qsTr("切片"), qsTr("网格")]
+                        currentIndex: root.dockTab
+                        onIndexRequested: (i) => root.dockTab = i
                     }
-                    Label { text: modelData.index; width: 36; color: Theme.textMuted }
-                    Label {
-                        text: modelData.startSec.toFixed(3)
-                        width: 76; color: Theme.accent2; font.family: Theme.fontMono
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        color: Theme.surface
+                        border.width: 1
+                        border.color: Theme.border
+                        radius: Theme.radiusSm
+                        clip: true
+
+                        // ---- 页签 0：MIDI 音符表（无 MIDI → 提示） ----
+                        Label {
+                            anchors.fill: parent
+                            visible: root.dockTab === 0 && !sliceWorkspace.hasMidi
+                            text: qsTr("（未导入 MIDI——点上方「导入 MIDI…」）")
+                            color: Theme.textFaint
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        ListView {
+                            anchors.fill: parent
+                            anchors.margins: 4
+                            model: sliceWorkspace.midiNotes
+                            clip: true
+                            visible: root.dockTab === 0 && sliceWorkspace.hasMidi
+                            delegate: RowLayout {
+                                required property var modelData
+                                width: ListView.view.width
+                                spacing: 4
+                                Label { text: modelData.pitch; width: 32; color: Theme.text; font.family: Theme.fontMono }
+                                Label { text: modelData.channel + "ch"; width: 26; color: Theme.textMuted }
+                                Label { text: "T" + modelData.track; width: 26; color: Theme.textMuted }
+                                Label {
+                                    text: (modelData.startSec + sliceWorkspace.offsetSec).toFixed(3)
+                                    width: 62; color: Theme.accent2; font.family: Theme.fontMono
+                                }
+                                Label {
+                                    text: (modelData.endSec - modelData.startSec).toFixed(3) + "s"
+                                    color: Theme.textMuted; font.family: Theme.fontMono
+                                }
+                            }
+                        }
+
+                        // ---- 页签 1：切片表（放置开关；无切片 → 提示） ----
+                        Label {
+                            anchors.fill: parent
+                            visible: root.dockTab === 1 && !sliceWorkspace.hasSlices
+                            text: qsTr("（先生成切片）")
+                            color: Theme.textFaint
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        ListView {
+                            anchors.fill: parent
+                            anchors.margins: 4
+                            model: sliceWorkspace.slices
+                            clip: true
+                            visible: root.dockTab === 1 && sliceWorkspace.hasSlices
+                            delegate: RowLayout {
+                                required property var modelData
+                                width: ListView.view.width
+                                spacing: 4
+                                CheckBox {
+                                    checked: modelData.enabled
+                                    onToggled: sliceWorkspace.setSliceEnabled(modelData.index, checked)
+                                    implicitHeight: 20
+                                }
+                                Label { text: modelData.index; width: 28; color: Theme.textMuted }
+                                Label {
+                                    text: modelData.startSec.toFixed(3)
+                                    width: 62; color: Theme.accent2; font.family: Theme.fontMono
+                                }
+                                Label {
+                                    text: modelData.durationSec.toFixed(3) + "s"
+                                    width: 50; color: Theme.textMuted; font.family: Theme.fontMono
+                                }
+                                Label {
+                                    text: modelData.kind === "midi"
+                                          ? ("MIDI " + modelData.note)
+                                          : qsTr("网格")
+                                    color: Theme.text
+                                    elide: Text.ElideRight
+                                }
+                            }
+                        }
+
+                        // ---- 页签 2：网格页（手动切片划分占位；M6.4 实现） ----
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            spacing: 8
+                            visible: root.dockTab === 2
+
+                            Label {
+                                text: qsTr("网格 / 手动切片")
+                                color: Theme.text
+                                font.bold: true
+                            }
+                            Label {
+                                text: qsTr("当前均分: BPM %1 · 细分 %2/拍 · 每小节 4 拍")
+                                          .arg(bpmBox.value).arg(subBox.value)
+                                color: Theme.textMuted
+                            }
+                            BbToolButton {
+                                text: qsTr("手动切片划分…")
+                                enabled: false
+                                ToolTip.visible: hovered
+                                ToolTip.text: qsTr("开发中（M6.4）：点击波形/拖动范围手动分区")
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                text: qsTr("目前仅支持 BPM+拍子固定均分。规划：在波形上拖选区间生成手动切片；"
+                                           + "「MIDI 线」开关（Ctrl 临时显示）可作对位参考。")
+                                color: Theme.textFaint
+                                wrapMode: Text.WordWrap
+                            }
+                            Item { Layout.fillHeight: true }
+                        }
                     }
-                    Label {
-                        text: modelData.durationSec.toFixed(3) + "s"
-                        width: 72; color: Theme.textMuted; font.family: Theme.fontMono
-                    }
-                    Label {
-                        text: modelData.kind === "midi"
-                              ? ("MIDI " + modelData.note)
-                              : qsTr("网格")
-                        width: 90; color: Theme.text
-                    }
-                    Item { Layout.fillWidth: true }
                 }
             }
-            // MIDI note 行（无切片时）
-            ListView {
-                anchors.fill: parent
-                anchors.margins: 2
-                model: sliceWorkspace.midiNotes
-                clip: true
-                visible: !sliceWorkspace.hasSlices
-                delegate: RowLayout {
-                    required property var modelData
-                    width: ListView.view.width
-                    spacing: 8
-                    Label { text: modelData.pitch; width: 44; color: Theme.text; font.family: Theme.fontMono }
-                    Label { text: modelData.channel + "ch"; width: 40; color: Theme.textMuted }
-                    Label { text: "T" + modelData.track; width: 36; color: Theme.textMuted }
-                    Label {
-                        text: (modelData.startSec + sliceWorkspace.offsetSec).toFixed(3)
-                        width: 72; color: Theme.accent2; font.family: Theme.fontMono
+
+            // ================= 中央：波形 =================
+            ColumnLayout {
+                SplitView.fillWidth: true
+                SplitView.minimumWidth: 320
+                spacing: 6
+
+                // 波形 + note 刻度 + 播放头 + 切片线 + 实时拍子网格参考
+                SliceWaveformItem {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    workspace: sliceWorkspace
+                    theme: Theme
+                    playheadSec: root.playheadSec
+                    gridVisible: sliceSourceBox.currentIndex === 0
+                    gridBpm: bpmBox.value
+                    gridSubdivision: subBox.value
+                    // Ctrl 按住临时取反（同编辑页「显示实际通道序号」）
+                    midiVisible: root.midiLinesOn !== keyMonitor.ctrlHeld
+                    onSeekRequested: {
+                        audioEngine.refSeek(seconds)
+                        root.playheadSec = audioEngine.refPositionSec
                     }
-                    Label {
-                        text: modelData.startSec.toFixed(3)
-                        width: 72; color: Theme.textMuted; font.family: Theme.fontMono
+                }
+
+                // ---- 状态行 ----
+                Label {
+                    Layout.fillWidth: true
+                    text: sliceWorkspace.statusText
+                    color: Theme.textFaint
+                    elide: Text.ElideRight
+                }
+            }
+
+            // ================= 右 dock：WAV 定义 · ch01（raw） =================
+            Item {
+                SplitView.preferredWidth: 250
+                SplitView.minimumWidth: 180
+                SplitView.maximumWidth: 400
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 4
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 6
+                        Label {
+                            text: qsTr("WAV 定义 · ch01")
+                            color: Theme.textMuted
+                        }
+                        Item { Layout.fillWidth: true }
+                        BbToolButton {
+                            text: qsTr("复制 raw")
+                            enabled: root.rawText.length > 0
+                            onClicked: sliceWorkspace.copyToClipboard(root.rawText)
+                        }
                     }
-                    Label {
-                        text: (modelData.endSec - modelData.startSec).toFixed(3) + "s"
-                        color: Theme.textMuted; font.family: Theme.fontMono
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        color: Theme.surface
+                        border.width: 1
+                        border.color: Theme.border
+                        radius: Theme.radiusSm
+                        clip: true
+
+                        ScrollView {
+                            anchors.fill: parent
+                            anchors.margins: 2
+                            visible: root.rawText.length > 0
+                            clip: true
+                            TextArea {
+                                text: root.rawText
+                                readOnly: true
+                                wrapMode: TextEdit.NoWrap
+                                font.family: Theme.fontMono
+                                font.pixelSize: Theme.fsTiny
+                                color: Theme.text
+                                background: Rectangle { color: "transparent" }
+                            }
+                        }
+                        Label {
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            visible: root.rawText.length === 0
+                            text: qsTr("导出后此处显示 #WAV 定义 + ch01 铺放行（可复制到编辑区）")
+                            color: Theme.textFaint
+                            wrapMode: Text.WordWrap
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
                     }
                 }
             }
         }
 
-        // ---- 状态行 ----
-        Label {
+        // ---- M6.3 导出：起始 #WAV id + 起始小节 + 前缀 + 导出分片（raw 在右 dock） ----
+        RowLayout {
             Layout.fillWidth: true
-            text: sliceWorkspace.statusText
-            color: Theme.textFaint
-            elide: Text.ElideRight
+            spacing: 6
+            Label { text: qsTr("导出起始ID"); color: Theme.textMuted }
+            BbSpinBox {
+                id: exportIdBox
+                from: 1
+                to: 1295
+                value: sliceWorkspace.nextFreeWavId()
+                editable: true
+                textFromValue: function(value) { return root.idTextOf(value) }
+                valueFromText: function(text, locale) { return root.idValueOf(text) }
+            }
+            Label { text: qsTr("起始小节"); color: Theme.textMuted }
+            BbSpinBox {
+                id: startMeasureBox
+                from: 1
+                to: 999
+                value: 1
+                editable: true
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("ch01 起始小节（第 N 小节 = 文件 #(N-1)01:\n默认 = 下一空小节）")
+            }
+            Label { text: qsTr("前缀"); color: Theme.textMuted }
+            BbTextField {
+                id: prefixBox
+                text: "slice"
+                placeholderText: qsTr("slice 或 slices/slice")
+                implicitWidth: 130
+            }
+            BbToolButton {
+                text: qsTr("导出分片")
+                enabled: sliceWorkspace.hasSlices && sliceWorkspace.hasAudio
+                onClicked: root.doExport()
+            }
+            Item { Layout.fillWidth: true }
+            Label {
+                text: root.exportResult && root.exportResult.ok
+                      ? (qsTr("已导出 %1 片").arg(root.exportResult.count)
+                         + (root.exportResult.placementText
+                            ? (" · " + root.exportResult.placementText) : ""))
+                      : (root.exportResult
+                         ? (qsTr("导出失败：") + root.exportResult.error)
+                         : (sliceWorkspace.hasSlices ? "" : qsTr("（先生成切片）")))
+                color: (root.exportResult && root.exportResult.ok) ? Theme.success : Theme.warning
+                elide: Text.ElideRight
+                Layout.maximumWidth: 420
+            }
         }
     }
 

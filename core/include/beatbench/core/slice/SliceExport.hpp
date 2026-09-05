@@ -39,11 +39,13 @@ std::vector<std::uint32_t> allocate_wav_ids(
 /// 拍位换算：beat = (startSec - offset) * bpm / 60；measure = floor(beat/beatsPerMeasure)；
 /// pos = round(fracBeat*subdivision) / (beatsPerMeasure*subdivision)（吸附到细分网格）。
 /// baseName = 文件名前缀（如 "slice"），序号补零到 width 位。
+/// startMeasure = 铺放起始小节（1-based：ch01 从第 N 小节起 = 文件 `#(N-1)01:`；
+/// 所有切片的 measure 整体平移 startMeasure-1；默认 1 = 从第 1 小节起，即文件 #000）。
 std::vector<SliceExportItem> build_export_layout(
     const std::vector<Slice>& slices, const std::vector<bool>& enabled,
     const std::vector<std::uint32_t>& occupied, std::uint32_t start_id,
     const std::string& baseName, double bpm, int beatsPerMeasure,
-    int subdivision, double offset, int width = 3);
+    int subdivision, double offset, int startMeasure = 1, int width = 3);
 
 /// 生成「可复制 BMS raw」：把 items 铺进一个临时 Chart（WAV 定义 + ch01 note），
 /// 经 bms::write_bms 写出再筛掉杂线，返回 `#WAVxx <file>` 定义 + ch01 数据行。

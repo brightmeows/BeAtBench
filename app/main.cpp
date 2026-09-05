@@ -471,6 +471,16 @@ int main(int argc, char** argv) {
                 root->setProperty("debugSliceExport", sid);
         }
     }
+    // --slice-tab N：切音页左 dock 页签（0 MIDI 音符 1 切片 2 网格；配 --screenshot 验收）
+    const int stIdx = args.indexOf(QStringLiteral("--slice-tab"));
+    if (stIdx >= 0 && stIdx + 1 < args.size()) {
+        bool ok = false;
+        const int t = args.at(stIdx + 1).toInt(&ok);
+        if (ok) {
+            if (QObject* root = engine.rootObjects().value(0))
+                root->setProperty("debugSliceDockTab", t);
+        }
+    }
 
     // --tab N：左 Dock 标签（0 元信息 1 采样 2 lint 3 BGA；配合 --screenshot 验收面板）
     const int tabIdx = args.indexOf(QStringLiteral("--tab"));

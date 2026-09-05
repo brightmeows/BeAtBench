@@ -63,11 +63,17 @@ public:
     /// 分配 #WAV id（从 startId 起，跳过 occupied），并生成可复制 BMS raw。
     /// prefix = 落盘前缀（可含 `/` 或 `\` 作子目录，如 "slices/slice" 或 "slice"）；
     /// 自动识别正反斜杠。bpm/beatsPerMeasure/subdivision 用于拍位换算；offset 用当前 m_offsetSec。
-    /// 返回 {ok, raw, count, error}（raw = #WAVxx 定义 + ch01 铺放行）。
+    /// startMeasure = ch01 铺放起始小节（1-based；第 N 小节 = 文件 `#(N-1)01:`）。
+    /// 返回 {ok, raw, count, error, startMeasure, endMeasure, placementText}
+    /// （raw = #WAVxx 定义 + ch01 铺放行）。
     Q_INVOKABLE QVariantMap exportSlices(qreal bpm, int subdivision,
                                          int beatsPerMeasure, int startId,
+                                         int startMeasure,
                                          const QString& outDir, const QString& prefix,
                                          qreal fadeMs);
+    /// 建议的铺放起始小节（1-based）：当前谱面已用小节数 + 1（下一空小节；
+    /// 无谱面 → 1）。「起始小节」SpinBox 默认值用；夹逼 [1,999]。
+    Q_INVOKABLE int suggestedStartMeasure() const;
     /// 复制文本到系统剪贴板（QML「复制 raw」按钮用；Qt 6 QML 无内置剪贴板 API）。
     Q_INVOKABLE void copyToClipboard(const QString& text);
 

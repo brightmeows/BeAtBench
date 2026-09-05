@@ -15,6 +15,7 @@
 #include <QThreadPool>
 #include <QVariantMap>
 
+#include <algorithm>
 #include <set>
 
 #include "bridge/AudioEngine.hpp"
@@ -73,8 +74,17 @@ int SliceWorkspace::nextFreeWavId() const {
     return static_cast<int>(cand);
 }
 
+int SliceWorkspace::suggestedStartMeasure() const {
+    // 下一空小节（1-based）：谱面已有小节数 + 1；无谱面 → 第 1 小节。
+    // 夹逼 [1,999]（文件 3 位小节号上限）。
+    if (!m_chartSession || !m_chartSession->chart()) return 1;
+    const int n = m_chartSession->measureCount();
+    return std::clamp(n + 1, 1, 999);
+}
+
 QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
                                          int beatsPerMeasure, int startId,
+                                         int startMeasure,
                                          const QString& outDir, const QString& prefix,
                                          qreal fadeMs) {
     QVariantMap res;
@@ -96,7 +106,7 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
     const auto items = slice::build_export_layout(
         m_slices, m_sliceEnabled, occupied_wav_ids(m_chartSession),
         static_cast<std::uint32_t>(startId), baseName.toStdString(), bpm,
-        beatsPerMeasure, subdivision, m_offsetSec);
+        beatsPerMeasure, subdivision, m_offsetSec, startMeasure);
 
     // 输出：<outDir>/<prefix>_<NNN>.wav；prefix 含 `/` 或 `\` 时建对应子目录
     const int lastSlash =
@@ -137,19 +147,20 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
     res.insert(QStringLiteral("count"), written);
     res.insert(QStringLiteral("raw"), QString::fromStdString(rawStr));
     // 铺放起点信息（用户问「自动铺放知道从第几小节开始吗」）：启用切片的 measure 范围
-    int startMeasure = -1;
-    int endMeasure = -1;
+    // （文件 0-based；对外显示 1-based「第 N 小节」= 文件小节号 + 1）
+    int startMeasureFile = -1;
+    int endMeasureFile = -1;
     for (const auto& it : items) {
         if (!it.enabled) continue;
-        if (startMeasure < 0 || it.measure < startMeasure) startMeasure = it.measure;
-        if (it.measure > endMeasure) endMeasure = it.measure;
+        if (startMeasureFile < 0 || it.measure < startMeasureFile) startMeasureFile = it.measure;
+        if (it.measure > endMeasureFile) endMeasureFile = it.measure;
     }
-    if (startMeasure >= 0) {
-        res.insert(QStringLiteral("startMeasure"), startMeasure);
-        res.insert(QStringLiteral("endMeasure"), endMeasure);
-        QString placement = QStringLiteral("铺放从第 %1 小节起").arg(startMeasure);
-        if (endMeasure > startMeasure)
-            placement += QStringLiteral("（至第 %1 小节）").arg(endMeasure);
+    if (startMeasureFile >= 0) {
+        res.insert(QStringLiteral("startMeasure"), startMeasureFile + 1);
+        res.insert(QStringLiteral("endMeasure"), endMeasureFile + 1);
+        QString placement = QStringLiteral("铺放从第 %1 小节起").arg(startMeasureFile + 1);
+        if (endMeasureFile > startMeasureFile)
+            placement += QStringLiteral("（至第 %1 小节）").arg(endMeasureFile + 1);
         res.insert(QStringLiteral("placementText"), placement);
     }
     if (!errors.isEmpty())
