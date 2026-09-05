@@ -22,6 +22,11 @@
 #include <QTimer>
 #include <QTranslator>
 #include <QVariant>
+#include <cstring>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #include "bridge/AudioEngine.hpp"
 #include "bridge/ChartSession.hpp"
@@ -159,7 +164,30 @@ static int loadKeymap(const QString& path, beatbench::app::UiActionRegistry& uiA
     }
 }
 
+// 调试/迭代用：未处理异常 → 写 beatbench-crash.txt（GUID 现场：异常码 + 地址 + 栈顶模块；
+// 配 exportSlices 步骤日志可定位崩溃阶段；GUI 无控制台时唯一途径）
+static LONG WINAPI recordUnhandledCrash(EXCEPTION_POINTERS* ex) {
+    if (ex && ex->ExceptionRecord) {
+        const auto* er = ex->ExceptionRecord;
+        char buf[512];
+        std::snprintf(buf, sizeof(buf),
+                      "CRASH: code=0x%08X flags=0x%08X addr=%p\n",
+                      static_cast<unsigned>(er->ExceptionCode),
+                      static_cast<unsigned>(er->ExceptionFlags),
+                      static_cast<void*>(er->ExceptionAddress));
+        HANDLE h = CreateFileW(L"beatbench-crash.txt", GENERIC_WRITE, FILE_SHARE_READ,
+                               nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h != INVALID_HANDLE_VALUE) {
+            DWORD w = 0;
+            WriteFile(h, buf, static_cast<DWORD>(std::strlen(buf)), &w, nullptr);
+            CloseHandle(h);
+        }
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 int main(int argc, char** argv) {
+    SetUnhandledExceptionFilter(recordUnhandledCrash);
     QGuiApplication app(argc, argv);
     app.setOrganizationName(QStringLiteral("BeAtBench"));
     app.setApplicationName(QStringLiteral("BeAtBench"));

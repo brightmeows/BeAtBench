@@ -70,9 +70,10 @@ ApplicationWindow {
     }
     // 轨道列头显示实际 BMS 通道 id（debug 用；Ctrl 临时切换经下方 Connections 同路径翻转）
     property bool showChannelIds: false
-    /// Ctrl 临时勾选状态机（同 SlicePage MIDI 线）：按下 → channelIdCheck.toggle()
-    /// （与用户点击同路径：toggled → uiActions.invoke → showChannelIds）；松开 → 仍处
-    /// 翻转态则 toggle() 还原；按住期间用户点过 = 以其为准。
+    /// Ctrl 临时勾选状态机（同 SlicePage MIDI 线）：按下 → 直接翻转 window.showChannelIds
+    /// （与点击同一条状态链路：checkbox 经 uiActions 注册表跟随显示——⚠️ 不要用
+    /// checkbox.toggle()：实测 Qt 6.11 只改内部 checked 不发 toggled，外部状态不更新）；
+    /// 松开 → 仍处翻转态则还原；按住期间用户点过 = 以其为准。
     property bool _channelIdCtrlActive: false
     property bool _channelIdCtrlSave: false
     Connections {
@@ -81,11 +82,11 @@ ApplicationWindow {
             if (keyMonitor.ctrlHeld && !window._channelIdCtrlActive && channelIdCheck.enabled) {
                 window._channelIdCtrlActive = true
                 window._channelIdCtrlSave = window.showChannelIds
-                channelIdCheck.toggle()
+                window.showChannelIds = !window.showChannelIds
             } else if (!keyMonitor.ctrlHeld && window._channelIdCtrlActive) {
                 window._channelIdCtrlActive = false
                 if (window.showChannelIds === !window._channelIdCtrlSave)
-                    channelIdCheck.toggle()
+                    window.showChannelIds = window._channelIdCtrlSave
             }
         }
     }

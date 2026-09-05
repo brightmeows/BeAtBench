@@ -102,11 +102,17 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
         return res;
     }
     const QString baseName = prefix.isEmpty() ? QStringLiteral("slice") : prefix;
+    // 防御：起始 id / 起始小节 夹逼到合法域（QML 侧异常输入不得进 core）
+    const int safeStartId = std::clamp(startId, 1, 1295);
+    const int safeStartMeasure = std::clamp(startMeasure, 1, 999);
+    qWarning("slice export: begin id=%d measure=%d slices=%zu enabled=%zu",
+             safeStartId, safeStartMeasure, m_slices.size(), m_sliceEnabled.size());
 
     const auto items = slice::build_export_layout(
         m_slices, m_sliceEnabled, occupied_wav_ids(m_chartSession),
-        static_cast<std::uint32_t>(startId), baseName.toStdString(), bpm,
-        beatsPerMeasure, subdivision, m_offsetSec, startMeasure);
+        static_cast<std::uint32_t>(safeStartId), baseName.toStdString(), bpm,
+        beatsPerMeasure, subdivision, m_offsetSec, safeStartMeasure);
+    qWarning("slice export: layout ok (%zu items)", items.size());
 
     // 输出：<outDir>/<prefix>_<NNN>.wav；prefix 含 `/` 或 `\` 时建对应子目录
     const int lastSlash =
@@ -143,6 +149,7 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
     }
 
     const std::string rawStr = slice::build_placement_raw(items, bpm, beatsPerMeasure);
+    qWarning("slice export: wrote=%d raw_chars=%zu", written, rawStr.size());
     res.insert(QStringLiteral("ok"), errors.isEmpty());
     res.insert(QStringLiteral("count"), written);
     res.insert(QStringLiteral("raw"), QString::fromStdString(rawStr));
@@ -165,7 +172,7 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
     }
     // 连续导入导出（用户 2026-09）：下一起始 id = 本次分配的最大 id + 1（跳过谱面已占用；
     // 无启用切片 → 起始不变；分配达上限 ZZ → 兜底最低空闲）
-    int nextStartId = std::clamp(startId, 1, 1295);
+    int nextStartId = safeStartId;
     int maxAllocId = -1;
     for (const auto& it : items)
         if (it.enabled && it.wavId > 0)
@@ -179,6 +186,7 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
         nextStartId = (cand <= 1295) ? cand : nextFreeWavId();
     }
     res.insert(QStringLiteral("nextStartId"), std::clamp(nextStartId, 1, 1295));
+    qWarning("slice export: done ok=%d nextStartId=%d", errors.isEmpty() ? 1 : 0, nextStartId);
     if (!errors.isEmpty())
         res.insert(QStringLiteral("error"), errors.join(QStringLiteral("; ")));
     return res;

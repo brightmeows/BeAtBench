@@ -109,20 +109,21 @@ Item {
         root.midiLinesOn = sliceSourceBox.currentIndex === 1
     }
 
-    // Ctrl 临时勾选：按下 → midiLinesBox.toggle()（与用户点击同一条路径：toggled →
-    // midiLinesOn = checked 更新状态与显示）；松开 → 仍处翻转态则 toggle() 还原。
-    // 按住期间用户点过 checkbox = 用户意图优先（松开不还原）。同编辑页「通道ID」。
+    // Ctrl 临时勾选：按下 → 直接翻转外部状态 midiLinesOn（与用户点击同一条状态链路：
+    // checkbox 经 `checked:` 绑定跟随显示；midiVisible 直读 midiLinesOn——⚠️ 不要用
+    // checkbox.toggle()：实测 Qt 6.11 它只改内部 checked 不发 toggled，外部状态不更新）；
+    // 松开 → 仍处翻转态则还原。按住期间用户点过 checkbox = 用户意图优先（松开不还原）。
     Connections {
         target: keyMonitor
         function onCtrlHeldChanged() {
             if (keyMonitor.ctrlHeld && !root._midiCtrlActive && midiLinesBox.enabled) {
                 root._midiCtrlActive = true
                 root._midiCtrlSave = root.midiLinesOn
-                midiLinesBox.toggle()
+                root.midiLinesOn = !root.midiLinesOn
             } else if (!keyMonitor.ctrlHeld && root._midiCtrlActive) {
                 root._midiCtrlActive = false
                 if (root.midiLinesOn === !root._midiCtrlSave)
-                    midiLinesBox.toggle()
+                    root.midiLinesOn = root._midiCtrlSave
             }
         }
     }
