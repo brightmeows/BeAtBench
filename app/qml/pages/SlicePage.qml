@@ -232,7 +232,9 @@ Item {
                 Item { Layout.fillWidth: true }
                 Label {
                     text: root.exportResult && root.exportResult.ok
-                          ? qsTr("已导出 %1 片").arg(root.exportResult.count)
+                          ? (qsTr("已导出 %1 片").arg(root.exportResult.count)
+                             + (root.exportResult.placementText
+                                ? (" · " + root.exportResult.placementText) : ""))
                           : (root.exportResult
                              ? (qsTr("导出失败：") + root.exportResult.error)
                              : (sliceWorkspace.hasSlices ? "" : qsTr("（先生成切片）")))

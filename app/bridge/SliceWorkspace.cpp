@@ -136,6 +136,22 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
     res.insert(QStringLiteral("ok"), errors.isEmpty());
     res.insert(QStringLiteral("count"), written);
     res.insert(QStringLiteral("raw"), QString::fromStdString(rawStr));
+    // 铺放起点信息（用户问「自动铺放知道从第几小节开始吗」）：启用切片的 measure 范围
+    int startMeasure = -1;
+    int endMeasure = -1;
+    for (const auto& it : items) {
+        if (!it.enabled) continue;
+        if (startMeasure < 0 || it.measure < startMeasure) startMeasure = it.measure;
+        if (it.measure > endMeasure) endMeasure = it.measure;
+    }
+    if (startMeasure >= 0) {
+        res.insert(QStringLiteral("startMeasure"), startMeasure);
+        res.insert(QStringLiteral("endMeasure"), endMeasure);
+        QString placement = QStringLiteral("铺放从第 %1 小节起").arg(startMeasure);
+        if (endMeasure > startMeasure)
+            placement += QStringLiteral("（至第 %1 小节）").arg(endMeasure);
+        res.insert(QStringLiteral("placementText"), placement);
+    }
     if (!errors.isEmpty())
         res.insert(QStringLiteral("error"), errors.join(QStringLiteral("; ")));
     return res;
