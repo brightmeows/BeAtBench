@@ -75,7 +75,8 @@ int SliceWorkspace::nextFreeWavId() const {
 
 QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
                                          int beatsPerMeasure, int startId,
-                                         const QString& outDir, qreal fadeMs) {
+                                         const QString& outDir, const QString& prefix,
+                                         qreal fadeMs) {
     QVariantMap res;
     res.insert(QStringLiteral("ok"), false);
     if (m_slices.empty()) {
@@ -90,14 +91,19 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
         res.insert(QStringLiteral("error"), QStringLiteral("输出目录为空"));
         return res;
     }
+    const QString baseName = prefix.isEmpty() ? QStringLiteral("slice") : prefix;
 
     const auto items = slice::build_export_layout(
         m_slices, m_sliceEnabled, occupied_wav_ids(m_chartSession),
-        static_cast<std::uint32_t>(startId), "slices/slice", bpm, beatsPerMeasure,
-        subdivision, m_offsetSec);
+        static_cast<std::uint32_t>(startId), baseName.toStdString(), bpm,
+        beatsPerMeasure, subdivision, m_offsetSec);
 
-    // 输出：<outDir>/slices/slice_NNN.wav（文件名含子目录，raw 引用相对 outDir 的路径）
-    QDir().mkpath(QDir(outDir).filePath(QStringLiteral("slices")));
+    // 输出：<outDir>/<prefix>_<NNN>.wav；prefix 含 `/` 或 `\` 时建对应子目录
+    const int lastSlash =
+        std::max(baseName.lastIndexOf(QLatin1Char('/')), baseName.lastIndexOf(QLatin1Char('\\')));
+    const QString prefixDir = (lastSlash >= 0) ? baseName.left(lastSlash) : QString();
+    if (!prefixDir.isEmpty())
+        QDir().mkpath(QDir(outDir).filePath(prefixDir));
     const double sr = m_track.sampleRate();
     const double fade = fadeMs / 1000.0;
     int written = 0;

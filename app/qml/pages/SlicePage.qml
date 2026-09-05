@@ -24,10 +24,28 @@ Item {
         var i = Math.max(base.lastIndexOf("/"), base.lastIndexOf("\\"))
         return i >= 0 ? base.substring(0, i) : ""
     }
+    // #WAV id 文本（36 进制、2 位大写）：1 → "01"，10 → "0A"，1295 → "ZZ"
+    function idTextOf(v) {
+        var s = parseInt(v, 10).toString(36).toUpperCase()
+        while (s.length < 2) s = "0" + s
+        return s
+    }
+    function idValueOf(text) {
+        var t = ("" + text).trim().toUpperCase()
+        for (var i = 0; i < t.length; ++i) {
+            var c = t.charAt(i)
+            var code = c.charCodeAt(0)
+            var ok = (c >= "0" && c <= "9") || (c >= "A" && c <= "Z")
+            if (!ok) return -1
+        }
+        var v = parseInt(t, 36)
+        return isNaN(v) || v < 1 ? 1 : v
+    }
     function doExport() {
         var dir = defaultOutDir()
+        var prefix = prefixBox.text.length ? prefixBox.text : "slice"
         var r = sliceWorkspace.exportSlices(bpmBox.value, subBox.value, 4,
-                                            exportIdBox.value, dir, 1.0)
+                                            exportIdBox.value, dir, prefix, 1.0)
         exportResult = r
         rawText = (typeof r.raw === "string") ? r.raw : ""
         if (r.ok) exportIdBox.value = sliceWorkspace.nextFreeWavId()
@@ -180,17 +198,26 @@ Item {
                 }
             }
 
-            // ---- M6.3 导出：起始 #WAV id + 导出分片 + 复制 raw ----
+            // ---- M6.3 导出：起始 #WAV id + 导出前缀 + 导出分片 + 复制 raw ----
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 6
-                Label { text: qsTr("导出起始"); color: Theme.textMuted }
+                Label { text: qsTr("导出起始ID"); color: Theme.textMuted }
                 SpinBox {
                     id: exportIdBox
                     from: 1
                     to: 1295
                     value: sliceWorkspace.nextFreeWavId()
                     editable: true
+                    textFromValue: function(value) { return root.idTextOf(value) }
+                    valueFromText: function(text, locale) { return root.idValueOf(text) }
+                }
+                Label { text: qsTr("前缀"); color: Theme.textMuted }
+                TextField {
+                    id: prefixBox
+                    text: "slice"
+                    placeholderText: qsTr("slice 或 slices/slice")
+                    implicitWidth: 130
                 }
                 BbToolButton {
                     text: qsTr("导出分片")

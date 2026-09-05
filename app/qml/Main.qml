@@ -870,7 +870,7 @@ ApplicationWindow {
         var base = sliceWorkspace.audioPath
         var i = Math.max(base.lastIndexOf("/"), base.lastIndexOf("\\"))
         if (i >= 0) dir = base.substring(0, i)
-        var r = sliceWorkspace.exportSlices(120.0, 4, 4, debugSliceExport, dir, 1.0)
+        var r = sliceWorkspace.exportSlices(120.0, 4, 4, debugSliceExport, dir, "slice", 1.0)
         console.log("debug slice export: ok=" + r.ok + " count=" + r.count +
                     (r.error ? " err=" + r.error : "") + "\n" + r.raw)
         sliceExportRetry.stop()

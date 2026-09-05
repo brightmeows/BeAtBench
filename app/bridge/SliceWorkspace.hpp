@@ -59,13 +59,15 @@ public:
     Q_INVOKABLE QVariantList occupiedWavIds() const;
     /// 下一个空闲 #WAV id（从 1 起跳过 occupied；无谱面 → 1）。
     Q_INVOKABLE int nextFreeWavId() const;
-    /// 导出：对每个「放置开关=开」的切片 → window()+fade → 写 <outDir>/<name>.wav，
+    /// 导出：对每个「放置开关=开」的切片 → window()+fade → 写 <outDir>/<prefix>_<NNN>.wav，
     /// 分配 #WAV id（从 startId 起，跳过 occupied），并生成可复制 BMS raw。
-    /// bpm/beatsPerMeasure/subdivision 用于拍位换算；offset 用当前 m_offsetSec。
+    /// prefix = 落盘前缀（可含 `/` 或 `\` 作子目录，如 "slices/slice" 或 "slice"）；
+    /// 自动识别正反斜杠。bpm/beatsPerMeasure/subdivision 用于拍位换算；offset 用当前 m_offsetSec。
     /// 返回 {ok, raw, count, error}（raw = #WAVxx 定义 + ch01 铺放行）。
     Q_INVOKABLE QVariantMap exportSlices(qreal bpm, int subdivision,
                                          int beatsPerMeasure, int startId,
-                                         const QString& outDir, qreal fadeMs);
+                                         const QString& outDir, const QString& prefix,
+                                         qreal fadeMs);
     /// 复制文本到系统剪贴板（QML「复制 raw」按钮用；Qt 6 QML 无内置剪贴板 API）。
     Q_INVOKABLE void copyToClipboard(const QString& text);
 
