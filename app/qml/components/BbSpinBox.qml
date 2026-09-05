@@ -17,6 +17,19 @@ SpinBox {
     /// 设置后先调用该钩子（对话框自己 reject），再释放焦点。非对话框场景保持 null → 原行为不变。
     property var escapeHandler: null
 
+    /// 用户驱动的数值调整（箭头/键盘/键入 Enter）：stepFactor>0 → ×/÷；否则 ±1。夹逼 [from,to]。
+    /// 调整后**发 valueModified**（⚠️ BbSpinBox 的 contentItem 是自绘 TextInput，绕过了默认
+    /// SpinBox 的 valueFromText/valueModified 管线——不补发则依赖 onValueModified 的页面失效）。
+    function adjustSpin(dir) {
+        var v = root.value
+        if (root.stepFactor > 0)
+            v = dir > 0 ? v * root.stepFactor : Math.floor(v / root.stepFactor)
+        else
+            v = v + dir
+        root.value = Math.max(root.from, Math.min(root.to, v))
+        root.valueModified()
+    }
+
     font.pixelSize: Theme.fsSmall
     font.family: Theme.fontSans
     implicitWidth: 72
@@ -35,8 +48,15 @@ SpinBox {
         readOnly: !root.editable
         validator: root.validator
         inputMethodHints: Qt.ImhFormattedNumbersOnly
-        onAccepted: root.value = root.textFromValue(text, root.locale)
+        // 提交：走 valueFromText（**不是 textFromValue**——前者 文本→数值，后者 数值→文本；
+        // 旧代码用反导致手填值解析错误），再补发 valueModified（用户驱动）。
+        onAccepted: {
+            root.value = root.valueFromText(text, root.locale)
+            root.valueModified()
+        }
         selectByMouse: true
+        Keys.onUpPressed: { root.adjustSpin(1); event.accepted = true }
+        Keys.onDownPressed: { root.adjustSpin(-1); event.accepted = true }
         // 2026-09：Esc 释放焦点（否则焦点粘住 → 快捷键被文本框吞掉）；有 escapeHandler 则先调用（关对话框）
         Keys.onEscapePressed: {
             if (root.escapeHandler) root.escapeHandler()
@@ -45,8 +65,8 @@ SpinBox {
         }
     }
 
-    // 上下按钮：stepFactor>0 时用 MouseArea 完全接管（吞掉点击，底层 QQuickIndicatorButton
-    // 的默认 ±1 不再触发），在 onClicked 里直接设 ×2/÷2 结果。
+    // 上下按钮：MouseArea 完全接管（吞掉点击，底层 QQuickIndicatorButton 的默认步进不再触发），
+    // onClicked 里统一走 adjustSpin（×/÷ 或 ±1）+ valueModified。
     up.indicator: Item {
         x: root.width - 18
         y: 0
@@ -70,11 +90,7 @@ SpinBox {
         }
         MouseArea {
             anchors.fill: parent
-            onClicked: {
-                if (root.stepFactor <= 0) return
-                const target = Math.min(root.to, root.value * root.stepFactor)
-                root.value = Math.max(root.from, target)
-            }
+            onClicked: root.adjustSpin(1)
         }
     }
     down.indicator: Item {
@@ -98,11 +114,7 @@ SpinBox {
         }
         MouseArea {
             anchors.fill: parent
-            onClicked: {
-                if (root.stepFactor <= 0) return
-                const target = Math.floor(root.value / root.stepFactor)
-                root.value = Math.max(root.from, target)
-            }
+            onClicked: root.adjustSpin(-1)
         }
     }
 

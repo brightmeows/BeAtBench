@@ -249,6 +249,8 @@ ApplicationWindow {
     menuBar: MenuBar {
         // 菜单栏底 = 主题 token（启动即深色；Fusion 默认/平台 palette 兜底不可靠）
         background: Rectangle { color: Theme.surface2 }
+        palette.windowText: Theme.text
+        palette.buttonText: Theme.text
         Menu {
             title: qsTr("文件")
             // 枚举渲染（doc/09 §7 验收 2）：文件菜单动作按注册表 idsByCategory("file") 生成，

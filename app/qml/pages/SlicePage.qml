@@ -109,7 +109,7 @@ Item {
                 text: qsTr("偏移(ms)")
                 color: Theme.textMuted
             }
-            SpinBox {
+            BbSpinBox {
                 id: offsetBox
                 from: -5000
                 to: 5000
@@ -155,7 +155,7 @@ Item {
                     color: Theme.textMuted
                     visible: sliceSourceBox.currentIndex === 0
                 }
-                SpinBox {
+                BbSpinBox {
                     id: bpmBox
                     from: 40
                     to: 300
@@ -168,7 +168,7 @@ Item {
                     color: Theme.textMuted
                     visible: sliceSourceBox.currentIndex === 0
                 }
-                SpinBox {
+                BbSpinBox {
                     id: subBox
                     from: 1
                     to: 16
@@ -203,7 +203,7 @@ Item {
                 Layout.fillWidth: true
                 spacing: 6
                 Label { text: qsTr("导出起始ID"); color: Theme.textMuted }
-                SpinBox {
+                BbSpinBox {
                     id: exportIdBox
                     from: 1
                     to: 1295
