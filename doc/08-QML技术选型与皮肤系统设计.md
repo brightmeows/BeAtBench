@@ -101,6 +101,13 @@ skins/MySkin/
   `applyTheme(path)` → 重发 `tokensChanged` → QML 绑定重算；应用级 `QPalette` 同步重建
   （main.cpp connect）；视口重绘（`ChartViewItem.refreshTheme()`）。启动时 `--skin` 仍走旧
   单次路径（等价于"启动时应用一次 L1 皮肤"）。
+- ⚠️ **平台 palette 陷阱（2026-09 实测修复）**：Windows 平台主题会在**窗口创建时覆盖**启动时
+  `app.setPalette` 的 QPalette（Fusion 默认控件/菜单首帧取平台浅色 palette → 默认皮肤深色背景
+  首帧不生效，进过设置换肤才恢复）。解法：**关键表面显式绑 Theme token 而非 palette 继承**
+  ——`ApplicationWindow.color = Theme.bg`、`MenuBar.background = Theme.surface2`、
+  菜单字体 `MenuBar.palette.text = Theme.text`（⚠️ Fusion MenuBarItem 标题取 **palette.text**
+  角色，不是 windowText）；`loadFromModule` 后重刷一次 `app.setPalette`（Fusion 默认控件兜底）。
+  新增皮肤须检查自身颜色是否也遇到同类「启动 vs 运行时」分叉。
 
 ### 3.4 内置皮肤双角色
 

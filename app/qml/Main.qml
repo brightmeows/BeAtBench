@@ -247,8 +247,11 @@ ApplicationWindow {
 
     // ---------- 菜单栏（固定全局；doc/09：从 uiActions 注册表查表） ----------
     menuBar: MenuBar {
-        // 菜单栏底 = 主题 token（启动即深色；Fusion 默认/平台 palette 兜底不可靠）
+        // 菜单栏底 = 主题 token（启动即深色；Fusion 默认/平台 palette 兜底不可靠）。
+        // ⚠️ 字体色：Fusion MenuBarItem 标题取 **palette.text**（非 windowText——上轮设错角色
+        // 导致深灰字体）；palette.text 同步作用于弹出的菜单项文字。
         background: Rectangle { color: Theme.surface2 }
+        palette.text: Theme.text
         palette.windowText: Theme.text
         palette.buttonText: Theme.text
         Menu {
