@@ -26,7 +26,8 @@ Item {
     /// MIDI 切片右边界（2026-09 用户）：true（默认）= 下一起始/音频末尾——与手动切片一致
     /// （只标起始；同起始和弦合并一片）；false = 按 note 结束切分（历史行为）。
     property bool midiExtendNext: true
-    /// 左 dock 页签：0 = 网格（默认·引导页）/ 1 = MIDI 音符 / 2 = 切片（放置开关）。
+    /// 左 dock 页签：0 = 切片（默认·放置开关/编辑）/ 1 = MIDI 音符。
+    /// 2026-09 用户：网格页（纯引导文字，无实际效果）删除。
     property int dockTab: 0
     /// Ctrl 临时勾选状态机：保存按下前状态；松开仍处翻转态才还原（期间用户点过 = 以其为准）。
     property bool _midiCtrlActive: false
@@ -325,7 +326,7 @@ Item {
                             sliceSourceBox.currentIndex === 0 ? "grid" : "midi",
                             bpmBox.value, subBox.value, sliceWorkspace.audioDurationSec,
                             root.midiExtendNext)) {
-                        root.dockTab = 2   // 生成成功 → 切到「切片」页签核对放置开关
+                        root.dockTab = 0   // 生成成功 → 切到「切片」页签核对放置开关
                     }
                 }
             }
@@ -378,7 +379,7 @@ Item {
                     BbTabStrip {
                         id: dockTabs
                         Layout.fillWidth: true
-                        model: [qsTr("网格"), qsTr("MIDI 音符"), qsTr("切片")]
+                        model: [qsTr("切片"), qsTr("MIDI 音符")]
                         currentIndex: root.dockTab
                         onIndexRequested: (i) => root.dockTab = i
                     }
@@ -391,46 +392,6 @@ Item {
                         border.color: Theme.border
                         radius: Theme.radiusSm
                         clip: true
-
-                        // ---- 页签 0：网格页（手动切片引导/说明；默认页） ----
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 8
-                            spacing: 8
-                            visible: root.dockTab === 0
-
-                            Label {
-                                text: qsTr("网格 / 手动切片")
-                                color: Theme.text
-                                font.bold: true
-                                font.pixelSize: Theme.fsSmall
-                            }
-                            Label {
-                                text: qsTr("当前均分: BPM %1 · 细分 %2/拍").arg(bpmBox.value).arg(subBox.value)
-                                color: Theme.textMuted
-                                font.pixelSize: Theme.fsSmall
-                                elide: Text.ElideRight
-                            }
-                            BbToolButton {
-                                text: qsTr("手动切分：点击选中 · 再击添加/删除")
-                                ToolTip.visible: hovered
-                                ToolTip.text: qsTr("点击波形 = 选中该拍子（青色光标，吸附拍线）；"
-                                                   + "再点击同一拍子 = 添加/删除切分点（不限时间）；"
-                                                   + "右键 = 删除。修改 BPM/细分只影响新加点，已有切分点不动。")
-                                onClicked: sliceWorkspace.setStatus(
-                                    qsTr("手动切分：点击选中拍子（青色光标）；再击同一拍子=添加/删除；右键=删除"))
-                            }
-                            Label {
-                                Layout.fillWidth: true
-                                text: qsTr("不生成切片也可以：直接在波形上点击选中拍子（青色光标），"
-                                           + "再击同一拍子 = 添加切分点（纯手动逐点建切片）；"
-                                           + "右键 = 删除；BPM/细分改动不影响已加点。")
-                                color: Theme.textFaint
-                                font.pixelSize: Theme.fsSmall
-                                wrapMode: Text.WordWrap
-                            }
-                            Item { Layout.fillHeight: true }
-                        }
 
                         // ---- 页签 1：MIDI 音符表（列标题 + 列表；无 MIDI → 提示） ----
                         ColumnLayout {
@@ -474,7 +435,7 @@ Item {
                                     required property var modelData
                                     width: ListView.view.width
                                     spacing: 4
-                                    Label { text: index; width: 28; color: Theme.textMuted; font.family: Theme.fontMono; font.pixelSize: Theme.fsSmall }
+                                    Label { text: modelData.index; width: 28; color: Theme.textMuted; font.family: Theme.fontMono; font.pixelSize: Theme.fsSmall }
                                     Label { text: modelData.pitch; width: 32; color: Theme.text; font.family: Theme.fontMono; font.pixelSize: Theme.fsSmall }
                                     Label { text: modelData.channel + "ch"; width: 26; color: Theme.textMuted; font.pixelSize: Theme.fsSmall }
                                     Label { text: "T" + modelData.track; width: 26; color: Theme.textMuted; font.pixelSize: Theme.fsSmall }
@@ -490,12 +451,12 @@ Item {
                             }
                         }
 
-                        // ---- 页签 2：切片表（列标题 + 放置开关；无切片 → 提示） ----
+                        // ---- 页签 0：切片表（列标题 + 放置开关 + 双击编辑边界；无切片 → 提示） ----
                         ColumnLayout {
                             anchors.fill: parent
                             anchors.margins: 4
                             spacing: 2
-                            visible: root.dockTab === 2
+                            visible: root.dockTab === 0
 
                             RowLayout {
                                 Layout.fillWidth: true
@@ -516,10 +477,13 @@ Item {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 visible: !sliceWorkspace.hasSlices
-                                text: qsTr("（无切片——生成网格切片，或直接在波形上点击手动添加）")
+                                text: qsTr("（无切片——选「网格/MIDI」切片源后点「生成切片」；"
+                                           + "或直接在波形上点击选中拍子（青色光标）→ 再击同一拍子 = "
+                                           + "添加切分点，右键 = 删除。列表行双击 = 编辑边界）")
                                 color: Theme.textFaint
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
+                                wrapMode: Text.WordWrap
                             }
                             ListView {
                                 Layout.fillWidth: true
@@ -527,33 +491,45 @@ Item {
                                 model: sliceWorkspace.slices
                                 clip: true
                                 visible: sliceWorkspace.hasSlices
-                                delegate: RowLayout {
+                                delegate: Item {
                                     required property var modelData
                                     width: ListView.view.width
-                                    spacing: 4
-                                    CheckBox {
-                                        checked: modelData.enabled
-                                        onToggled: sliceWorkspace.setSliceEnabled(modelData.index, checked)
-                                        implicitHeight: 20
+                                    implicitHeight: row.implicitHeight
+                                    // 2026-09 切片编辑：双击行 = 打开编辑对话框（起始/持续）。
+                                    // CheckBox 在上层（后声明的兄弟叠上），点击仍走开关。
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        acceptedButtons: Qt.LeftButton
+                                        onDoubleClicked: root.openSliceEdit(modelData.index)
                                     }
-                                    Label { text: modelData.index; width: 28; color: Theme.textMuted; font.pixelSize: Theme.fsSmall }
-                                    Label {
-                                        text: modelData.startSec.toFixed(3)
-                                        width: 62; color: Theme.accent2; font.family: Theme.fontMono; font.pixelSize: Theme.fsSmall
-                                    }
-                                    Label {
-                                        text: modelData.durationSec.toFixed(3) + "s"
-                                        width: 50; color: Theme.textMuted; font.family: Theme.fontMono; font.pixelSize: Theme.fsSmall
-                                    }
-                                    Label {
-                                        text: modelData.kind === "midi"
-                                              ? (modelData.noteCount > 1
-                                                 ? ("MIDI ×" + modelData.noteCount)
-                                                 : ("MIDI " + modelData.note))
-                                              : (modelData.kind === "manual" ? qsTr("手动") : qsTr("网格"))
-                                        color: Theme.text
-                                        elide: Text.ElideRight
-                                        font.pixelSize: Theme.fsSmall
+                                    RowLayout {
+                                        id: row
+                                        anchors.fill: parent
+                                        spacing: 4
+                                        CheckBox {
+                                            checked: modelData.enabled
+                                            onToggled: sliceWorkspace.setSliceEnabled(modelData.index, checked)
+                                            implicitHeight: 20
+                                        }
+                                        Label { text: modelData.index; width: 28; color: Theme.textMuted; font.pixelSize: Theme.fsSmall }
+                                        Label {
+                                            text: modelData.startSec.toFixed(3)
+                                            width: 62; color: Theme.accent2; font.family: Theme.fontMono; font.pixelSize: Theme.fsSmall
+                                        }
+                                        Label {
+                                            text: modelData.durationSec.toFixed(3) + "s"
+                                            width: 50; color: Theme.textMuted; font.family: Theme.fontMono; font.pixelSize: Theme.fsSmall
+                                        }
+                                        Label {
+                                            text: modelData.kind === "midi"
+                                                  ? (modelData.noteCount > 1
+                                                     ? ("MIDI ×" + modelData.noteCount)
+                                                     : ("MIDI " + modelData.note))
+                                                  : (modelData.kind === "manual" ? qsTr("手动") : qsTr("网格"))
+                                            color: Theme.text
+                                            elide: Text.ElideRight
+                                            font.pixelSize: Theme.fsSmall
+                                        }
                                     }
                                 }
                             }
@@ -839,5 +815,65 @@ Item {
         title: qsTr("导入 MIDI")
         nameFilters: [qsTr("MIDI 文件 (*.mid *.midi)"), qsTr("所有文件 (*)")]
         onAccepted: sliceWorkspace.loadMidiFile(urlToPath(selectedFile))
+    }
+
+    // ---- 2026-09 切片编辑：切片表行双击 → 编辑起始/持续（参照编辑页 metaEditDialog 模式） ----
+    function openSliceEdit(index) {
+        const s = sliceWorkspace.slices[index]
+        if (!s) return
+        sliceEditDialog.editIndex = index
+        startBox.value = Math.round(s.startSec * 1000)
+        durBox.value = Math.round(s.durationSec * 1000)
+        sliceEditDialog.open()
+    }
+    Dialog {
+        id: sliceEditDialog
+        title: qsTr("编辑切片")
+        modal: true
+        anchors.centerIn: parent
+        width: 320
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        property int editIndex: -1
+        onOpened: startBox.forceActiveFocus()
+        contentItem: ColumnLayout {
+            anchors.fill: parent
+            spacing: 8
+            Label {
+                text: qsTr("起始(ms) / 持续(ms)；终点自动夹逼到音频尾；"
+                           + "改起始后切片表按时间重排。")
+                color: Theme.textFaint
+                font.pixelSize: Theme.fsTiny
+                wrapMode: Text.WordWrap
+            }
+            RowLayout {
+                spacing: 6
+                Label { text: qsTr("起始"); color: Theme.textMuted; font.pixelSize: Theme.fsSmall; Layout.preferredWidth: 48 }
+                BbSpinBox {
+                    id: startBox
+                    from: 0
+                    to: 3600000
+                    editable: true
+                    Layout.fillWidth: true
+                    escapeHandler: function() { sliceEditDialog.reject() }
+                }
+            }
+            RowLayout {
+                spacing: 6
+                Label { text: qsTr("持续"); color: Theme.textMuted; font.pixelSize: Theme.fsSmall; Layout.preferredWidth: 48 }
+                BbSpinBox {
+                    id: durBox
+                    from: 1
+                    to: 3600000
+                    editable: true
+                    Layout.fillWidth: true
+                    escapeHandler: function() { sliceEditDialog.reject() }
+                }
+            }
+        }
+        onAccepted: {
+            if (sliceEditDialog.editIndex < 0) return
+            sliceWorkspace.setSliceBounds(sliceEditDialog.editIndex,
+                                          startBox.value / 1000.0, durBox.value / 1000.0)
+        }
     }
 }

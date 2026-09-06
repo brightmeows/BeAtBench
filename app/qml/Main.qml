@@ -928,6 +928,27 @@ ApplicationWindow {
         slicePage.zoomIndex = Math.max(0, Math.min(slicePage.zoomLevels.length - 1, debugSliceZoom))
     property int debugSliceRow: -1
     onDebugSliceRowChanged: if (debugSliceRow >= 0) slicePage.scrollRow = debugSliceRow
+    // M6.5 调试参数：--slice-edit <index>（打开切片编辑对话框）/ --slice-edit-apply <i:startMs:durMs>
+    property int debugSliceEdit: -1
+    onDebugSliceEditChanged: if (debugSliceEdit >= 0) doDebugSliceEdit()
+    Timer { id: sliceEditRetry; interval: 300; repeat: true; onTriggered: doDebugSliceEdit() }
+    function doDebugSliceEdit() {
+        if (!sliceWorkspace.hasAudio || !sliceWorkspace.hasSlices) { sliceEditRetry.start(); return }
+        sliceEditRetry.stop()
+        slicePage.openSliceEdit(debugSliceEdit)
+    }
+    property string debugSliceEditApply: ""
+    onDebugSliceEditApplyChanged: if (debugSliceEditApply.length > 0) doDebugSliceEditApply()
+    Timer { id: sliceEditApplyRetry; interval: 300; repeat: true; onTriggered: doDebugSliceEditApply() }
+    function doDebugSliceEditApply() {
+        if (!sliceWorkspace.hasAudio || !sliceWorkspace.hasSlices) { sliceEditApplyRetry.start(); return }
+        sliceEditApplyRetry.stop()
+        const p = debugSliceEditApply.split(":")
+        if (p.length < 3) return
+        sliceWorkspace.setSliceBounds(parseInt(p[0], 10),
+                                      parseFloat(p[1]) / 1000.0,
+                                      parseFloat(p[2]) / 1000.0)
+    }
     // M6.4c 调试参数：--slice-toggle-point <秒>（手动切分点切换验收；等待音频就绪——
     // 纯手动模式无切片也可加点）
     property real debugSliceTogglePoint: -1

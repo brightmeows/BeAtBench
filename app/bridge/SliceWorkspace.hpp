@@ -103,6 +103,10 @@ public:
     Q_INVOKABLE void clearSlices();
     /// 切片「放置」开关（M6.3 铺放预选；越界忽略）。
     Q_INVOKABLE void setSliceEnabled(int index, bool v);
+    /// 2026-09 切片编辑（切片表行双击 → 编辑起始/持续）：改 startSec/endSec；
+    /// 起点 ≥0、终点夹逼到音频尾（无音频则仅校验正有限值）；按 startSec 重排 + 重编号
+    /// （保持表序/手动切分点判定一致）。成功返回 true；状态经 statusText。
+    Q_INVOKABLE bool setSliceBounds(int index, double startSec, double durationSec);
     // ---- M6.4c 手动切分点（双击添加/切换、右键删除；快照变化不影响已有点） ----
     /// 双击：t 已是内部边界 → 合并（删除该切分点）；否则拆分包含它的切片（新增切分点）。
     /// 返回是否发生变更；状态经 statusText。t 建议先经波形 snapToGrid（网格模式）。

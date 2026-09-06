@@ -517,7 +517,7 @@ int main(int argc, char** argv) {
                 root->setProperty("debugSliceExport", sid);
         }
     }
-    // --slice-tab N：切音页左 dock 页签（0 MIDI 音符 1 切片 2 网格；配 --screenshot 验收）
+    // --slice-tab N：切音页左 dock 页签（0 切片 1 MIDI 音符；配 --screenshot 验收）
     const int stIdx = args.indexOf(QStringLiteral("--slice-tab"));
     if (stIdx >= 0 && stIdx + 1 < args.size()) {
         bool ok = false;
@@ -566,6 +566,19 @@ int main(int argc, char** argv) {
             if (QObject* root = engine.rootObjects().value(0))
                 root->setProperty("debugSliceSelectBeat", t);
         }
+    }
+
+    // --slice-edit <index>：打开切片编辑对话框（M6.5 验收；配 --slice-detect --screenshot）
+    const int sedIdx = args.indexOf(QStringLiteral("--slice-edit"));
+    if (sedIdx >= 0 && sedIdx + 1 < args.size()) {
+        if (QObject* root = engine.rootObjects().value(0))
+            root->setProperty("debugSliceEdit", args.at(sedIdx + 1).toInt());
+    }
+    // --slice-edit-apply <index:startMs:durMs>：直接应用边界编辑（M6.5 验收重排/夹逼；配 --slice-detect）
+    const int seaIdx = args.indexOf(QStringLiteral("--slice-edit-apply"));
+    if (seaIdx >= 0 && seaIdx + 1 < args.size()) {
+        if (QObject* root = engine.rootObjects().value(0))
+            root->setProperty("debugSliceEditApply", args.at(seaIdx + 1));
     }
 
     // --tab N：左 Dock 标签（0 元信息 1 采样 2 lint 3 BGA；配合 --screenshot 验收面板）

@@ -14,6 +14,7 @@
 #include <QVariantMap>
 
 #include <algorithm>
+#include <cmath>
 #include <set>
 
 #include "bridge/AudioEngine.hpp"
@@ -320,8 +321,12 @@ QVariantMap SliceWorkspace::waveformRange(qlonglong frameLo, qlonglong frameHi) 
 
 QVariantList SliceWorkspace::midiNotes() const {
     QVariantList out;
+    int i = 0;
     for (const auto& n : m_midi.notes) {
         QVariantMap e;
+        // index：序号列数据源（2026-09 修复——前端不再依赖 delegate 隐式 index，
+        // 模态对话框打开时该上下文会报 ReferenceError: index is not defined）
+        e.insert(QStringLiteral("index"), i++);
         e.insert(QStringLiteral("track"), n.track);
         e.insert(QStringLiteral("channel"), n.channel);
         e.insert(QStringLiteral("pitch"), n.pitch);
@@ -394,6 +399,58 @@ void SliceWorkspace::setSliceEnabled(int index, bool v) {
     if (m_sliceEnabled[static_cast<std::size_t>(index)] == v) return;
     m_sliceEnabled[static_cast<std::size_t>(index)] = v;
     emit slicesChanged();
+}
+
+bool SliceWorkspace::setSliceBounds(int index, double startSec, double durationSec) {
+    if (index < 0 || index >= static_cast<int>(m_slices.size())) {
+        setStatus(QStringLiteral("切片序号越界"));
+        return false;
+    }
+    if (!std::isfinite(startSec) || !std::isfinite(durationSec) || durationSec <= 0.0) {
+        setStatus(QStringLiteral("起始/持续须为正有限值"));
+        return false;
+    }
+    const double dur = audioDurationSec();
+    if (startSec < 0.0) startSec = 0.0;
+    double endSec = startSec + durationSec;
+    if (dur > 0.0) {
+        if (startSec >= dur) {
+            setStatus(QStringLiteral("起始超出音频末尾"));
+            return false;
+        }
+        if (endSec > dur) endSec = dur;  // 终点夹逼到音频尾
+    }
+    if (endSec <= startSec) {
+        setStatus(QStringLiteral("持续过短（终点须在起始之后）"));
+        return false;
+    }
+
+    const std::size_t i = static_cast<std::size_t>(index);
+    m_slices[i].startSec = startSec;
+    m_slices[i].endSec = endSec;
+    // 起始变化可能改变表序 → 按 startSec 重排 + 重编号（放置开关跟随）；与手动切分点
+    // 判定的「切片表按起始升序」不变量保持一致。
+    std::vector<std::pair<beatbench::slice::Slice, bool>> zipped;
+    zipped.reserve(m_slices.size());
+    for (std::size_t k = 0; k < m_slices.size(); ++k)
+        zipped.emplace_back(m_slices[k], m_sliceEnabled[k]);
+    std::stable_sort(zipped.begin(), zipped.end(),
+                     [](const auto& a, const auto& b) {
+                         return a.first.startSec < b.first.startSec;
+                     });
+    m_slices.clear();
+    m_sliceEnabled.clear();
+    for (std::size_t k = 0; k < zipped.size(); ++k) {
+        m_slices.push_back(zipped[k].first);
+        m_sliceEnabled.push_back(zipped[k].second);
+    }
+    renumberSlices();
+    emit slicesChanged();
+    setStatus(QStringLiteral("已编辑切片（%1s ~ %2s，持续 %3s；表已按时间重排）")
+                  .arg(startSec, 0, 'f', 3)
+                  .arg(endSec, 0, 'f', 3)
+                  .arg(endSec - startSec, 0, 'f', 3));
+    return true;
 }
 
 // ---- M6.4c 手动切分点 ----
