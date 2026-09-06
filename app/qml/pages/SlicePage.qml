@@ -103,14 +103,20 @@ Item {
     }
 
     // ---- M6.4 换行视口（行=每行时长 rowSec 的整数倍换行；滚轮/方向键整行滚动，Ctrl+滚轮缩放）----
-    /// 缩放档位：0 = 全曲一行；>=1 = 每行小节数（行/sec = 小节 × 拍/小节(4) × 60/BPM）。
+    /// 缩放档位：0 = 全曲一行；>=1 = 每行时长（小节或拍换算：行秒 = measures × 4拍/小节 × 60/BPM）。
+    /// 深档如 1/8 拍 @60BPM ≈ 0.125s/行 ≈ 4300px/s——能看到 440Hz 正弦波周期（此前最深 1 小节
+    /// 只有 ~135px/s，正弦每像素 3+ 周期 → 渲染成实心方块；2026-09 用户）。
     property var zoomLevels: [
         { label: qsTr("全曲"), measures: 0 },
         { label: qsTr("16小节"), measures: 16 },
         { label: qsTr("8小节"), measures: 8 },
         { label: qsTr("4小节"), measures: 4 },
         { label: qsTr("2小节"), measures: 2 },
-        { label: qsTr("1小节"), measures: 1 } ]
+        { label: qsTr("1小节"), measures: 1 },
+        { label: qsTr("1拍"), measures: 0.25 },
+        { label: qsTr("1/2拍"), measures: 0.125 },
+        { label: qsTr("1/4拍"), measures: 0.0625 },
+        { label: qsTr("1/8拍"), measures: 0.03125 } ]
     /// 当前档位（默认 4 小节/行——BPM 自适应，拍距约 34px 可直接点击）
     property int zoomIndex: 3
     /// 同屏行数（默认 4；行高约 135px，长宽比正常）
@@ -145,7 +151,7 @@ Item {
             root.scrollRow = 0   // 换音频 → 回到顶部
         }
     }
-    /// 视图条状态文本：行 N/M · 时间范围 · 档位（范围夹逼到曲尾）
+    /// 视图条状态文本：行 N/M · 时间范围 · 档位（范围夹逼到曲尾；深档 <1s/行 → 小数秒）
     readonly property string viewportLabel: {
         var total = root.totalRowCount()
         var rs = root.rowSecOf()
@@ -153,10 +159,13 @@ Item {
         var s0 = root.scrollRow * rs
         var visEnd = Math.min(root.scrollRow + root.visibleRows, total)
         var s1 = Math.min(visEnd * rs, dur)
-        var m0 = Math.floor(s0 / 60), s00 = Math.floor(s0 % 60)
-        var m1 = Math.floor(s1 / 60), s11 = Math.floor(s1 % 60)
         function pad(v) { return v < 10 ? "0" + v : "" + v }
-        return (root.scrollRow + 1) + "/" + total + " · " + m0 + ":" + pad(s00) + "-" + m1 + ":" + pad(s11)
+        function fmt(v) {
+            var m = Math.floor(v / 60), s = v - m * 60
+            if (rs < 1) return m + ":" + pad(Math.floor(s)) + "." + Math.floor((s % 1) * 10)
+            return m + ":" + pad(Math.floor(s))
+        }
+        return (root.scrollRow + 1) + "/" + total + " · " + fmt(s0) + "-" + fmt(s1)
                + " · " + zoomLevels[zoomIndex].label
     }
 
@@ -270,11 +279,13 @@ Item {
             }
             BbSpinBox {
                 id: bpmBox
-                from: 40
+                from: 10
                 to: 300
                 value: Math.round(sliceWorkspace.midiTempoBpm)
                 editable: true
                 visible: sliceSourceBox.currentIndex === 0
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("网格 BPM（10-300；整轨慢速音轨可低至 10）")
             }
             Label {
                 text: qsTr("细分/拍")

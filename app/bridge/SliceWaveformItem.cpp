@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "bridge/SliceWorkspace.hpp"
 #include "bridge/ThemeManager.hpp"
@@ -135,10 +136,26 @@ void SliceWaveformItem::requestSeek(qreal x, qreal y) {
     const int vis = std::max(1, m_visibleRows);
     const qreal rowH = height() / vis;
     const int rowIdx = static_cast<int>(std::floor(y / rowH));
-    const double t = (static_cast<double>(m_scrollRow) + rowIdx) * rs +
-                     static_cast<double>(x - gutterW) / (plotW / rs);
+    double t = (static_cast<double>(m_scrollRow) + rowIdx) * rs +
+               static_cast<double>(x - gutterW) / (plotW / rs);
     if (t < 0.0 || t > dur) return;
+    // M6.4b：网格模式下点击 seek 吸附最近的拍子线（为方向键/手动切片铺路）
+    if (m_gridVisible) t = snapToGrid(t);
     emit seekRequested(t);
+}
+
+double SliceWaveformItem::snapToGrid(double t) const {
+    const SliceWorkspace* ws = workspaceObj();
+    if (!ws || !ws->hasAudio() || m_gridBpm <= 0.0) return t;
+    const int sub = std::max(1, m_gridSubdivision);
+    const double cell = 60.0 / static_cast<double>(m_gridBpm) /
+                        static_cast<double>(sub);
+    if (!std::isfinite(cell) || cell <= 0.0) return t;
+    const double offset = ws->offsetSecD();
+    const double k = std::round((t - offset) / cell);
+    double out = offset + k * cell;
+    const double dur = static_cast<double>(ws->audioDurationSec());
+    return std::clamp(out, 0.0, dur);
 }
 
 void SliceWaveformItem::mousePressEvent(QMouseEvent* event) {
@@ -214,6 +231,10 @@ void SliceWaveformItem::paint(QPainter* p) {
         amp = std::max(std::abs(r.min), std::abs(r.max));
     }
     const double srRate = pyr->sampleRate() > 0.0 ? pyr->sampleRate() : 44100.0;
+    // 深档直读 PCM（跨距 <256 采样时金字塔会把高频波形糊成实心）——持有共享指针保证生命周期
+    const auto pcmHolder = ws->track().pcm();
+    const float* pcmData = pcmHolder ? pcmHolder->data() : nullptr;
+    const std::size_t pcmFrames = pcmHolder ? pcmHolder->size() / 2 : 0;
 
     const QColor rowSep = th ? th->border() : QColor(QStringLiteral("#2a2f3a"));
     for (int i = 0; i < vis; ++i) {
@@ -221,8 +242,8 @@ void SliceWaveformItem::paint(QPainter* p) {
         const qreal top = i * rowH;
         const QRectF plot(kGutterW, top, plotW, rowH);
         if (rowIdx < total)
-            drawRow(p, plot, rowIdx * rs, (rowIdx + 1) * rs, ws, pyr, pxPerSec,
-                    amp, srRate);
+            drawRow(p, plot, rowIdx * rs, (rowIdx + 1) * rs, ws, pyr,
+                    pcmData, pcmFrames, pxPerSec, amp, srRate);
         // 行分隔线
         p->fillRect(QRectF(0, top + rowH - 1.0, w, 1.0), rowSep);
         // 行标签（左侧 gutter；行内容在右侧）
@@ -233,6 +254,7 @@ void SliceWaveformItem::paint(QPainter* p) {
 
 void SliceWaveformItem::drawRow(QPainter* p, const QRectF& plot, double t0, double t1,
                                 const SliceWorkspace* ws, const beatbench::audio::WaveformPyramid* pyr,
+                                const float* pcm, std::size_t pcmFrames,
                                 qreal pxPerSec, qreal amp, double sr) const {
     const ThemeManager* th = themeObj();
     const qreal w = plot.width();
@@ -243,17 +265,35 @@ void SliceWaveformItem::drawRow(QPainter* p, const QRectF& plot, double t0, doub
 
     const qreal centerY = plot.y() + h / 2.0;
     // ---- 逐列 min/max（t = t0 + col/pxPerSec） ----
+    // M6.4b：每像素跨距 < 256 采样 → 直接扫原始 PCM（金字塔 base 桶 256 会把
+    // 高频波形（如 440Hz 正弦的周期）糊成实心方块）；否则走金字塔（浅档）。
     QColor waveCol = th ? th->wave() : QColor(QStringLiteral("#8b9cf8"));
     waveCol.setAlpha(220);
     QColor gridCol = th ? th->border() : QColor(QStringLiteral("#2a2f3a"));
     p->setPen(Qt::NoPen);
+    const double spanPerPx = sr / pxPerSec;
+    const bool direct = (pcm != nullptr) && pcmFrames > 0 && spanPerPx < 256.0;
     for (int i = 0; i < static_cast<int>(w); ++i) {
         const double t = t0 + static_cast<double>(i) / pxPerSec;
         const double tNext = t0 + static_cast<double>(i + 1) / pxPerSec;
         const std::size_t f0 = static_cast<std::size_t>(t * sr);
         const std::size_t f1 = static_cast<std::size_t>(tNext * sr);
-        const auto r = pyr->range(f0, std::max(f0 + 1, f1));
-        if (amp > 1e-6) {
+        auto r = beatbench::audio::WaveformPyramid::Range{};
+        if (direct) {
+            // 直接扫：mono = 左右均值；夹逼帧数（行可能超出音频末端）
+            const std::size_t e = std::min(f1, pcmFrames);
+            float mn = std::numeric_limits<float>::max();
+            float mx = std::numeric_limits<float>::lowest();
+            for (std::size_t f = f0; f < e; ++f) {
+                const float mono = (pcm[2 * f] + pcm[2 * f + 1]) * 0.5f;
+                mn = std::min(mn, mono);
+                mx = std::max(mx, mono);
+            }
+            if (e > f0) r = {mn, mx};
+        } else {
+            r = pyr ? pyr->range(f0, std::max(f0 + 1, f1)) : r;
+        }
+        if (amp > 1e-6 && (r.max != 0.0f || r.min != 0.0f)) {
             const qreal yTop = centerY -
                 static_cast<qreal>(r.max) / amp * (h / 2.0 - 1.0);
             const qreal yBot = centerY -

@@ -49,6 +49,9 @@ class SliceWaveformItem : public QQuickPaintedItem {
     Q_PROPERTY(int visibleRows READ visibleRows WRITE setVisibleRows NOTIFY visibleRowsChanged)
     /// 缩放档位探针：当前行数（行首 + 可见行数；QML 滚动指示用）。
     Q_INVOKABLE int totalRows() const;
+    /// 吸附到当前拍子网格线（cell = 拍/细分；offset 基准；夹逼 [0,时长]）。
+    /// M6.4b：点击 seek /（后续）键盘移动与手动切片共用。
+    Q_INVOKABLE double snapToGrid(double t) const;
 
 public:
     explicit SliceWaveformItem(QQuickItem* parent = nullptr);
@@ -109,8 +112,11 @@ private:
     /// x/y（widget 坐标）→ 绝对秒（按当前行视口换算），发出 seekRequested。
     void requestSeek(qreal x, qreal y);
     /// 画一行：波形列 + 中央轴 + 网格 + MIDI 线 + 切片线 + 播放头（行内裁剪）。
+    /// pcm/pcmFrames：深档直读原始 PCM（每像素 <256 采样时金字塔 256 采样/桶会
+    /// 把高频波形糊成实心；直接扫 min/max 才能看到正弦周期）；nullptr = 走金字塔。
     void drawRow(QPainter* p, const QRectF& plot, double t0, double t1,
                  const SliceWorkspace* ws, const beatbench::audio::WaveformPyramid* pyr,
+                 const float* pcm, std::size_t pcmFrames,
                  qreal pxPerSec, qreal amp, double sr) const;
     /// 画行标签（左侧 gutter：小节号 + 秒；mono 小字）。
     void drawRowLabel(QPainter* p, const QRectF& row, double t0, double t1,
