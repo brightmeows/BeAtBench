@@ -509,6 +509,26 @@ int main(int argc, char** argv) {
                 root->setProperty("debugSliceDockTab", t);
         }
     }
+    // --slice-zoom <档位>：切音页波形缩放档位（0 全曲 1-5 = 16/8/4/2/1 小节每行）
+    const int szIdx = args.indexOf(QStringLiteral("--slice-zoom"));
+    if (szIdx >= 0 && szIdx + 1 < args.size()) {
+        bool ok = false;
+        const int z = args.at(szIdx + 1).toInt(&ok);
+        if (ok) {
+            if (QObject* root = engine.rootObjects().value(0))
+                root->setProperty("debugSliceZoom", z);
+        }
+    }
+    // --slice-row <n>：切音页波形首可见行号（M6.4 换行视口验收）
+    const int srowIdx = args.indexOf(QStringLiteral("--slice-row"));
+    if (srowIdx >= 0 && srowIdx + 1 < args.size()) {
+        bool ok = false;
+        const int r = args.at(srowIdx + 1).toInt(&ok);
+        if (ok) {
+            if (QObject* root = engine.rootObjects().value(0))
+                root->setProperty("debugSliceRow", r);
+        }
+    }
 
     // --tab N：左 Dock 标签（0 元信息 1 采样 2 lint 3 BGA；配合 --screenshot 验收面板）
     const int tabIdx = args.indexOf(QStringLiteral("--tab"));

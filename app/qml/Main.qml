@@ -905,6 +905,11 @@ ApplicationWindow {
     // M6.3c 调试参数：--slice-tab N（切音页左 dock 页签验收）
     property int debugSliceDockTab: -1
     onDebugSliceDockTabChanged: if (debugSliceDockTab >= 0) slicePage.dockTab = debugSliceDockTab
+    // M6.4 调试参数：--slice-zoom N / --slice-row N（换行视口验收）
+    property int debugSliceZoom: -1
+    onDebugSliceZoomChanged: if (debugSliceZoom >= 0) slicePage.zoomIndex = debugSliceZoom
+    property int debugSliceRow: -1
+    onDebugSliceRowChanged: if (debugSliceRow >= 0) slicePage.scrollRow = debugSliceRow
     // --wait-render 截图等待标志（main.cpp 轮询；波形验收用）
     property bool debugRenderDone: false
     // 渲染完成次数（--wait-render 增量验收：等待全量 + 增量都完成）

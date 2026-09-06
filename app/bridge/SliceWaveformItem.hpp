@@ -2,10 +2,19 @@
 // 切音工作台波形视图（M6.1）：参考音频全曲波形 + MIDI note 刻度 + 播放头 + 点击/拖动 seek。
 // 数据源 = SliceWorkspace（波形金字塔 + note 表 + offset）；播放头位置由 QML 定时
 // 读 audioEngine.refPositionSec 传入（~20Hz）。皮肤：QPainter 自绘 + Theme token。
+// M6.4 换行视口（用户 2026-09）：波形按 rowSec（每行时长）换行成多行文本式排版，
+// 滚轮/方向键整行滚动，Ctrl+滚轮缩放（改 rowSec）；行界 = rowSec 整数倍（可预测编辑）。
+// 行内绘制复用：波形列 / 中央轴 / 拍子网格（offset 锚点）/ MIDI 线 / 切片线 / 播放头。
 #pragma once
 
 #include <QQuickPaintedItem>
 #include <QtQml/qqmlregistration.h>
+
+class QWheelEvent;
+
+namespace beatbench::audio {
+class WaveformPyramid;
+}
 
 namespace beatbench::app {
 
@@ -29,8 +38,17 @@ class SliceWaveformItem : public QQuickPaintedItem {
     Q_PROPERTY(int gridSubdivision READ gridSubdivision WRITE setGridSubdivision NOTIFY gridSubdivisionChanged)
     /// 每小节拍数（网格参考线小节分组；默认 4 = 4/4；同 core GridConfig.beatsPerMeasure）。
     Q_PROPERTY(int gridBeatsPerMeasure READ gridBeatsPerMeasure WRITE setGridBeatsPerMeasure NOTIFY gridBeatsPerMeasureChanged)
-    /// MIDI note 刻度线显示（M6.3c：网格模式下默认关；QML「MIDI 线」开关 + Ctrl 临时取反）。
+    /// MIDI note 刻度线显示（M6.3c：网格模式下默认关；QML「MIDI 线」开关 + Ctrl 临时切换）。
     Q_PROPERTY(bool midiVisible READ midiVisible WRITE setMidiVisible NOTIFY midiVisibleChanged)
+    // ---- M6.4 换行视口 ----
+    /// 每行时长（秒；QML 由缩放档位换算：4 小节×beatsPerMeasure×60/BPM 等；<=0 = 整曲一行兜底）。
+    Q_PROPERTY(qreal rowSec READ rowSec WRITE setRowSec NOTIFY rowSecChanged)
+    /// 首可见行号（整数；滚轮/方向键 ±1；越界在绘制/交互处夹逼）。
+    Q_PROPERTY(int scrollRow READ scrollRow WRITE setScrollRow NOTIFY scrollRowChanged)
+    /// 同屏行数（1-6；默认 4）。
+    Q_PROPERTY(int visibleRows READ visibleRows WRITE setVisibleRows NOTIFY visibleRowsChanged)
+    /// 缩放档位探针：当前行数（行首 + 可见行数；QML 滚动指示用）。
+    Q_INVOKABLE int totalRows() const;
 
 public:
     explicit SliceWaveformItem(QQuickItem* parent = nullptr);
@@ -53,6 +71,12 @@ public:
     void setGridBeatsPerMeasure(int v);
     bool midiVisible() const { return m_midiVisible; }
     void setMidiVisible(bool v);
+    qreal rowSec() const { return m_rowSec; }
+    void setRowSec(qreal v);
+    int scrollRow() const { return m_scrollRow; }
+    void setScrollRow(int v);
+    int visibleRows() const { return m_visibleRows; }
+    void setVisibleRows(int v);
 
 signals:
     void workspaceChanged();
@@ -63,24 +87,41 @@ signals:
     void gridSubdivisionChanged();
     void gridBeatsPerMeasureChanged();
     void midiVisibleChanged();
+    void rowSecChanged();
+    void scrollRowChanged();
+    void visibleRowsChanged();
     /// 点击/拖动 → 目标秒（QML 接 audioEngine.refSeek）。
     void seekRequested(double seconds);
+    /// 滚轮（无 Ctrl）：dir = ±1（+1 = 向后翻行/看更晚）。QML 改 scrollRow。
+    void scrollRequested(int dir);
+    /// Ctrl+滚轮：dir = ±1（+1 = 放大/每行时长更短）。QML 改缩放档位。
+    void zoomRequested(int dir);
 
 protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    void wheelEvent(QWheelEvent* event) override;
 
 private:
     SliceWorkspace* workspaceObj() const;
     ThemeManager* themeObj() const;
-    /// x（widget 坐标）→ 秒，发出 seekRequested。
-    void requestSeek(qreal x);
-    /// 画实时拍子网格参考线（BPM/细分/offset；等分；M6.2）。四级：起点/小节/拍/细分。
-    void drawGridLines(QPainter* p, qreal w, qreal h, const SliceWorkspace* ws) const;
+    /// x/y（widget 坐标）→ 绝对秒（按当前行视口换算），发出 seekRequested。
+    void requestSeek(qreal x, qreal y);
+    /// 画一行：波形列 + 中央轴 + 网格 + MIDI 线 + 切片线 + 播放头（行内裁剪）。
+    void drawRow(QPainter* p, const QRectF& plot, double t0, double t1,
+                 const SliceWorkspace* ws, const beatbench::audio::WaveformPyramid* pyr,
+                 qreal pxPerSec, qreal amp, double sr) const;
+    /// 画行标签（左侧 gutter：小节号 + 秒；mono 小字）。
+    void drawRowLabel(QPainter* p, const QRectF& row, double t0, double t1,
+                      const ThemeManager* th) const;
+    /// 画实时拍子网格参考线（BPM/细分/offset；等分）。范围 = [t0, t1)。
+    void drawGridLines(QPainter* p, const QRectF& plot, double t0, double t1,
+                       const SliceWorkspace* ws, qreal pxPerSec,
+                       const ThemeManager* th) const;
     /// 画起点（time=offset）显眼标记：顶部 tab + 秒数标签。
     void drawOriginMarker(QPainter* p, qreal x, const ThemeManager* th,
-                          double t, qreal w) const;
+                          double t, const QRectF& plot) const;
 
     QObject* m_workspace = nullptr;
     QObject* m_theme = nullptr;
@@ -91,6 +132,10 @@ private:
     int m_gridSubdivision = 4;
     int m_gridBeatsPerMeasure = 4;
     bool m_midiVisible = true;  ///< MIDI note 刻度（M6.3c 网格模式默认关）
+    // ---- M6.4 换行视口 ----
+    qreal m_rowSec = 8.0;   ///< 每行时长（QML 缩放档位换算；<=0 → 整曲一行）
+    int m_scrollRow = 0;    ///< 首可见行
+    int m_visibleRows = 4;  ///< 同屏行数
 };
 
 }  // namespace beatbench::app

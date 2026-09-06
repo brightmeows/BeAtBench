@@ -102,6 +102,64 @@ Item {
         return m + ":" + ss
     }
 
+    // ---- M6.4 换行视口（行=每行时长 rowSec 的整数倍换行；滚轮/方向键整行滚动，Ctrl+滚轮缩放）----
+    /// 缩放档位：0 = 全曲一行；>=1 = 每行小节数（行/sec = 小节 × 拍/小节(4) × 60/BPM）。
+    property var zoomLevels: [
+        { label: qsTr("全曲"), measures: 0 },
+        { label: qsTr("16小节"), measures: 16 },
+        { label: qsTr("8小节"), measures: 8 },
+        { label: qsTr("4小节"), measures: 4 },
+        { label: qsTr("2小节"), measures: 2 },
+        { label: qsTr("1小节"), measures: 1 } ]
+    /// 当前档位（默认 4 小节/行——BPM 自适应，拍距约 34px 可直接点击）
+    property int zoomIndex: 3
+    /// 同屏行数（默认 4；行高约 135px，长宽比正常）
+    property int visibleRows: 4
+    /// 首可见行号（波形 tooltip/滚动条/键盘共用）
+    property int scrollRow: 0
+
+    /// 每行时长（秒）：缩放档位 → 时间（BPM 行内固定；未知 120）。
+    function rowSecOf() {
+        var m = zoomLevels[zoomIndex].measures
+        if (m <= 0) return sliceWorkspace.audioDurationSec > 0 ? sliceWorkspace.audioDurationSec : 8
+        var bpm = bpmBox.value > 0 ? bpmBox.value : 120
+        return m * 4 * 60 / bpm
+    }
+    function totalRowCount() {
+        var dur = sliceWorkspace.audioDurationSec
+        if (dur <= 0) return 1
+        return Math.max(1, Math.ceil(dur / rowSecOf() - 1e-9))
+    }
+    /// 夹逼 scrollRow（档位/行数/时长变化后调用）。
+    function clampScroll() {
+        var maxRow = Math.max(0, root.totalRowCount() - root.visibleRows)
+        if (root.scrollRow > maxRow) root.scrollRow = maxRow
+        if (root.scrollRow < 0) root.scrollRow = 0
+    }
+    onZoomIndexChanged: root.clampScroll()
+    onVisibleRowsChanged: root.clampScroll()
+    onScrollRowChanged: root.clampScroll()
+    Connections {
+        target: sliceWorkspace
+        function onAudioChanged() {
+            root.scrollRow = 0   // 换音频 → 回到顶部
+        }
+    }
+    /// 视图条状态文本：行 N/M · 时间范围 · 档位（范围夹逼到曲尾）
+    readonly property string viewportLabel: {
+        var total = root.totalRowCount()
+        var rs = root.rowSecOf()
+        var dur = sliceWorkspace.audioDurationSec
+        var s0 = root.scrollRow * rs
+        var visEnd = Math.min(root.scrollRow + root.visibleRows, total)
+        var s1 = Math.min(visEnd * rs, dur)
+        var m0 = Math.floor(s0 / 60), s00 = Math.floor(s0 % 60)
+        var m1 = Math.floor(s1 / 60), s11 = Math.floor(s1 % 60)
+        function pad(v) { return v < 10 ? "0" + v : "" + v }
+        return (root.scrollRow + 1) + "/" + total + " · " + m0 + ":" + pad(s00) + "-" + m1 + ":" + pad(s11)
+               + " · " + zoomLevels[zoomIndex].label
+    }
+
     Component.onCompleted: {
         // 起始小节默认 = 下一空小节（当前谱面已用小节数 + 1；无谱面 = 1）
         startMeasureBox.value = sliceWorkspace.suggestedStartMeasure()
@@ -416,27 +474,129 @@ Item {
                 }
             }
 
-            // ================= 中央：波形 =================
+            // ================= 中央：视图条 + 波形（换行视口） + 滚动条 =================
             ColumnLayout {
                 SplitView.fillWidth: true
                 SplitView.minimumWidth: 320
                 spacing: 6
 
-                // 波形 + note 刻度 + 播放头 + 切片线 + 实时拍子网格参考
-                SliceWaveformItem {
+                // ---- 视图条：行数 / 缩放档位 / 视口范围 ----
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+                    Label { text: qsTr("行数"); color: Theme.textMuted }
+                    BbComboBox {
+                        id: rowsBox
+                        model: [1, 2, 3, 4, 5, 6]
+                        implicitWidth: 52
+                        currentIndex: root.visibleRows - 1
+                        onActivated: (idx) => root.visibleRows = idx + 1
+                        ToolTip.visible: hovered
+                        ToolTip.text: qsTr("同屏行数（1-6）")
+                    }
+                    Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 20; color: Theme.border }
+                    BbToolButton {
+                        text: "−"
+                        ToolTip.visible: hovered
+                        ToolTip.text: qsTr("缩小（每行时长更长）")
+                        onClicked: root.zoomIndex = Math.max(0, root.zoomIndex - 1)
+                    }
+                    BbToolButton {
+                        text: "+"
+                        ToolTip.visible: hovered
+                        ToolTip.text: qsTr("放大（每行时长更短；Ctrl+滚轮同效）")
+                        onClicked: root.zoomIndex = Math.min(root.zoomLevels.length - 1, root.zoomIndex + 1)
+                    }
+                    BbToolButton {
+                        text: qsTr("适应全曲")
+                        onClicked: root.zoomIndex = 0
+                    }
+                    Item { Layout.fillWidth: true }
+                    Label {
+                        text: root.viewportLabel
+                        color: Theme.textMuted
+                        font.family: Theme.fontMono
+                    }
+                }
+
+                RowLayout {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    workspace: sliceWorkspace
-                    theme: Theme
-                    playheadSec: root.playheadSec
-                    gridVisible: sliceSourceBox.currentIndex === 0
-                    gridBpm: bpmBox.value
-                    gridSubdivision: subBox.value
-                    // Ctrl 临时勾选已写入 midiLinesOn（checkbox.toggle 同路径），此处直连
-                    midiVisible: root.midiLinesOn
-                    onSeekRequested: {
-                        audioEngine.refSeek(seconds)
-                        root.playheadSec = audioEngine.refPositionSec
+                    spacing: 6
+
+                    // 波形 + note 刻度 + 播放头 + 切片线 + 实时拍子网格（换行视口）
+                    SliceWaveformItem {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        workspace: sliceWorkspace
+                        theme: Theme
+                        playheadSec: root.playheadSec
+                        gridVisible: sliceSourceBox.currentIndex === 0
+                        gridBpm: bpmBox.value
+                        gridSubdivision: subBox.value
+                        rowSec: root.rowSecOf()
+                        visibleRows: root.visibleRows
+                        scrollRow: root.scrollRow
+                        // Ctrl 临时勾选已写入 midiLinesOn（checkbox.toggle 同路径），此处直连
+                        midiVisible: root.midiLinesOn
+                        onSeekRequested: {
+                            audioEngine.refSeek(seconds)
+                            root.playheadSec = audioEngine.refPositionSec
+                        }
+                        onScrollRequested: (dir) => root.scrollRow += dir
+                        onZoomRequested: (dir) => root.zoomIndex += dir
+                        // 键盘：方向键整行滚动（点击波形获得焦点）；Page/Home/End 走通用 onPressed
+                        Keys.onUpPressed: { root.scrollRow--; event.accepted = true }
+                        Keys.onDownPressed: { root.scrollRow++; event.accepted = true }
+                        Keys.onPressed: {
+                            if (event.key === Qt.Key_PageUp) { root.scrollRow -= root.visibleRows; event.accepted = true }
+                            else if (event.key === Qt.Key_PageDown) { root.scrollRow += root.visibleRows; event.accepted = true }
+                            else if (event.key === Qt.Key_Home) { root.scrollRow = 0; event.accepted = true }
+                            else if (event.key === Qt.Key_End) { root.scrollRow = 9999; event.accepted = true }  // clampScroll 夹逼
+                        }
+                    }
+
+                    // ---- 行滚动条（拖/点击跳行；位置 = scrollRow/(total-visible)） ----
+                    Rectangle {
+                        id: vBar
+                        Layout.preferredWidth: 8
+                        Layout.fillHeight: true
+                        color: Theme.surface2
+                        radius: Theme.radiusSm
+                        border.width: 1
+                        border.color: Theme.border
+                        Rectangle {
+                            id: vThumb
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            readonly property int total: root.totalRowCount()
+                            readonly property int maxRow: Math.max(0, total - root.visibleRows)
+                            height: Math.min(vBar.height - 2,
+                                             Math.max(14, vBar.height * root.visibleRows / Math.max(1, total)))
+                            y: maxRow > 0 ? (vBar.height - height) * (root.scrollRow / maxRow) : 0
+                            radius: vBar.radius
+                            color: Theme.primary
+                            opacity: 0.75
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            property real grabOffset: 0
+                            onPressed: {
+                                grabOffset = mouse.y - vThumb.y
+                                jumpTo(mouse.y - grabOffset)
+                            }
+                            onPositionChanged: if (pressed) jumpTo(mouse.y - grabOffset)
+                            function jumpTo(my) {
+                                var maxRow = vThumb.maxRow
+                                if (maxRow <= 0) return
+                                var frac = Math.max(0, Math.min(1, my / vBar.height))
+                                root.scrollRow = Math.round(frac * maxRow)
+                            }
+                            ToolTip.visible: containsMouse
+                            ToolTip.delay: 600
+                            ToolTip.text: qsTr("行滚动条：拖动/点击跳行；滚轮或方向键逐行")
+                        }
                     }
                 }
 
