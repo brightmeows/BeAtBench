@@ -833,97 +833,44 @@ Item {
         durBox.value = Math.round(s.durationSec * 1000)
         sliceEditDialog.open()
     }
-    Dialog {
+    BbDialog {
         id: sliceEditDialog
-        modal: true
-        anchors.centerIn: parent
+        title: qsTr("编辑切片")
         width: 320
         height: 186   // 34(header) + ~110(content: 提示2行+两行输入) + 42(footer)
-        padding: 0   // 主题化 Dialog（参照 SettingsDialog 模式；默认 Basic 样式白底割裂）
         property int editIndex: -1
         onOpened: startBox.forceActiveFocus()
-        background: Rectangle {
-            color: Theme.surface
-            border.color: Theme.borderStrong
-            border.width: 1
-            radius: Theme.boxRadius
+        Label {
+            Layout.fillWidth: true
+            text: qsTr("起始 / 持续（ms）；终点自动夹逼到音频尾；改起始后切片表按时间重排。")
+            color: Theme.textFaint
+            font.pixelSize: Theme.fsTiny
+            wrapMode: Text.WordWrap
         }
-        header: Rectangle {
-            width: sliceEditDialog.width
-            height: 34
-            color: Theme.surface
-            border.color: Theme.borderStrong
-            border.width: 1
-            Label {
-                anchors.left: parent.left
-                anchors.leftMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                text: qsTr("编辑切片")
-                color: Theme.text
-                font.bold: true
-                font.pixelSize: Theme.fsBase
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8
+            Label { text: qsTr("起始"); color: Theme.textMuted; font.pixelSize: Theme.fsSmall; Layout.preferredWidth: 48 }
+            BbSpinBox {
+                id: startBox
+                from: 0
+                to: 3600000
+                editable: true
+                Layout.fillWidth: true
+                escapeHandler: function() { sliceEditDialog.reject() }
             }
         }
-        footer: Rectangle {
-            width: sliceEditDialog.width
-            height: 42
-            color: Theme.surface2
-            border.color: Theme.borderStrong
-            border.width: 1
-            RowLayout {
-                anchors.fill: parent
-                anchors.margins: 5
-                anchors.rightMargin: 8
-                spacing: 8
-                Item { Layout.fillWidth: true }
-                BbToolButton {
-                    text: qsTr("确定")
-                    onClicked: sliceEditDialog.accept()
-                }
-                BbToolButton {
-                    text: qsTr("取消")
-                    onClicked: sliceEditDialog.reject()
-                }
-            }
-        }
-        contentItem: ColumnLayout {
-            // ⚠️ 不要 anchors.fill: parent——contentItem 的父级是整窗 Dialog（含 header/footer），
-            // fill 会把内容压到 footer 下面（2026-09 实测重叠）；用显式宽度 + 隐式高度，
-            // Dialog 按内容区自动取高。
-            width: 296
-            spacing: 10
-            Label {
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8
+            Label { text: qsTr("持续"); color: Theme.textMuted; font.pixelSize: Theme.fsSmall; Layout.preferredWidth: 48 }
+            BbSpinBox {
+                id: durBox
+                from: 1
+                to: 3600000
+                editable: true
                 Layout.fillWidth: true
-                text: qsTr("起始 / 持续（ms）；终点自动夹逼到音频尾；改起始后切片表按时间重排。")
-                color: Theme.textFaint
-                font.pixelSize: Theme.fsTiny
-                wrapMode: Text.WordWrap
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-                Label { text: qsTr("起始"); color: Theme.textMuted; font.pixelSize: Theme.fsSmall; Layout.preferredWidth: 48 }
-                BbSpinBox {
-                    id: startBox
-                    from: 0
-                    to: 3600000
-                    editable: true
-                    Layout.fillWidth: true
-                    escapeHandler: function() { sliceEditDialog.reject() }
-                }
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-                Label { text: qsTr("持续"); color: Theme.textMuted; font.pixelSize: Theme.fsSmall; Layout.preferredWidth: 48 }
-                BbSpinBox {
-                    id: durBox
-                    from: 1
-                    to: 3600000
-                    editable: true
-                    Layout.fillWidth: true
-                    escapeHandler: function() { sliceEditDialog.reject() }
-                }
+                escapeHandler: function() { sliceEditDialog.reject() }
             }
         }
         onAccepted: {

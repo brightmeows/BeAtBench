@@ -922,6 +922,13 @@ ApplicationWindow {
     // M6.3c 调试参数：--slice-tab N（切音页左 dock 页签验收）
     property int debugSliceDockTab: -1
     onDebugSliceDockTabChanged: if (debugSliceDockTab >= 0) slicePage.dockTab = debugSliceDockTab
+    // 2026-09 BbDialog 主题化验收：--open-dialog <about|note|meta>
+    property string debugOpenDialog: ""
+    onDebugOpenDialogChanged: if (debugOpenDialog.length > 0) {
+        if (debugOpenDialog === "about") aboutDialog.open()
+        else if (debugOpenDialog === "note") noteSampleDialog.open()
+        else if (debugOpenDialog === "meta") metaEditDialog.open()
+    }
     // M6.4 调试参数：--slice-zoom N / --slice-row N（换行视口验收）
     property int debugSliceZoom: -1
     onDebugSliceZoomChanged: if (debugSliceZoom >= 0)
@@ -1449,59 +1456,48 @@ ApplicationWindow {
         onSkinRequested: (name) => window.applySkinByName(name)
     }
 
-    Dialog {
+    BbDialog {
         id: aboutDialog
         title: qsTr("关于 BeAtBench")
-        standardButtons: Dialog.Ok
-        modal: true
-        anchors.centerIn: parent
         width: 360
-        ColumnLayout {
-            anchors.fill: parent
-            spacing: 6
-            Label { text: "BeAtBench " + beatbench.versionString(); font.bold: true }
-            Label { text: qsTr("BMS 谱面编辑器 · GPL-3.0") }
-            Label { text: qsTr("© 2026 wufe8"); color: Theme.textMuted }
-        }
+        height: 148
+        showCancel: false
+        Label { text: "BeAtBench " + beatbench.versionString(); font.bold: true; color: Theme.text }
+        Label { text: qsTr("BMS 谱面编辑器 · GPL-3.0"); font.pixelSize: Theme.fsSmall; color: Theme.text }
+        Label { text: qsTr("© 2026 wufe8"); font.pixelSize: Theme.fsSmall; color: Theme.textMuted }
     }
 
     // 编辑区双击 note → 改引用采样 id（切音手工版；note.setSample）
-    Dialog {
+    BbDialog {
         id: noteSampleDialog
         title: qsTr("编辑对象")
-        modal: true
-        anchors.centerIn: parent
         width: 320
+        height: 176
         property var ref: null
-        standardButtons: Dialog.Ok | Dialog.Cancel
         readonly property string posText: ref ? qsTr("小节 %1 · %2/%3")
                                                  .arg(ref.measure).arg(ref.pos.num).arg(ref.pos.den) : ""
         readonly property string curText: ref ? qsTr("#WAV%1").arg(chartSession.idTextOf(ref.sample)) : ""
         onOpened: noteIdInput.forceActiveFocus()
-        ColumnLayout {
-            anchors.fill: parent
+        Label { text: qsTr("note 引用采样"); color: Theme.primary; font.pixelSize: Theme.fsSmall; font.bold: true }
+        Label { text: noteSampleDialog.posText + qsTr("　当前 %1").arg(noteSampleDialog.curText);
+                color: Theme.textFaint; font.family: Theme.fontMono; font.pixelSize: Theme.fsTiny }
+        RowLayout {
+            Layout.fillWidth: true
             spacing: 6
-            // 与 metaEditDialog 同结构：对象类型标题 + 位置 + 内容 label+field
-            Label { text: qsTr("note 引用采样"); color: Theme.primary; font.pixelSize: Theme.fsSmall; font.bold: true }
-            Label { text: noteSampleDialog.posText + qsTr("　当前 %1").arg(noteSampleDialog.curText);
-                    color: Theme.textFaint; font.family: Theme.fontMono; font.pixelSize: Theme.fsTiny }
-            RowLayout {
-                spacing: 6
-                Label { text: qsTr("#WAV id"); color: Theme.textMuted; font.pixelSize: Theme.fsTiny;
-                        Layout.preferredWidth: 56 }
-                BbTextField {
-                    id: noteIdInput
-                    Layout.fillWidth: true
-                    font.family: Theme.fontMono
-                    placeholderText: qsTr("如 1A")
-                    onAccepted: noteSampleDialog.accept()
-                    // 一次 Esc 即关对话框（否则 BbTextField 释放焦点 → 需再按一次才到 Dialog）
-                    escapeHandler: function() { noteSampleDialog.reject() }
-                }
+            Label { text: qsTr("#WAV id"); color: Theme.textMuted; font.pixelSize: Theme.fsTiny;
+                    Layout.preferredWidth: 56 }
+            BbTextField {
+                id: noteIdInput
+                Layout.fillWidth: true
+                font.family: Theme.fontMono
+                placeholderText: qsTr("如 1A")
+                onAccepted: noteSampleDialog.accept()
+                // 一次 Esc 即关对话框（否则 BbTextField 释放焦点 → 需再按一次才到 Dialog）
+                escapeHandler: function() { noteSampleDialog.reject() }
             }
-            Label { text: qsTr("双击左 Dock 采样行可给该槽位绑定/改文件"); color: Theme.textFaint;
-                    font.pixelSize: Theme.fsTiny }
         }
+        Label { text: qsTr("双击左 Dock 采样行可给该槽位绑定/改文件"); color: Theme.textFaint;
+                font.pixelSize: Theme.fsTiny }
         onAccepted: {
             const r = noteSampleDialog.ref
             if (!r) return
@@ -1521,13 +1517,11 @@ ApplicationWindow {
     }
 
     // ---- 视口双击编辑 BGA/BPM/STOP 对象（2026-09）：编辑内容（BMP id / 值）；位置用拖拽移动） ----
-    Dialog {
+    BbDialog {
         id: metaEditDialog
         title: qsTr("编辑对象")
-        modal: true
-        anchors.centerIn: parent
         width: 300
-        standardButtons: Dialog.Ok | Dialog.Cancel
+        height: 190
         property string kind: ""   // bga / bpm / stop
         property var base: null    // 原对象（measure/pos/layer/sample/value）
         readonly property string layerText: base ? ["base","poor","layer","layer2"][base.layer] : ""
@@ -1552,25 +1546,22 @@ ApplicationWindow {
         }
         onOpened: meContentField.forceActiveFocus()
 
-        ColumnLayout {
-            anchors.fill: parent
+        Label { id: meLabel; color: Theme.primary; font.pixelSize: Theme.fsSmall; font.bold: true }
+        Label { id: mePosLabel; color: Theme.textFaint; font.family: Theme.fontMono;
+                font.pixelSize: Theme.fsTiny }
+        RowLayout { id: meLayerRow; spacing: 6; Layout.fillWidth: true
+            Label { id: meLayerLabel; color: Theme.textMuted; font.pixelSize: Theme.fsTiny }
+        }
+        RowLayout {
+            Layout.fillWidth: true
             spacing: 6
-            Label { id: meLabel; color: Theme.primary; font.pixelSize: Theme.fsSmall; font.bold: true }
-            Label { id: mePosLabel; color: Theme.textFaint; font.family: Theme.fontMono;
-                    font.pixelSize: Theme.fsTiny }
-            RowLayout { id: meLayerRow; spacing: 6
-                Label { id: meLayerLabel; color: Theme.textMuted; font.pixelSize: Theme.fsTiny }
-            }
-            RowLayout {
-                spacing: 6
-                Label { id: meContentLabel; color: Theme.textMuted; font.pixelSize: Theme.fsTiny; Layout.preferredWidth: 56 }
-                BbTextField {
-                    id: meContentField
-                    Layout.fillWidth: true
-                    font.family: Theme.fontMono
-                    onAccepted: metaEditDialog.accept()
-                    escapeHandler: function() { metaEditDialog.reject() }
-                }
+            Label { id: meContentLabel; color: Theme.textMuted; font.pixelSize: Theme.fsTiny; Layout.preferredWidth: 56 }
+            BbTextField {
+                id: meContentField
+                Layout.fillWidth: true
+                font.family: Theme.fontMono
+                onAccepted: metaEditDialog.accept()
+                escapeHandler: function() { metaEditDialog.reject() }
             }
         }
         onAccepted: {

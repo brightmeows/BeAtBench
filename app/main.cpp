@@ -581,6 +581,13 @@ int main(int argc, char** argv) {
             root->setProperty("debugSliceEditApply", args.at(seaIdx + 1));
     }
 
+    // --open-dialog <about|note|meta>：启动后打开指定对话框（BbDialog 主题化验收；配 --screenshot）
+    const int odIdx = args.indexOf(QStringLiteral("--open-dialog"));
+    if (odIdx >= 0 && odIdx + 1 < args.size()) {
+        if (QObject* root = engine.rootObjects().value(0))
+            root->setProperty("debugOpenDialog", args.at(odIdx + 1));
+    }
+
     // --tab N：左 Dock 标签（0 元信息 1 采样 2 lint 3 BGA；配合 --screenshot 验收面板）
     const int tabIdx = args.indexOf(QStringLiteral("--tab"));
     if (tabIdx >= 0 && tabIdx + 1 < args.size()) {
