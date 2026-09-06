@@ -912,6 +912,12 @@ ApplicationWindow {
     // M6.3 调试参数：--slice-place <0|1>（导出时同时铺入编辑区谱面；配 --slice-export）
     property int debugSlicePlace: -1
     onDebugSlicePlaceChanged: if (debugSlicePlace >= 0) slicePage.placeToChart = (debugSlicePlace !== 0)
+    // 2026-09「同时铺入编辑区」成功 → 刷新左 dock 采样列表（#WAV 定义新入谱面；
+    // contentChanged 只刷新时间轴/波形，定义表须显式重取 session.samples）。
+    Connections {
+        target: sliceWorkspace
+        function onSamplesPlaced() { session.refreshSamples() }
+    }
     Timer { id: sliceExportRetry; interval: 300; repeat: true; onTriggered: doDebugSliceExport() }
     function doDebugSliceExport() {
         if (!sliceWorkspace.hasAudio || !sliceWorkspace.hasSlices) { sliceExportRetry.start(); return }

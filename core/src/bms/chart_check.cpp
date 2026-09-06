@@ -297,6 +297,30 @@ std::vector<LintIssue> lint_chart(const Chart& chart, const std::filesystem::pat
             issues.push_back(std::move(issue));
         }
     }
+    // 7) BGM 同 tick 并发采样数（2026-09 用户）：播放器的 BGM 采样序列（虚拟子通道）有软上限
+    //    ——beatoraja 默认 64。同 (measure, pos) 的 Bgm note **各子行都算一路音源**，> 64 →
+    //    Warning 提示（只提示不阻止：粘贴/铺放已放开硬限制，此处供谱师自查——超出部分
+    //    播放器会丢弃/不响）。
+    {
+        constexpr std::size_t kPolyWarnThreshold = 64;
+        std::map<std::pair<std::uint32_t, Rational>, std::size_t> poly;
+        for (const auto& ev : chart.notes)
+            if (ev.value.lane.kind == LaneKind::Bgm) ++poly[{ev.measure, ev.pos}];
+        for (const auto& [key, n] : poly) {
+            if (n <= kPolyWarnThreshold) continue;
+            LintIssue issue;
+            issue.code = "bgm_polyphony_overflow";
+            issue.severity = Severity::Warning;
+            issue.measure = key.first;
+            issue.pos_num = key.second.num;
+            issue.pos_den = key.second.den;
+            issue.message = "同时播放采样可能过多: " + std::to_string(n) + " 路, " +
+                            std::to_string(key.first) + " 小节 " +
+                            std::to_string(key.second.num) + "/" +
+                            std::to_string(key.second.den);
+            issues.push_back(std::move(issue));
+        }
+    }
     return issues;
 }
 

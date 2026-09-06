@@ -713,7 +713,7 @@ TEST(EditCommands, ClipboardPasteSubLineContinueUniformEmptyAndOverflow) {
             saw63 = true;
     EXPECT_TRUE(saw63) << "第 64 行（sub_line 63）应存在";
 
-    // 再贴 2 行 → 64 + 2 > 64 → bad_args，且不写入
+    // 上限已取消（2026-09 用户：剪贴板限制 → lint 提示）：65 行（sub 0-64）也放行
     const std::size_t before2 = session.chart().notes.size();
     Json a4 = Json::object();
     a4.set("text", "#00001:810000\n#00001:820000\n");
@@ -722,7 +722,14 @@ TEST(EditCommands, ClipboardPasteSubLineContinueUniformEmptyAndOverflow) {
     req4.set("command", "clipboard.paste");
     req4.set("args", std::move(a4));
     const Json resp4 = global_registry().dispatch(req4);
-    ASSERT_FALSE(resp4.at("ok").as_bool()) << resp4.dump();
-    EXPECT_EQ(std::string(resp4.at("error").at("code").as_str()), "bad_args");
-    EXPECT_EQ(session.chart().notes.size(), before2) << "失败不应写入";
+    ASSERT_TRUE(resp4.at("ok").as_bool()) << resp4.dump();
+    bool saw64 = false, saw65 = false;
+    for (const auto& e : session.chart().notes)
+        if (e.measure == 0 && e.value.lane.kind == LaneKind::Bgm) {
+            if (e.value.sub_line == 64) saw64 = true;
+            if (e.value.sub_line == 65) saw65 = true;
+        }
+    EXPECT_TRUE(saw64) << "超出 64 上限仍应写入（lint 提示，不阻止）";
+    EXPECT_TRUE(saw65) << "超出 64 上限仍应写入（lint 提示，不阻止）";
+    EXPECT_GT(session.chart().notes.size(), before2);
 }

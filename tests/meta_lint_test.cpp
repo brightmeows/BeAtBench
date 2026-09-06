@@ -367,3 +367,57 @@ TEST(MetaLint, ProtocolSessionLintAggregatesExtMismatch) {
     EXPECT_EQ(missing, 1);  // 真缺失 → warning
     fs::remove_all(dir);
 }
+
+TEST(MetaLint, BgmPolyphonyOverflowLint) {
+    // 2026-09 用户：ch01 同 tick 并发采样硬上限已取消（beatoraja 默认 64 采样序列）→
+    // 改由 lint 提示「同时播放采样可能过多」。64 路不报；65 路报 1 条（Warning + 位置）。
+    Chart c;
+    c.meta["BPM"] = "120";
+    for (int i = 0; i < 64; ++i) {
+        Event<Note> n{0, Rational(0, 1), {}};
+        n.value.lane = {0, LaneKind::Bgm, 0};
+        n.value.sample.id = static_cast<std::uint32_t>(i + 1);
+        n.value.sub_line = static_cast<std::uint32_t>(i);
+        c.notes.push_back(n);
+    }
+    const auto ok_issues = bms::lint_chart(c, std::filesystem::path());
+    std::size_t ok_hits = 0;
+    for (const auto& issue : ok_issues)
+        if (issue.code == "bgm_polyphony_overflow") ++ok_hits;
+    EXPECT_EQ(ok_hits, 0u) << "64 路不报";
+
+    Event<Note> extra{0, Rational(0, 1), {}};
+    extra.value.lane = {0, LaneKind::Bgm, 0};
+    extra.value.sample.id = 100;
+    extra.value.sub_line = 64;
+    c.notes.push_back(extra);
+    const auto over_issues = bms::lint_chart(c, std::filesystem::path());
+    std::size_t over_hits = 0;
+    for (const auto& issue : over_issues)
+        if (issue.code == "bgm_polyphony_overflow") ++over_hits;
+    EXPECT_EQ(over_hits, 1u);
+    for (const auto& issue : over_issues) {
+        if (issue.code != "bgm_polyphony_overflow") continue;
+        EXPECT_EQ(issue.severity, bms::Severity::Warning);
+        EXPECT_EQ(issue.measure, 0u);
+        EXPECT_EQ(issue.pos_num, 0);
+        EXPECT_EQ(issue.pos_den, 1);
+        EXPECT_NE(issue.message.find("同时播放采样可能过多: 65 路"), std::string::npos);
+        EXPECT_NE(issue.message.find("0 小节"), std::string::npos);
+    }
+    // 不同 pos / 不同小节不算同一路：65 行分散 → 不报
+    Chart scattered;
+    scattered.meta["BPM"] = "120";
+    for (int i = 0; i < 65; ++i) {
+        Event<Note> n{0, Rational(i, 128), {}};
+        n.value.lane = {0, LaneKind::Bgm, 0};
+        n.value.sample.id = static_cast<std::uint32_t>(i + 1);
+        n.value.sub_line = 0;
+        scattered.notes.push_back(n);
+    }
+    const auto sc_issues = bms::lint_chart(scattered, std::filesystem::path());
+    std::size_t sc_hits = 0;
+    for (const auto& issue : sc_issues)
+        if (issue.code == "bgm_polyphony_overflow") ++sc_hits;
+    EXPECT_EQ(sc_hits, 0u);
+}

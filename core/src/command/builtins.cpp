@@ -1174,19 +1174,10 @@ public:
                     hi = std::max(hi, ev.value.sub_line);
                 }
             }
-            std::uint32_t max_row = 0;  // 本次粘贴 BGM note 的最大 raw 行号
-            for (const auto& r : parsed)
-                if (r.lane.kind == LaneKind::Bgm) max_row = std::max(max_row, r.sub_line);
             const std::uint32_t base = any ? hi + 1 : 0;
-            // 上限 = 主流播放器（beatoraja 等）默认 64 个 BGM 采样序列（虚拟子通道），
-            // 行号 0..63。2026-09 修正：原 12 是旧 iBMSC 显示惯例，不是播放器/格式限制。
-            constexpr std::uint32_t kMaxBgmSubLine = 63;
-            if (base + max_row > kMaxBgmSubLine)
-                throw CommandError("bad_args",
-                                   "子行空间不足：目标小节段已有 " +
-                                       std::to_string(any ? hi + 1 : 0) + " 行 + 本次 " +
-                                       std::to_string(max_row + 1) +
-                                       " 行 > 64 上限（beatoraja 默认 64 采样序列）");
+            // 不设硬上限（2026-09 用户：剪贴板限制取消）——子行号 > 63 也放行、可保存；
+            // 同 tick 并发 > 64（beatoraja 默认 64 采样序列）由 lint 提示（chart_check
+            // "bgm_polyphony_overflow"：同时播放采样可能过多: [数量], [位置]）。
             for (auto& r : parsed)
                 if (r.lane.kind == LaneKind::Bgm) r.sub_line += base;
         }

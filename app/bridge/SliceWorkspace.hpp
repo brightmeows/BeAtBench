@@ -153,6 +153,10 @@ signals:
     void statusChanged();
     /// M6.2 切片表变化（生成/清除/放置开关）。
     void slicesChanged();
+    /// 2026-09「同时铺入编辑区」成功（#WAV 定义已进谱面）→ QML 刷新采样面板
+    /// （左 dock 采样列表不会因 contentChanged 自动重取——内容变化触发的是时间轴/
+    /// 波形刷新，定义表需显式重拉 session.samples）。
+    void samplesPlaced();
 
 private:
     void setStatus(const QString& text);

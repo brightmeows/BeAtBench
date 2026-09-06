@@ -212,6 +212,7 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
                     placedNotes = static_cast<int>(n->as_i64());
             placed = true;
             m_chartSession->refresh();  // 内容变化 → 视图刷新（fingerprint 判定）
+            emit samplesPlaced();       // #WAV 定义已入谱面 → QML 刷新采样面板
         } else if (const Json* e = resp.find("error")) {
             if (const Json* code = e->find("code"))
                 placeError = QString::fromStdString(code->as_str());
