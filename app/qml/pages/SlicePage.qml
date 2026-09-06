@@ -78,6 +78,10 @@ Item {
         exportIdBox.value = startId
         doExport()
     }
+    /// 选中拍子（--slice-select-beat <秒>；手动切分选中态验收）。
+    function debugSelectBeat(t) {
+        sliceWaveform.selectedBeatSec = t
+    }
 
     Timer {
         interval: 100
@@ -468,18 +472,18 @@ Item {
                                 color: Theme.textMuted
                             }
                             BbToolButton {
-                                text: qsTr("手动切分：双击添加 · 右键删除")
+                                text: qsTr("手动切分：点击选中 · 再击添加/删除")
                                 ToolTip.visible: hovered
-                                ToolTip.text: qsTr("在波形上双击 = 添加切分点（吸附当前拍子线）；"
-                                                   + "再次双击已有点或右键 = 删除。"
-                                                   + "修改 BPM/细分只影响新加点，已有切分点不动。")
+                                ToolTip.text: qsTr("点击波形 = 选中该拍子（青色光标，吸附拍线）；"
+                                                   + "再点击同一拍子 = 添加/删除切分点（不限时间）；"
+                                                   + "右键 = 删除。修改 BPM/细分只影响新加点，已有切分点不动。")
                                 onClicked: sliceWorkspace.setStatus(
-                                    qsTr("手动切分：双击波形添加切分点（吸附拍子线）；再双击或右键删除"))
+                                    qsTr("手动切分：点击选中拍子（青色光标）；再击同一拍子=添加/删除；右键=删除"))
                             }
                             Label {
                                 Layout.fillWidth: true
-                                text: qsTr("已有网格切片上可再手动细分：双击波形任意拍子线添加切分点，"
-                                           + "再次双击该点或右键删除；BPM/细分改动不影响已加点。")
+                                text: qsTr("点击波形选中拍子（青色光标）；再点击同一拍子 = 添加/删除切分点"
+                                           + "（不限时间）；右键 = 删除；BPM/细分改动不影响已加点。")
                                 color: Theme.textFaint
                                 wrapMode: Text.WordWrap
                             }
@@ -541,6 +545,7 @@ Item {
 
                     // 波形 + note 刻度 + 播放头 + 切片线 + 实时拍子网格（换行视口）
                     SliceWaveformItem {
+                        id: sliceWaveform
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         workspace: sliceWorkspace

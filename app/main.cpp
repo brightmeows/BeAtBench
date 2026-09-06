@@ -539,6 +539,16 @@ int main(int argc, char** argv) {
                 root->setProperty("debugSliceTogglePoint", t);
         }
     }
+    // --slice-select-beat <秒>：选中拍子光标（M6.4d 验收）
+    const int ssbIdx = args.indexOf(QStringLiteral("--slice-select-beat"));
+    if (ssbIdx >= 0 && ssbIdx + 1 < args.size()) {
+        bool ok = false;
+        const double t = args.at(ssbIdx + 1).toDouble(&ok);
+        if (ok) {
+            if (QObject* root = engine.rootObjects().value(0))
+                root->setProperty("debugSliceSelectBeat", t);
+        }
+    }
 
     // --tab N：左 Dock 标签（0 元信息 1 采样 2 lint 3 BGA；配合 --screenshot 验收面板）
     const int tabIdx = args.indexOf(QStringLiteral("--tab"));

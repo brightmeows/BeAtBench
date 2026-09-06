@@ -112,6 +112,13 @@ void SliceWaveformItem::setVisibleRows(int v) {
     update();
 }
 
+void SliceWaveformItem::setSelectedBeatSec(qreal v) {
+    if (qFuzzyCompare(m_selectedBeatSec, v)) return;
+    m_selectedBeatSec = v;
+    emit selectedBeatSecChanged();
+    update();
+}
+
 int SliceWaveformItem::totalRows() const {
     const SliceWorkspace* ws = workspaceObj();
     if (!ws || !ws->hasAudio()) return 1;
@@ -165,6 +172,16 @@ void SliceWaveformItem::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton) {
         event->accept();
         forceActiveFocus();  // 键盘滚动（方向键）入口
+        // M6.4d 手动切分（不限时间，无双击阈值）：首次点击 = 选中拍子；
+        // 再点击同一拍子 = 切分点切换（添加/删除）；落点 gridVisible 时吸附拍线
+        const double t = manualPointAt(event->position().x(), event->position().y());
+        if (t >= 0.0) {
+            if (m_selectedBeatSec >= 0.0 && std::abs(t - m_selectedBeatSec) <= 1e-4) {
+                emit manualToggleRequested(t);   // 同一拍子再击 → toggle
+            } else {
+                setSelectedBeatSec(t);           // 选中（或换选）
+            }
+        }
         requestSeek(event->position().x(), event->position().y());
     } else if (event->button() == Qt::RightButton) {
         event->accept();
@@ -174,16 +191,6 @@ void SliceWaveformItem::mousePressEvent(QMouseEvent* event) {
         if (t >= 0.0) emit manualDeleteRequested(t);
     }
     QQuickPaintedItem::mousePressEvent(event);
-}
-
-void SliceWaveformItem::mouseDoubleClickEvent(QMouseEvent* event) {
-    if (event->button() == Qt::LeftButton) {
-        event->accept();
-        // M6.4c 手动切分：双击 = 添加切分点（已命中边界时切换为删除，由 workspace 判定）
-        const double t = manualPointAt(event->position().x(), event->position().y());
-        if (t >= 0.0) emit manualToggleRequested(t);
-    }
-    QQuickPaintedItem::mouseDoubleClickEvent(event);
 }
 
 double SliceWaveformItem::manualPointAt(qreal x, qreal y) const {
@@ -390,6 +397,16 @@ void SliceWaveformItem::drawRow(QPainter* p, const QRectF& plot, double t0, doub
         const qreal x = plot.x() + static_cast<qreal>((m_playheadSec - t0) * pxPerSec);
         QColor ph = th ? th->primary() : QColor(QStringLiteral("#8b9cf8"));
         p->fillRect(QRectF(x - 0.75, plot.y(), 1.5, h), ph);
+    }
+
+    // ---- 选中拍子光标（M6.4d：teal 2px 竖带 + 顶部 tab；点击选中、再击同一拍子=切分点切换） ----
+    if (m_selectedBeatSec >= 0.0 && m_selectedBeatSec >= t0 && m_selectedBeatSec <= t1) {
+        const qreal x = plot.x() + static_cast<qreal>((m_selectedBeatSec - t0) * pxPerSec);
+        QColor c = th ? th->accent2() : QColor(QStringLiteral("#2dd8c8"));
+        c.setAlpha(200);
+        p->fillRect(QRectF(x - 1.0, plot.y(), 2.0, h), c);
+        p->fillRect(QRectF(x - 3.0, plot.y(), 6.0, 6.0),
+                    th ? th->accent2() : QColor(QStringLiteral("#2dd8c8")));
     }
 
     p->restore();

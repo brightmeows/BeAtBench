@@ -52,6 +52,9 @@ class SliceWaveformItem : public QQuickPaintedItem {
     /// 吸附到当前拍子网格线（cell = 拍/细分；offset 基准；夹逼 [0,时长]）。
     /// M6.4b：点击 seek /（后续）键盘移动与手动切片共用。
     Q_INVOKABLE double snapToGrid(double t) const;
+    /// 当前选中拍子（秒；-1 = 无）。M6.4d：首次点击选中、再点击同一拍子 = 切分点切换；
+    /// 键盘 ←→ 移动（后续）也写它。绘制：行内 teal 2px 竖带 + 顶部 tab。
+    Q_PROPERTY(qreal selectedBeatSec READ selectedBeatSec WRITE setSelectedBeatSec NOTIFY selectedBeatSecChanged)
 
 public:
     explicit SliceWaveformItem(QQuickItem* parent = nullptr);
@@ -80,6 +83,8 @@ public:
     void setScrollRow(int v);
     int visibleRows() const { return m_visibleRows; }
     void setVisibleRows(int v);
+    qreal selectedBeatSec() const { return m_selectedBeatSec; }
+    void setSelectedBeatSec(qreal v);
 
 signals:
     void workspaceChanged();
@@ -93,6 +98,7 @@ signals:
     void rowSecChanged();
     void scrollRowChanged();
     void visibleRowsChanged();
+    void selectedBeatSecChanged();
     /// 点击/拖动 → 目标秒（QML 接 audioEngine.refSeek）。
     void seekRequested(double seconds);
     /// 滚轮（无 Ctrl）：dir = ±1（+1 = 向后翻行/看更晚）。QML 改 scrollRow。
@@ -108,7 +114,6 @@ protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
-    void mouseDoubleClickEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
 
 private:
@@ -149,6 +154,7 @@ private:
     qreal m_rowSec = 8.0;   ///< 每行时长（QML 缩放档位换算；<=0 → 整曲一行）
     int m_scrollRow = 0;    ///< 首可见行
     int m_visibleRows = 4;  ///< 同屏行数
+    qreal m_selectedBeatSec = -1.0;  ///< 选中拍子（-1 = 无）
 };
 
 }  // namespace beatbench::app
