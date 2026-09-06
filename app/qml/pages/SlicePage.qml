@@ -23,6 +23,9 @@ Item {
     /// 「MIDI 线」开关实际态（网格模式默认关；Ctrl 临时勾选 = 经 checkbox.toggle() 同路径翻
     /// 转，松开还原——与正常点击走同一条 onToggled 链路，checkbox 视觉同步真实状态）。
     property bool midiLinesOn: false
+    /// MIDI 切片右边界（2026-09 用户）：true（默认）= 下一起始/音频末尾——与手动切片一致
+    /// （只标起始；同起始和弦合并一片）；false = 按 note 结束切分（历史行为）。
+    property bool midiExtendNext: true
     /// 左 dock 页签：0 = 网格（默认·引导页）/ 1 = MIDI 音符 / 2 = 切片（放置开关）。
     property int dockTab: 0
     /// Ctrl 临时勾选状态机：保存按下前状态；松开仍处翻转态才还原（期间用户点过 = 以其为准）。
@@ -305,12 +308,23 @@ Item {
                 editable: true
                 visible: sliceSourceBox.currentIndex === 0
             }
+            // M6.2 修正（2026-09 用户）：MIDI 右边界默认 = 下一起始/音频末尾（与手动切片一致）
+            BbCheckBox {
+                text: qsTr("到下一起点")
+                checked: root.midiExtendNext
+                visible: sliceSourceBox.currentIndex === 1
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("MIDI 切片右边界 = 下一起始/音频末尾（与手动切片一致，"
+                                   + "和弦自动合并）；关闭 = 按音符结束切分")
+                onToggled: root.midiExtendNext = checked
+            }
             BbToolButton {
                 text: qsTr("生成切片")
                 onClicked: {
                     if (sliceWorkspace.detectSlices(
                             sliceSourceBox.currentIndex === 0 ? "grid" : "midi",
-                            bpmBox.value, subBox.value, sliceWorkspace.audioDurationSec)) {
+                            bpmBox.value, subBox.value, sliceWorkspace.audioDurationSec,
+                            root.midiExtendNext)) {
                         root.dockTab = 2   // 生成成功 → 切到「切片」页签核对放置开关
                     }
                 }
@@ -533,7 +547,9 @@ Item {
                                     }
                                     Label {
                                         text: modelData.kind === "midi"
-                                              ? ("MIDI " + modelData.note)
+                                              ? (modelData.noteCount > 1
+                                                 ? ("MIDI ×" + modelData.noteCount)
+                                                 : ("MIDI " + modelData.note))
                                               : (modelData.kind === "manual" ? qsTr("手动") : qsTr("网格"))
                                         color: Theme.text
                                         elide: Text.ElideRight

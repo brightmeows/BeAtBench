@@ -110,19 +110,57 @@ MidiFile two_notes() {
 }
 
 TEST(SlicePlan, MidiBasic) {
+    // 默认=到下一起始点（与手动切片一致）：[0,0.25) [0.25,0.75)；note0 结束 0.5 不影响右边界
     const SlicePlan p = plan_from_midi(two_notes(), 0.0);
     ASSERT_EQ(p.slices.size(), 2u);
     EXPECT_EQ(p.slices[0].kind, "midi");
     EXPECT_EQ(p.slices[0].note, 60);
+    EXPECT_EQ(p.slices[0].noteCount, 1);
     EXPECT_TRUE(near(p.slices[0].startSec, 0.0));
-    EXPECT_TRUE(near(p.slices[0].endSec, 0.5));
+    EXPECT_TRUE(near(p.slices[0].endSec, 0.25));  // 下一起始点（而非 note 结束 0.5）
     EXPECT_EQ(p.slices[1].note, 61);
     EXPECT_EQ(p.slices[0].startTick, 0);
     EXPECT_EQ(p.slices[1].startTick, 240);
 }
 
+TEST(SlicePlan, MidiExtendOff) {
+    // extendToNextOnset=false = 历史行为：每 note 一片 [on, off)（note0 与 note1 重叠）
+    const SlicePlan p = plan_from_midi(two_notes(), 0.0, 0.0, false);
+    ASSERT_EQ(p.slices.size(), 2u);
+    EXPECT_TRUE(near(p.slices[0].startSec, 0.0));
+    EXPECT_TRUE(near(p.slices[0].endSec, 0.5));
+    EXPECT_TRUE(near(p.slices[1].startSec, 0.25));
+    EXPECT_TRUE(near(p.slices[1].endSec, 0.75));
+}
+
+TEST(SlicePlan, MidiChordMerged) {
+    // 同一起始多 note（和弦）→ 合并一片，noteCount 计数（A 模式）
+    MidiFile m;
+    m.notes.push_back(MidiNote{0, 0, 60, 90, 0, 480, 0.0, 0.5});
+    m.notes.push_back(MidiNote{0, 0, 64, 90, 0, 720, 0.0, 0.75});
+    m.notes.push_back(MidiNote{0, 0, 67, 90, 480, 960, 0.5, 1.0});
+    const SlicePlan p = plan_from_midi(m, 0.0, 2.0);
+    ASSERT_EQ(p.slices.size(), 2u);  // onset 0.0（和弦 2 音）与 0.5 各一片
+    EXPECT_EQ(p.slices[0].noteCount, 2);
+    EXPECT_EQ(p.slices[0].note, 60);
+    EXPECT_TRUE(near(p.slices[0].startSec, 0.0));
+    EXPECT_TRUE(near(p.slices[0].endSec, 0.5));
+    EXPECT_EQ(p.slices[1].noteCount, 1);
+    EXPECT_TRUE(near(p.slices[1].startSec, 0.5));
+    EXPECT_TRUE(near(p.slices[1].endSec, 2.0));  // 末片到 durationSec
+}
+
 TEST(SlicePlan, MidiOffsetAndClamp) {
     const SlicePlan p = plan_from_midi(two_notes(), 0.1, 0.8);
+    ASSERT_EQ(p.slices.size(), 2u);
+    EXPECT_TRUE(near(p.slices[0].startSec, 0.1));
+    EXPECT_TRUE(near(p.slices[0].endSec, 0.35));  // 下一起始（0.25+0.1）
+    EXPECT_TRUE(near(p.slices[1].startSec, 0.35));
+    EXPECT_TRUE(near(p.slices[1].endSec, 0.8));  // 0.75+0.1 夹逼到 0.8
+}
+
+TEST(SlicePlan, MidiExtendOffOffsetClamp) {
+    const SlicePlan p = plan_from_midi(two_notes(), 0.1, 0.8, false);
     ASSERT_EQ(p.slices.size(), 2u);
     EXPECT_TRUE(near(p.slices[0].startSec, 0.1));
     EXPECT_TRUE(near(p.slices[0].endSec, 0.6));

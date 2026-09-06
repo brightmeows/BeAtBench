@@ -94,9 +94,11 @@ public:
 
     // ---- M6.2 切片 ----
     /// 生成切片：source = "grid" | "midi"；offset 用当前 m_offsetSec（全局）。
-    /// bpm/subdivision 仅网格用；durationSec = 音频时长（夹逼/丢弃越界切片）。
+    /// bpm/subdivision 仅网格用；durationSec = 音频时长（夹逼/丢弃越界切片）；
+    /// extendToNextOnset（默认 true）= MIDI 右边界到下一起始/音频末尾（与手动切片一致；
+    /// 同起始和弦合并成一片），false = 按 note 结束切分（历史行为）。
     Q_INVOKABLE bool detectSlices(const QString& source, qreal bpm, int subdivision,
-                                  qreal durationSec);
+                                  qreal durationSec, bool extendToNextOnset = true);
     /// 清除切片（保留参考素材）。
     Q_INVOKABLE void clearSlices();
     /// 切片「放置」开关（M6.3 铺放预选；越界忽略）。

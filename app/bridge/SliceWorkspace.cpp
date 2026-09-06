@@ -338,7 +338,7 @@ QVariantList SliceWorkspace::midiNotes() const {
 // ---- M6.2 切片 ----
 
 bool SliceWorkspace::detectSlices(const QString& source, qreal bpm, int subdivision,
-                                  qreal durationSec) {
+                                  qreal durationSec, bool extendToNextOnset) {
     beatbench::slice::SlicePlan plan;
     if (source == QLatin1String("grid")) {
         beatbench::slice::GridConfig cfg;
@@ -352,7 +352,8 @@ bool SliceWorkspace::detectSlices(const QString& source, qreal bpm, int subdivis
             setStatus(QStringLiteral("尚无 MIDI（请先导入 notes.mid）"));
             return false;
         }
-        plan = beatbench::slice::plan_from_midi(m_midi, m_offsetSec, durationSec);
+        plan = beatbench::slice::plan_from_midi(m_midi, m_offsetSec, durationSec,
+                                                extendToNextOnset);
     } else {
         setStatus(QStringLiteral("未知切片源: %1").arg(source));
         return false;
@@ -369,9 +370,13 @@ bool SliceWorkspace::detectSlices(const QString& source, qreal bpm, int subdivis
                       .arg(m_slices.size())
                       .arg(ws.join(QStringLiteral("；"))));
     } else {
-        setStatus(QStringLiteral("切片生成：%1 个（%2 源）")
+        setStatus(QStringLiteral("切片生成：%1 个（%2 源%3）")
                       .arg(m_slices.size())
-                      .arg(source));
+                      .arg(source)
+                      .arg(source == QLatin1String("midi")
+                               ? (extendToNextOnset ? QStringLiteral(" · 下一起点")
+                                                    : QStringLiteral(" · 按音符"))
+                               : QStringLiteral("")));
     }
     return true;
 }
@@ -490,6 +495,7 @@ QVariantList SliceWorkspace::slices() const {
         e.insert(QStringLiteral("durationSec"), s.endSec - s.startSec);
         e.insert(QStringLiteral("kind"), QString::fromStdString(s.kind));
         e.insert(QStringLiteral("note"), s.note);
+        e.insert(QStringLiteral("noteCount"), s.noteCount);
         e.insert(QStringLiteral("enabled"),
                  i < m_sliceEnabled.size() && m_sliceEnabled[i]);
         out.append(e);

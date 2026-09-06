@@ -897,8 +897,12 @@ ApplicationWindow {
         sliceDetectRetry.stop()
         const src = (debugSliceDetect === "midi") ? "midi" : "grid"
         slicePage.debugSetSource(src)   // 与 UI 同态（切片源 + MIDI 线默认）
-        sliceWorkspace.detectSlices(src, 120.0, 4, sliceWorkspace.audioDurationSec)
+        sliceWorkspace.detectSlices(src, 120.0, 4, sliceWorkspace.audioDurationSec,
+                                    slicePage.midiExtendNext)
     }
+    // M6.2 调试参数：--slice-extend <0|1>（MIDI 「到下一起点」开关；--slice-detect midi 前注入）
+    property int debugSliceExtend: -1
+    onDebugSliceExtendChanged: if (debugSliceExtend >= 0) slicePage.midiExtendNext = (debugSliceExtend !== 0)
     // M6.2 调试参数：--slice-offset <ms>（可复现 offset 实时效果：网格/MIDI 刻度随 offset 平移）
     property real debugSliceOffset: -1
     onDebugSliceOffsetChanged: if (debugSliceOffset >= 0) sliceWorkspace.setOffsetSec(debugSliceOffset / 1000.0)

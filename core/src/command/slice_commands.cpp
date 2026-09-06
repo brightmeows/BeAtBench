@@ -37,6 +37,14 @@ int arg_int(const Json& args, const char* key, int fallback) {
     throw CommandError("bad_args", std::string("参数类型错误: ") + key + " 应为整数");
 }
 
+bool arg_bool_or(const Json& args, const char* key, bool fallback) {
+    if (!args.is_object()) return fallback;
+    const Json* v = args.find(key);
+    if (!v) return fallback;
+    if (v->is_bool()) return v->as_bool();
+    throw CommandError("bad_args", std::string("参数类型错误: ") + key + " 应为布尔");
+}
+
 Json slice_json(const slice::Slice& s) {
     Json e = Json::object();
     e.set("index", static_cast<std::int64_t>(s.index));
@@ -44,6 +52,7 @@ Json slice_json(const slice::Slice& s) {
     e.set("endSec", s.endSec);
     e.set("kind", s.kind);
     e.set("note", static_cast<std::int64_t>(s.note));
+    e.set("noteCount", static_cast<std::int64_t>(s.noteCount));
     e.set("startTick", static_cast<std::int64_t>(s.startTick));
     return e;
 }
@@ -62,6 +71,8 @@ public:
 
         const double offsetSec = arg_double(args, "offsetSec", 0.0);
         const double durationSec = arg_double(args, "durationSec", 0.0);
+        // 2026-09：右边界 = 下一起始/音频末尾（与手动切片一致，默认 true）
+        const bool extendToNextOnset = arg_bool_or(args, "extendToNextOnset", true);
 
         slice::SlicePlan plan;
         Json out = Json::object();
@@ -87,7 +98,8 @@ public:
                                             std::istreambuf_iterator<char>());
             try {
                 const auto midi = midi::parse_midi_bytes(bytes);
-                plan = slice::plan_from_midi(midi, offsetSec, durationSec);
+                plan = slice::plan_from_midi(midi, offsetSec, durationSec,
+                                             extendToNextOnset);
             } catch (const midi::MidiError& e) {
                 throw CommandError("bad_midi", e.what());
             }

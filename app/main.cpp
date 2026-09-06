@@ -491,6 +491,12 @@ int main(int argc, char** argv) {
         if (QObject* root = engine.rootObjects().value(0))
             root->setProperty("debugSliceDetect", args.at(sdIdx + 1));
     }
+    // --slice-extend <0|1>：MIDI 切片「到下一起点」开关（0 = 按音符结束；默认 1；配 --slice-detect midi）
+    const int seExIdx = args.indexOf(QStringLiteral("--slice-extend"));
+    if (seExIdx >= 0 && seExIdx + 1 < args.size()) {
+        if (QObject* root = engine.rootObjects().value(0))
+            root->setProperty("debugSliceExtend", args.at(seExIdx + 1).toInt());
+    }
     // --slice-offset <ms>：调试设置 offset（复现网格/MIDI 刻度随 offset 平移；配 --page 1 --screenshot）
     const int soIdx = args.indexOf(QStringLiteral("--slice-offset"));
     if (soIdx >= 0 && soIdx + 1 < args.size()) {

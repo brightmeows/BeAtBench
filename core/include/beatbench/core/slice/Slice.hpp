@@ -22,9 +22,10 @@ struct Slice {
     int index = 0;        ///< 序号（0 起；按 startSec 升序）
     double startSec = 0.0;
     double endSec = 0.0;
-    std::string kind;     ///< "grid" | "midi"（来源标注；UI 着色/后续放置策略用）
-    int note = 0;         ///< midi 音高（grid = 0）
-    int startTick = -1;   ///< midi 绝对 tick（grid = -1；后续拍位换算用）
+    std::string kind;     ///< "grid" | "midi" | "manual"（来源标注；UI 着色/后续放置策略用）
+    int note = 0;         ///< midi 音高（grid/manual = 0）
+    int noteCount = 0;    ///< 该起始点合并的 midi note 数（和弦合并；1 = 单音，grid/manual = 0）
+    int startTick = -1;   ///< midi 绝对 tick（grid/manual = -1；后续拍位换算用）
 };
 
 struct SlicePlan {
@@ -45,9 +46,11 @@ struct GridConfig {
 /// 网格源：offset 起每 (60/bpm/subdivision) 秒一条边界 → 相邻边界成切片。
 SlicePlan plan_from_grid(const GridConfig& cfg);
 
-/// MIDI 源：每个配对音符 = 一个切片（start/end = note ± offset）。
-/// durationSec > 0 时末端夹逼（超过音频时长的切片丢弃）。
+/// MIDI 源：`extendToNextOnset=true`（默认，2026-09 用户）= **与手动切片一致的 A 模式**——
+/// 只标起始点，右边界 = 下一个唯一起始点/音频末尾；同一起始多 note（和弦）合并成一片
+/// （noteCount 计数）。`false` = 每个 note 一片 [on, off)（历史行为）。
+/// durationSec > 0 时末端夹逼（起点超过时长的切片丢弃）。
 SlicePlan plan_from_midi(const midi::MidiFile& midi, double offsetSec,
-                         double durationSec = 0.0);
+                         double durationSec = 0.0, bool extendToNextOnset = true);
 
 }  // namespace beatbench::slice
