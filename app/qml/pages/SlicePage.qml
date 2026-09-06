@@ -404,11 +404,14 @@ Item {
                                 Layout.fillWidth: true
                                 spacing: 4
                                 visible: sliceWorkspace.hasMidi
-                                Label { text: qsTr("序号"); width: 28; color: Theme.textFaint; font.pixelSize: Theme.fsTiny }
-                                Label { text: qsTr("音高"); width: 32; color: Theme.textFaint; font.pixelSize: Theme.fsTiny }
-                                Label { text: qsTr("通道"); width: 26; color: Theme.textFaint; font.pixelSize: Theme.fsTiny }
-                                Label { text: qsTr("轨"); width: 26; color: Theme.textFaint; font.pixelSize: Theme.fsTiny }
-                                Label { text: qsTr("起始"); width: 62; color: Theme.textFaint; font.pixelSize: Theme.fsTiny }
+                                // ⚠️ RowLayout 子项直接 width: 会被布局忽略（QtQml 布局接管几何）
+                                // → 列宽必须 Layout.preferredWidth + min/max 锁死，否则表头与行
+                                // 随文本伸缩错位（2026-09 实测：序号 0-9 与 10+ 整行偏移）
+                                Label { text: qsTr("序号"); Layout.preferredWidth: 28; Layout.minimumWidth: 28; Layout.maximumWidth: 28; color: Theme.textFaint; font.pixelSize: Theme.fsTiny }
+                                Label { text: qsTr("音高"); Layout.preferredWidth: 32; Layout.minimumWidth: 32; Layout.maximumWidth: 32; color: Theme.textFaint; font.pixelSize: Theme.fsTiny }
+                                Label { text: qsTr("通道"); Layout.preferredWidth: 26; Layout.minimumWidth: 26; Layout.maximumWidth: 26; color: Theme.textFaint; font.pixelSize: Theme.fsTiny }
+                                Label { text: qsTr("轨"); Layout.preferredWidth: 26; Layout.minimumWidth: 26; Layout.maximumWidth: 26; color: Theme.textFaint; font.pixelSize: Theme.fsTiny }
+                                Label { text: qsTr("起始"); Layout.preferredWidth: 62; Layout.minimumWidth: 62; Layout.maximumWidth: 62; color: Theme.textFaint; font.pixelSize: Theme.fsTiny }
                                 Label {
                                     text: qsTr("持续")
                                     color: Theme.textFaint
@@ -435,13 +438,14 @@ Item {
                                     required property var modelData
                                     width: ListView.view.width
                                     spacing: 4
-                                    Label { text: modelData.index; width: 28; color: Theme.textMuted; font.family: Theme.fontMono; font.pixelSize: Theme.fsSmall }
-                                    Label { text: modelData.pitch; width: 32; color: Theme.text; font.family: Theme.fontMono; font.pixelSize: Theme.fsSmall }
-                                    Label { text: modelData.channel + "ch"; width: 26; color: Theme.textMuted; font.pixelSize: Theme.fsSmall }
-                                    Label { text: "T" + modelData.track; width: 26; color: Theme.textMuted; font.pixelSize: Theme.fsSmall }
+                                    Label { text: modelData.index; Layout.preferredWidth: 28; Layout.minimumWidth: 28; Layout.maximumWidth: 28; color: Theme.textMuted; font.family: Theme.fontMono; font.pixelSize: Theme.fsSmall }
+                                    Label { text: modelData.pitch; Layout.preferredWidth: 32; Layout.minimumWidth: 32; Layout.maximumWidth: 32; color: Theme.text; font.family: Theme.fontMono; font.pixelSize: Theme.fsSmall }
+                                    Label { text: modelData.channel + "ch"; Layout.preferredWidth: 26; Layout.minimumWidth: 26; Layout.maximumWidth: 26; color: Theme.textMuted; font.pixelSize: Theme.fsSmall }
+                                    Label { text: "T" + modelData.track; Layout.preferredWidth: 26; Layout.minimumWidth: 26; Layout.maximumWidth: 26; color: Theme.textMuted; font.pixelSize: Theme.fsSmall }
                                     Label {
                                         text: (modelData.startSec + sliceWorkspace.offsetSec).toFixed(3)
-                                        width: 62; color: Theme.accent2; font.family: Theme.fontMono; font.pixelSize: Theme.fsSmall
+                                        Layout.preferredWidth: 62; Layout.minimumWidth: 62; Layout.maximumWidth: 62
+                                        color: Theme.accent2; font.family: Theme.fontMono; font.pixelSize: Theme.fsSmall
                                     }
                                     Label {
                                         text: (modelData.endSec - modelData.startSec).toFixed(3) + "s"
@@ -462,10 +466,10 @@ Item {
                                 Layout.fillWidth: true
                                 spacing: 4
                                 visible: sliceWorkspace.hasSlices
-                                Item { width: 20 }
-                                Label { text: qsTr("序号"); width: 28; color: Theme.textFaint; font.pixelSize: Theme.fsTiny }
-                                Label { text: qsTr("起始"); width: 62; color: Theme.textFaint; font.pixelSize: Theme.fsTiny }
-                                Label { text: qsTr("持续"); width: 50; color: Theme.textFaint; font.pixelSize: Theme.fsTiny }
+                                Item { Layout.preferredWidth: 22; Layout.minimumWidth: 22; Layout.maximumWidth: 22 }
+                                Label { text: qsTr("序号"); Layout.preferredWidth: 28; Layout.minimumWidth: 28; Layout.maximumWidth: 28; color: Theme.textFaint; font.pixelSize: Theme.fsTiny }
+                                Label { text: qsTr("起始"); Layout.preferredWidth: 62; Layout.minimumWidth: 62; Layout.maximumWidth: 62; color: Theme.textFaint; font.pixelSize: Theme.fsTiny }
+                                Label { text: qsTr("持续"); Layout.preferredWidth: 50; Layout.minimumWidth: 50; Layout.maximumWidth: 50; color: Theme.textFaint; font.pixelSize: Theme.fsTiny }
                                 Label {
                                     text: qsTr("来源")
                                     color: Theme.textFaint
@@ -510,15 +514,18 @@ Item {
                                             checked: modelData.enabled
                                             onToggled: sliceWorkspace.setSliceEnabled(modelData.index, checked)
                                             implicitHeight: 20
+                                            Layout.preferredWidth: 22; Layout.minimumWidth: 22; Layout.maximumWidth: 22
                                         }
-                                        Label { text: modelData.index; width: 28; color: Theme.textMuted; font.pixelSize: Theme.fsSmall }
+                                        Label { text: modelData.index; Layout.preferredWidth: 28; Layout.minimumWidth: 28; Layout.maximumWidth: 28; color: Theme.textMuted; font.pixelSize: Theme.fsSmall }
                                         Label {
                                             text: modelData.startSec.toFixed(3)
-                                            width: 62; color: Theme.accent2; font.family: Theme.fontMono; font.pixelSize: Theme.fsSmall
+                                            Layout.preferredWidth: 62; Layout.minimumWidth: 62; Layout.maximumWidth: 62
+                                            color: Theme.accent2; font.family: Theme.fontMono; font.pixelSize: Theme.fsSmall
                                         }
                                         Label {
                                             text: modelData.durationSec.toFixed(3) + "s"
-                                            width: 50; color: Theme.textMuted; font.family: Theme.fontMono; font.pixelSize: Theme.fsSmall
+                                            Layout.preferredWidth: 50; Layout.minimumWidth: 50; Layout.maximumWidth: 50
+                                            color: Theme.textMuted; font.family: Theme.fontMono; font.pixelSize: Theme.fsSmall
                                         }
                                         Label {
                                             text: modelData.kind === "midi"
@@ -828,25 +835,73 @@ Item {
     }
     Dialog {
         id: sliceEditDialog
-        title: qsTr("编辑切片")
         modal: true
         anchors.centerIn: parent
         width: 320
-        standardButtons: Dialog.Ok | Dialog.Cancel
+        height: 186   // 34(header) + ~110(content: 提示2行+两行输入) + 42(footer)
+        padding: 0   // 主题化 Dialog（参照 SettingsDialog 模式；默认 Basic 样式白底割裂）
         property int editIndex: -1
         onOpened: startBox.forceActiveFocus()
-        contentItem: ColumnLayout {
-            anchors.fill: parent
-            spacing: 8
+        background: Rectangle {
+            color: Theme.surface
+            border.color: Theme.borderStrong
+            border.width: 1
+            radius: Theme.boxRadius
+        }
+        header: Rectangle {
+            width: sliceEditDialog.width
+            height: 34
+            color: Theme.surface
+            border.color: Theme.borderStrong
+            border.width: 1
             Label {
-                text: qsTr("起始(ms) / 持续(ms)；终点自动夹逼到音频尾；"
-                           + "改起始后切片表按时间重排。")
+                anchors.left: parent.left
+                anchors.leftMargin: 12
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("编辑切片")
+                color: Theme.text
+                font.bold: true
+                font.pixelSize: Theme.fsBase
+            }
+        }
+        footer: Rectangle {
+            width: sliceEditDialog.width
+            height: 42
+            color: Theme.surface2
+            border.color: Theme.borderStrong
+            border.width: 1
+            RowLayout {
+                anchors.fill: parent
+                anchors.margins: 5
+                anchors.rightMargin: 8
+                spacing: 8
+                Item { Layout.fillWidth: true }
+                BbToolButton {
+                    text: qsTr("确定")
+                    onClicked: sliceEditDialog.accept()
+                }
+                BbToolButton {
+                    text: qsTr("取消")
+                    onClicked: sliceEditDialog.reject()
+                }
+            }
+        }
+        contentItem: ColumnLayout {
+            // ⚠️ 不要 anchors.fill: parent——contentItem 的父级是整窗 Dialog（含 header/footer），
+            // fill 会把内容压到 footer 下面（2026-09 实测重叠）；用显式宽度 + 隐式高度，
+            // Dialog 按内容区自动取高。
+            width: 296
+            spacing: 10
+            Label {
+                Layout.fillWidth: true
+                text: qsTr("起始 / 持续（ms）；终点自动夹逼到音频尾；改起始后切片表按时间重排。")
                 color: Theme.textFaint
                 font.pixelSize: Theme.fsTiny
                 wrapMode: Text.WordWrap
             }
             RowLayout {
-                spacing: 6
+                Layout.fillWidth: true
+                spacing: 8
                 Label { text: qsTr("起始"); color: Theme.textMuted; font.pixelSize: Theme.fsSmall; Layout.preferredWidth: 48 }
                 BbSpinBox {
                     id: startBox
@@ -858,7 +913,8 @@ Item {
                 }
             }
             RowLayout {
-                spacing: 6
+                Layout.fillWidth: true
+                spacing: 8
                 Label { text: qsTr("持续"); color: Theme.textMuted; font.pixelSize: Theme.fsSmall; Layout.preferredWidth: 48 }
                 BbSpinBox {
                     id: durBox
