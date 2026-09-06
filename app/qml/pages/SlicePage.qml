@@ -544,7 +544,10 @@ Item {
                             root.playheadSec = audioEngine.refPositionSec
                         }
                         onScrollRequested: (dir) => root.scrollRow += dir
-                        onZoomRequested: (dir) => root.zoomIndex += dir
+                        // ⚠️ 钳制必须在这里做（zoomIndex 是普通属性，负值/越界会拖住缩放节奏：
+                        // 缩到全曲后继续缩小 → 索引变负，再放大要先补回 0 才有效果）
+                        onZoomRequested: (dir) => root.zoomIndex =
+                            Math.max(0, Math.min(root.zoomLevels.length - 1, root.zoomIndex + dir))
                         // 键盘：方向键整行滚动（点击波形获得焦点）；Page/Home/End 走通用 onPressed
                         Keys.onUpPressed: { root.scrollRow--; event.accepted = true }
                         Keys.onDownPressed: { root.scrollRow++; event.accepted = true }

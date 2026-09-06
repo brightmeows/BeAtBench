@@ -907,7 +907,8 @@ ApplicationWindow {
     onDebugSliceDockTabChanged: if (debugSliceDockTab >= 0) slicePage.dockTab = debugSliceDockTab
     // M6.4 调试参数：--slice-zoom N / --slice-row N（换行视口验收）
     property int debugSliceZoom: -1
-    onDebugSliceZoomChanged: if (debugSliceZoom >= 0) slicePage.zoomIndex = debugSliceZoom
+    onDebugSliceZoomChanged: if (debugSliceZoom >= 0)
+        slicePage.zoomIndex = Math.max(0, Math.min(slicePage.zoomLevels.length - 1, debugSliceZoom))
     property int debugSliceRow: -1
     onDebugSliceRowChanged: if (debugSliceRow >= 0) slicePage.scrollRow = debugSliceRow
     // --wait-render 截图等待标志（main.cpp 轮询；波形验收用）
