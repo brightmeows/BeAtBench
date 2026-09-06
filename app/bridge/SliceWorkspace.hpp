@@ -64,14 +64,16 @@ public:
     /// prefix = 落盘前缀（可含 `/` 或 `\` 作子目录，如 "slices/slice" 或 "slice"）；
     /// 自动识别正反斜杠。bpm/beatsPerMeasure/subdivision 用于拍位换算；offset 用当前 m_offsetSec。
     /// startMeasure = ch01 铺放起始小节（1-based；第 N 小节 = 文件 `#(N-1)01:`）。
-    /// 返回 {ok, raw, count, error, startMeasure, endMeasure, placementText, nextStartId}
-    /// （nextStartId = 连续导出下一起始 id：本次分配最大 id + 1 跳过已占用；导出框自动刷新用；
-    /// raw = #WAVxx 定义 + ch01 铺放行）。
+    /// placeIntoChart（2026-09 用户「同时铺入编辑区」）：导出成功后把 raw 经 clipboard.paste
+    /// （sub_line_mode="uniform"）直接写进当前谱面——子行接续（目标小节段已有最高子行 +1 起，
+    /// 不挤旧行、新内容跨小节同列），单 CompositeCommand = 一个撤销步；需已加载谱面。
+    /// 返回 {ok, raw, count, error, startMeasure, endMeasure, placementText, nextStartId,
+    ///       placed, placedNotes, placeError}（placed 系列仅 placeIntoChart 时有效）。
     Q_INVOKABLE QVariantMap exportSlices(qreal bpm, int subdivision,
                                          int beatsPerMeasure, int startId,
                                          int startMeasure,
                                          const QString& outDir, const QString& prefix,
-                                         qreal fadeMs);
+                                         qreal fadeMs, bool placeIntoChart = false);
     /// 建议的铺放起始小节（1-based）：当前谱面已用小节数 + 1（下一空小节；
     /// 无谱面 → 1）。「起始小节」SpinBox 默认值用；夹逼 [1,999]。
     Q_INVOKABLE int suggestedStartMeasure() const;

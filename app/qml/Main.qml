@@ -909,6 +909,9 @@ ApplicationWindow {
     // M6.3 调试参数：--slice-export <起始id>（切片就绪后自动导出分片 + 输出可复制 raw；配 --slice-detect）
     property int debugSliceExport: -1
     onDebugSliceExportChanged: if (debugSliceExport >= 0) doDebugSliceExport()
+    // M6.3 调试参数：--slice-place <0|1>（导出时同时铺入编辑区谱面；配 --slice-export）
+    property int debugSlicePlace: -1
+    onDebugSlicePlaceChanged: if (debugSlicePlace >= 0) slicePage.placeToChart = (debugSlicePlace !== 0)
     Timer { id: sliceExportRetry; interval: 300; repeat: true; onTriggered: doDebugSliceExport() }
     function doDebugSliceExport() {
         if (!sliceWorkspace.hasAudio || !sliceWorkspace.hasSlices) { sliceExportRetry.start(); return }

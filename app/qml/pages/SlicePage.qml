@@ -26,6 +26,9 @@ Item {
     /// MIDI 切片右边界（2026-09 用户）：true（默认）= 下一起始/音频末尾——与手动切片一致
     /// （只标起始；同起始和弦合并一片）；false = 按 note 结束切分（历史行为）。
     property bool midiExtendNext: true
+    /// 「同时铺入编辑区」（M6.3 2026-09）：导出成功后把 raw 直接铺进当前谱面 ch01
+    /// （子行接续：目标小节段已有最高子行 +1 起；一个撤销步）。
+    property bool placeToChart: false
     /// 左 dock 页签：0 = 切片（默认·放置开关/编辑）/ 1 = MIDI 音符。
     /// 2026-09 用户：网格页（纯引导文字，无实际效果）删除。
     property int dockTab: 0
@@ -63,7 +66,7 @@ Item {
         var prefix = prefixBox.text.length ? prefixBox.text : "slice"
         var r = sliceWorkspace.exportSlices(bpmBox.value, subBox.value, 4,
                                             exportIdBox.value, startMeasureBox.value,
-                                            dir, prefix, 1.0)
+                                            dir, prefix, 1.0, root.placeToChart)
         exportResult = r
         rawText = (typeof r.raw === "string") ? r.raw : ""
         if (r.ok) {
@@ -787,6 +790,14 @@ Item {
                 placeholderText: qsTr("slice 或 slices/slice")
                 implicitWidth: 130
             }
+            BbCheckBox {
+                id: placeToChartBox
+                text: qsTr("同时铺入编辑区")
+                checked: root.placeToChart
+                onToggled: root.placeToChart = checked
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("导出后直接把切片铺进当前谱面 ch01（一个撤销步）\n子行接续：从目标小节段已有子行之后开始，\n同 tick 不挤旧行、新内容跨小节同列")
+            }
             BbToolButton {
                 text: qsTr("导出分片")
                 enabled: sliceWorkspace.hasSlices && sliceWorkspace.hasAudio
@@ -796,6 +807,11 @@ Item {
             Label {
                 text: root.exportResult && root.exportResult.ok
                       ? (qsTr("已导出 %1 片").arg(root.exportResult.count)
+                         + (root.exportResult.placed
+                            ? qsTr(" · 已铺 %1 片").arg(root.exportResult.placedNotes)
+                            : (root.exportResult.placeError
+                               ? qsTr(" · 铺放失败：") + root.exportResult.placeError
+                               : ""))
                          + (root.exportResult.placementText
                             ? (" · " + root.exportResult.placementText) : ""))
                       : (root.exportResult

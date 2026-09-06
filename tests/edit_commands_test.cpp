@@ -4,6 +4,7 @@
 // 全部合成 Chart，不依赖 local/。
 #include <gtest/gtest.h>
 
+#include <array>
 #include <memory>
 #include <random>
 #include <string>
@@ -609,4 +610,90 @@ TEST(EditCommands, ClipboardPasteBgmSubLineFifo) {
     }
     EXPECT_EQ(s0, 1u);
     EXPECT_EQ(s1, 1u);
+}
+
+TEST(EditCommands, ClipboardPasteSubLineContinueUniform) {
+    // M6.3 铺放（2026-09 用户「同时铺入编辑区」）：sub_line_mode="uniform" = 子行接续——
+    // 目标小节段已有 BGM 最高子行 +1 起统一抬升：新行不挤旧行（旧行结构不动）、同 tick 共存；
+    // 空段行为与 fifo 相同（从 0 起）。单命令单撤销步。
+    using beatbench::cmd::global_registry;
+    auto& session = beatbench::edit::global_editor_session();
+    session.load(make_chart());
+
+    // 第一次粘贴（默认 fifo）：m0 两行（sub_line 0/1，同 tick pos0）
+    Json a1 = Json::object();
+    a1.set("text", "#00001:0100\n#00001:0200\n");
+    Json r1 = Json::object();
+    r1.set("command", "clipboard.paste");
+    r1.set("args", std::move(a1));
+    const Json resp1 = global_registry().dispatch(r1);
+    ASSERT_TRUE(resp1.at("ok").as_bool()) << resp1.dump();
+    EXPECT_EQ(resp1.at("result").at("notes").as_i64(), 2);
+
+    // 第二次粘贴（uniform）：同 m0 两行 → 子行接续 2/3（与旧行 0/1 同 tick 共存）
+    Json a2 = Json::object();
+    a2.set("text", "#00001:0A00\n#00001:0B00\n");
+    a2.set("sub_line_mode", "uniform");
+    Json r2 = Json::object();
+    r2.set("command", "clipboard.paste");
+    r2.set("args", std::move(a2));
+    const Json resp2 = global_registry().dispatch(r2);
+    ASSERT_TRUE(resp2.at("ok").as_bool()) << resp2.dump();
+    EXPECT_EQ(resp2.at("result").at("notes").as_i64(), 2);
+
+    std::array<int, 4> perSubLine{};
+    for (const auto& e : session.chart().notes) {
+        if (e.measure == 0 && e.value.lane.kind == LaneKind::Bgm &&
+            e.pos == Rational(0, 1) && e.value.sub_line < 4)
+            ++perSubLine[e.value.sub_line];
+    }
+    EXPECT_EQ(perSubLine[0], 1) << "旧行 0 应保留";
+    EXPECT_EQ(perSubLine[1], 1) << "旧行 1 应保留";
+    EXPECT_EQ(perSubLine[2], 1) << "新行 2 = 接续起点";
+    EXPECT_EQ(perSubLine[3], 1) << "新行 3 = 接续第二行";
+
+    // 撤销 = 第二次粘贴全部回滚（单 undo 步：note + #WAV 定义一起）
+    ASSERT_TRUE(session.undo());
+    std::size_t total = 0;
+    for (const auto& e : session.chart().notes)
+        if (e.measure == 0 && e.value.lane.kind == LaneKind::Bgm) ++total;
+    EXPECT_EQ(total, 2u);
+}
+
+TEST(EditCommands, ClipboardPasteSubLineContinueUniformEmptyAndOverflow) {
+    // 空段：uniform 与 fifo 相同（从 0 起）；超 12 行上限 → 报错不写入。
+    using beatbench::cmd::global_registry;
+    auto& session = beatbench::edit::global_editor_session();
+    session.load(make_chart());
+
+    Json a = Json::object();
+    a.set("text", "#00001:0100\n#00001:0200\n");
+    a.set("sub_line_mode", "uniform");
+    Json req = Json::object();
+    req.set("command", "clipboard.paste");
+    req.set("args", std::move(a));
+    const Json resp = global_registry().dispatch(req);
+    ASSERT_TRUE(resp.at("ok").as_bool()) << resp.dump();
+    std::array<int, 2> perSubLine{};
+    for (const auto& e : session.chart().notes)
+        if (e.measure == 0 && e.value.lane.kind == LaneKind::Bgm &&
+            e.value.sub_line < 2)
+            ++perSubLine[e.value.sub_line];
+    EXPECT_EQ(perSubLine[0], 1);
+    EXPECT_EQ(perSubLine[1], 1);
+
+    // 已有 11 行（sub_line 0-10）时再贴 2 行 → 空间不足
+    const std::size_t before = session.chart().notes.size();
+    Json a2 = Json::object();
+    std::string big;
+    for (int i = 0; i < 11; ++i) big += "#00001:" + std::to_string(16 + i) + "0000\n";
+    a2.set("text", big);
+    a2.set("sub_line_mode", "uniform");
+    Json req2 = Json::object();
+    req2.set("command", "clipboard.paste");
+    req2.set("args", std::move(a2));
+    const Json resp2 = global_registry().dispatch(req2);
+    ASSERT_FALSE(resp2.at("ok").as_bool()) << resp2.dump();
+    EXPECT_EQ(std::string(resp2.at("error").at("code").as_str()), "bad_args");
+    EXPECT_EQ(session.chart().notes.size(), before) << "失败不应写入";
 }

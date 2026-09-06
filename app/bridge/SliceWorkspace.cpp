@@ -20,6 +20,8 @@
 #include "bridge/AudioEngine.hpp"
 #include "bridge/ChartSession.hpp"
 #include "beatbench/audio/ChartRenderer.hpp"
+#include "beatbench/core/command/Command.hpp"
+#include "beatbench/core/json/Json.hpp"
 #include "beatbench/core/slice/SliceExport.hpp"
 
 namespace beatbench::app {
@@ -85,7 +87,7 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
                                          int beatsPerMeasure, int startId,
                                          int startMeasure,
                                          const QString& outDir, const QString& prefix,
-                                         qreal fadeMs) {
+                                         qreal fadeMs, bool placeIntoChart) {
     QVariantMap res;
     res.insert(QStringLiteral("ok"), false);
     if (m_slices.empty()) {
@@ -186,6 +188,43 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
     }
     res.insert(QStringLiteral("nextStartId"), std::clamp(nextStartId, 1, 1295));
     qWarning("slice export: done ok=%d nextStartId=%d", errors.isEmpty() ? 1 : 0, nextStartId);
+
+    // M6.3 铺放（placeIntoChart，2026-09 用户「同时铺入编辑区」）：raw 经 clipboard.paste
+    // （sub_line_mode="uniform"）直接写进当前谱面——#WAV 定义 + ch01 note 一起入、单命令
+    // 单撤销步；子行接续：目标小节段已有最高子行 +1 起（不挤旧行、新内容跨小节同列）。
+    bool placed = false;
+    int placedNotes = 0;
+    QString placeError;
+    if (placeIntoChart && errors.isEmpty() && !rawStr.empty() && m_chartSession &&
+        m_chartSession->hasChart()) {
+        using beatbench::json::Json;
+        Json req = Json::object();
+        req.set("command", "clipboard.paste");
+        Json args = Json::object();
+        args.set("text", rawStr);
+        args.set("sub_line_mode", "uniform");
+        req.set("args", std::move(args));
+        const Json resp = beatbench::cmd::global_registry().dispatch(req);
+        const Json* okp = resp.find("ok");
+        if (okp && okp->is_bool() && okp->as_bool()) {
+            if (const Json* r = resp.find("result"))
+                if (const Json* n = r->find("notes"))
+                    placedNotes = static_cast<int>(n->as_i64());
+            placed = true;
+            m_chartSession->refresh();  // 内容变化 → 视图刷新（fingerprint 判定）
+        } else if (const Json* e = resp.find("error")) {
+            if (const Json* code = e->find("code"))
+                placeError = QString::fromStdString(code->as_str());
+            if (const Json* msg = e->find("message"))
+                placeError += QStringLiteral(": ") + QString::fromStdString(msg->as_str());
+        }
+    }
+    qWarning("slice export: place=%d notes=%d placeErr=%s", placed ? 1 : 0, placedNotes,
+             placeError.toUtf8().constData());
+    res.insert(QStringLiteral("placed"), placed);
+    res.insert(QStringLiteral("placedNotes"), placedNotes);
+    if (!placeError.isEmpty())
+        res.insert(QStringLiteral("placeError"), placeError);
     if (!errors.isEmpty())
         res.insert(QStringLiteral("error"), errors.join(QStringLiteral("; ")));
     return res;

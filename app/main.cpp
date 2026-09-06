@@ -517,6 +517,16 @@ int main(int argc, char** argv) {
                 root->setProperty("debugSliceExport", sid);
         }
     }
+    // --slice-place <0|1>：导出时同时铺进编辑区谱面（子行接续；M6.3 验收；配 --slice-export）
+    const int spIdx = args.indexOf(QStringLiteral("--slice-place"));
+    if (spIdx >= 0 && spIdx + 1 < args.size()) {
+        bool ok = false;
+        const int v = args.at(spIdx + 1).toInt(&ok);
+        if (ok) {
+            if (QObject* root = engine.rootObjects().value(0))
+                root->setProperty("debugSlicePlace", v);
+        }
+    }
     // --slice-tab N：切音页左 dock 页签（0 切片 1 MIDI 音符；配 --screenshot 验收）
     const int stIdx = args.indexOf(QStringLiteral("--slice-tab"));
     if (stIdx >= 0 && stIdx + 1 < args.size()) {

@@ -1036,6 +1036,17 @@ public:
         } else {
             throw CommandError("bad_args", "缺少 text 或 lines");
         }
+        // M6.3 铺放（2026-09 用户，doc/02 §7.1）：sub_line_mode = "fifo"（默认，历史行为）|
+        // "uniform"（子行接续——FIFO 照旧从 0 起解析，随后统一抬升：起点 = 目标小节段内已有
+        // BGM 最高子行 + 1，无 → 0）。保证：同 tick 不与旧行冲突；旧行结构不动；新内容跨小节
+        // 同列（统一 base，而非每小节独立接续）。
+        std::string sub_line_mode = "fifo";
+        if (const Json* m = args.find("sub_line_mode")) {
+            if (!m->is_string()) throw CommandError("bad_args", "sub_line_mode 应为字符串");
+            sub_line_mode = m->as_str();
+            if (sub_line_mode != "fifo" && sub_line_mode != "uniform")
+                throw CommandError("bad_args", "sub_line_mode 应为 fifo 或 uniform");
+        }
 
         // 解析每行 → note 数据行 / #WAVxx 定义 / #NNN02: 小节长度
         std::vector<edit::NoteRef> parsed;
@@ -1146,6 +1157,35 @@ public:
         }
         const std::int64_t offset =
             have_m ? static_cast<std::int64_t>(target) - min_m : 0;
+
+        // ---- 子行接续（"uniform"）：目标小节段内已有 BGM 最高子行 + 1 = 统一起点 ----
+        if (sub_line_mode == "uniform") {
+            std::uint32_t max_m = min_m;
+            for (const auto& r : parsed) max_m = std::max(max_m, r.measure);
+            for (const auto& d : measure_defs) max_m = std::max(max_m, d.first);
+            const std::uint32_t seg_lo = target;
+            const std::uint32_t seg_hi = target + (max_m - min_m);
+            bool any = false;
+            std::uint32_t hi = 0;
+            for (const auto& ev : chart.notes) {
+                if (ev.value.lane.kind != LaneKind::Bgm) continue;
+                if (ev.measure >= seg_lo && ev.measure <= seg_hi) {
+                    any = true;
+                    hi = std::max(hi, ev.value.sub_line);
+                }
+            }
+            std::uint32_t max_row = 0;  // 本次粘贴 BGM note 的最大 raw 行号
+            for (const auto& r : parsed)
+                if (r.lane.kind == LaneKind::Bgm) max_row = std::max(max_row, r.sub_line);
+            const std::uint32_t base = any ? hi + 1 : 0;
+            if (base + max_row > 11)
+                throw CommandError("bad_args",
+                                   "子行空间不足：目标小节段已有 " +
+                                       std::to_string(any ? hi + 1 : 0) + " 行 + 本次 " +
+                                       std::to_string(max_row + 1) + " 行 > 12 上限");
+            for (auto& r : parsed)
+                if (r.lane.kind == LaneKind::Bgm) r.sub_line += base;
+        }
 
         // CompositeCommand(#WAV 定义 ×M + 小节长 ×N + PutNote×K) 应用（一个 undo 步）
         auto comp = std::make_unique<edit::CompositeCommand>();
