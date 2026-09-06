@@ -12,6 +12,8 @@ add_executable(beatbench
     bridge/KeyMonitor.cpp
     bridge/UiActionRegistry.cpp
     bridge/ThemeManager.cpp
+    bridge/ClipboardBridge.cpp
+    bridge/ClipboardBridge.hpp   # Q_OBJECT：须显式列入（AUTOMOC 自动包含扫描不可靠）
     bridge/AudioEngine.cpp
     bridge/WaveformOverviewItem.cpp
     bridge/PlayheadOverlayItem.cpp

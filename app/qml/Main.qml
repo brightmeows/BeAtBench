@@ -131,6 +131,18 @@ ApplicationWindow {
         interval: 400   // 点击（150ms）之后
         onTriggered: deleteSelection()
     }
+    // --paste-text <文本>：写入系统剪贴板后触发编辑页粘贴（验收「BMS 原始行 → 谱面」链路；
+    // 与真实 Ctrl+V 同一路径——pasteClipboard 读 clipboard.text()）
+    property string debugPasteText: ""
+    onDebugPasteTextChanged: if (debugPasteText.length > 0) debugPasteTimer.restart()
+    Timer {
+        id: debugPasteTimer
+        interval: 500   // 等谱面加载（--open）完成
+        onTriggered: {
+            if (typeof clipboard !== "undefined" && clipboard) clipboard.setText(debugPasteText)
+            window.pasteClipboard()
+        }
+    }
     onDebugBgmExpandChanged: if (debugBgmExpand && editPage) editPage.bgmExpanded = true
     onDebugShowChannelIdsChanged: if (debugShowChannelIds) window.showChannelIds = true
     onDebugNoteSampleModeChanged: if (debugNoteSampleMode > 0) window.noteSampleMode = debugNoteSampleMode
@@ -217,10 +229,11 @@ ApplicationWindow {
                enabled: chartMeta !== null
                onActivated: uiActions.invoke("edit.redo") }
     Shortcut { sequence: uiActions.shortcut("edit.copy")
-               enabled: chartMeta !== null && window.selectionRefs.length > 0
+               enabled: chartMeta !== null && currentPage === 0 &&
+                        !window.textInputFocused && window.selectionRefs.length > 0
                onActivated: uiActions.invoke("edit.copy") }
     Shortcut { sequence: uiActions.shortcut("edit.paste")
-               enabled: chartMeta !== null && window.clipboardLines.length > 0
+               enabled: chartMeta !== null && currentPage === 0 && !window.textInputFocused
                onActivated: uiActions.invoke("edit.paste") }
     Shortcut { sequence: uiActions.shortcut("edit.delete")
                enabled: chartMeta !== null && currentPage === 0
@@ -1322,7 +1335,7 @@ ApplicationWindow {
         setActionEnabled("edit.undo", chartMeta !== null)
         setActionEnabled("edit.redo", chartMeta !== null)
         setActionEnabled("edit.copy", chartMeta !== null && selectionRefs.length > 0)
-        setActionEnabled("edit.paste", chartMeta !== null && clipboardLines.length > 0)
+        setActionEnabled("edit.paste", chartMeta !== null && currentPage === 0)
         setActionEnabled("edit.delete", chartMeta !== null && currentPage === 0 &&
                                            (selectionRefs.length > 0 || metaSelection.length > 0))
         setActionEnabled("tool.quantize", selectionRefs.length > 0)

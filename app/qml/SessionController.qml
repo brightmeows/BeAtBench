@@ -697,23 +697,59 @@ QtObject {
         var r = sessionCmd("clipboard.copy", { selection: window.selectionRefs })
         if (r) {
             window.clipboardLines = r.lines
+            // 镜像到系统剪贴板：Ctrl+V / 外部工具粘贴拿到同一份 BMS 原始行（2026-09）
+            if (typeof clipboard !== "undefined" && clipboard)
+                clipboard.setText(r.lines.join("\n"))
             setStatus(qsTr("已复制 %1 个 note（%2 行）").arg(r.count).arg(r.lines.length))
         }
     }
-    function pasteClipboard() {
-        if (!window.clipboardLines || window.clipboardLines.length === 0) {
-            setStatus(qsTr("剪贴板为空（先框选 Ctrl+C）"))
-            return
+    /// 系统剪贴板文本是否含 BMS 原始行（数据行 #mmmcc: / 定义行 #WAVxx/#BPMxx/…）。
+    /// 判定宽松：只要首行命中即尝试，解析失败由 clipboard.paste 报错（信息已足够）。
+    function looksLikeBmsText(t) {
+        var lines = t.split(/\r?\n/)
+        for (var i = 0; i < lines.length; i++) {
+            var s = lines[i].trim()
+            if (s.length === 0 || s.charAt(0) !== "#") continue
+            if (/^#[0-9]{3}[0-9A-Za-z]{2,}:/.test(s)) return true        // #mmmcc: 数据行
+            if (/^#(WAV|BMP|BPM|STOP)[0-9A-Za-z]{1,2}[ \t]/.test(s)) return true  // 定义行
         }
+        return false
+    }
+    function pasteClipboard() {
+        // 2026-09 修复：编辑页 Ctrl+V 先读系统剪贴板（切音页「复制 raw」/手写/外部工具复制的
+        // BMS 原始行）→ 直接粘贴进谱面；内部剪贴板（框选 Ctrl+C 的 note 行）作兜底。
         var target = 0
         if (typeof editPage !== "undefined" && editPage)
             target = Math.floor(editPage.centerMeasure() || 0)
-        var r = sessionCmd("clipboard.paste", {
+        target = Math.max(0, target)
+        var sysText = ""
+        if (typeof clipboard !== "undefined" && clipboard)
+            sysText = clipboard.text()
+        if (sysText && looksLikeBmsText(sysText)) {
+            var r = sessionCmd("clipboard.paste", {
+                text: sysText,
+                target_measure: target
+            })
+            if (r) {
+                var parts = []
+                if (r.notes > 0) parts.push(qsTr("%1 个 note").arg(r.notes))
+                if (r.wavs > 0) parts.push(qsTr("%1 个采样").arg(r.wavs))
+                if (r.measures > 0) parts.push(qsTr("%1 个小节长").arg(r.measures))
+                setStatus(qsTr("已粘贴到小节 %1%2").arg(r.target_measure)
+                          .arg(parts.length > 0 ? qsTr("（%1）").arg(parts.join("、")) : ""))
+            }
+            return
+        }
+        if (!window.clipboardLines || window.clipboardLines.length === 0) {
+            setStatus(qsTr("剪贴板为空（先框选 Ctrl+C；或复制 BMS 原始行后 Ctrl+V）"))
+            return
+        }
+        var r2 = sessionCmd("clipboard.paste", {
             lines: window.clipboardLines,
-            target_measure: Math.max(0, target)
+            target_measure: target
         })
-        if (r)
-            setStatus(qsTr("已粘贴 %1 个 note 到小节 %2").arg(r.notes).arg(r.target_measure))
+        if (r2)
+            setStatus(qsTr("已粘贴 %1 个 note 到小节 %2").arg(r2.notes).arg(r2.target_measure))
     }
     function undoEdit() {
         var r = sessionCmd("session.undo")

@@ -931,6 +931,8 @@ public:
 // copy：选中 note 集合 → BMS 数据行文本（#mmmcc:槽位序列，同通道同 measure 合并 LCM）。
 // paste：BMS 数据行文本 → note 集合 → 插入（以剪贴板最小 measure 为基准偏移到目标）。
 // 读取兼容：外部工具（BMSE/iBMSC）复制的原始行可直接粘贴解析。
+// 2026-09 扩展（切音导出 raw 整段粘贴）：额外识别 `#WAVxx <file>` 采样定义行与
+// `#NNN02:<值>` 小节长度行（ch01 多行按 sub_line FIFO 与原解析器一致）。
 
 class ClipboardCopyCommand : public Command {
 public:
@@ -1035,8 +1037,28 @@ public:
             throw CommandError("bad_args", "缺少 text 或 lines");
         }
 
-        // 解析每行 → NoteRef（#mmmcc:槽位序列）
+        // 解析每行 → note 数据行 / #WAVxx 定义 / #NNN02: 小节长度
         std::vector<edit::NoteRef> parsed;
+        std::vector<std::pair<std::uint32_t, std::string>> wav_defs;  // (id, file)
+        std::vector<std::pair<std::uint32_t, double>> measure_defs;   // (measure, 四分拍数)
+        // BGM 子行 FIFO（同 (measure,channel) 多行 = 子行；与 bms_parser 赋值一致，2026-09）
+        std::map<std::pair<std::uint32_t, std::string>, std::uint32_t> sub_line_counts;
+        // 整段数值解析（ch02 值不带引号/分隔符；空白容忍与 bms_parser 同）
+        const auto parse_double_text = [](std::string_view s, double& out) {
+            while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r'))
+                s.remove_prefix(1);
+            while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r'))
+                s.remove_suffix(1);
+            if (s.empty()) return false;
+            const std::string tmp(s);
+            char* end = nullptr;
+            const double v = std::strtod(tmp.c_str(), &end);
+            if (end != tmp.c_str() && *end == '\0' && std::isfinite(v)) {
+                out = v;
+                return true;
+            }
+            return false;
+        };
         for (const auto& raw_line : lines) {
             std::string_view line(raw_line);
             // 跳过前导空白/注释
@@ -1044,6 +1066,24 @@ public:
             while (p < line.size() && (line[p] == ' ' || line[p] == '\t')) ++p;
             if (p >= line.size() || line[p] != '#') continue;
             line.remove_prefix(p + 1);
+
+            // #WAVxx <file>：采样定义（大小写不敏感；id 1-2 位；file = 剩余文本，可含空格）
+            if (line.size() > 4 && (line[0] == 'W' || line[0] == 'w') &&
+                (line[1] == 'A' || line[1] == 'a') && (line[2] == 'V' || line[2] == 'v')) {
+                std::size_t k = 3;
+                while (k < line.size() && is_c36_digit(line[k])) ++k;
+                if (k == 3 || k > 5) continue;  // 无 id 或超过 2 位（3 位 id 暂不支持）→ 跳过
+                const auto id_num = decode_id_text(chart, line.substr(3, k - 3));
+                while (k < line.size() && (line[k] == ' ' || line[k] == '\t')) ++k;
+                std::string_view file = line.substr(k);
+                while (!file.empty() && (file.back() == ' ' || file.back() == '\t' ||
+                                         file.back() == '\r'))
+                    file.remove_suffix(1);
+                if (file.empty() || id_num == 0) continue;  // 无路径/占位 id 00 → 忽略
+                wav_defs.emplace_back(id_num, std::string(file));
+                continue;
+            }
+
             // 字段名：小节3位 + 通道 ≥1 位，到 ':' 为止
             const auto colon = line.find(':');
             if (colon == std::string_view::npos || colon < 4) continue;
@@ -1058,9 +1098,22 @@ public:
             if (!ok_digits) continue;
             const auto channel = token.substr(3);
             const auto rule = bms::bms_channel_rule_for(mode, channel);
-            if (!rule || rule->semantics != bms::ChannelSemantics::Note) continue;
+            if (!rule || rule->semantics == bms::ChannelSemantics::KeepRaw) continue;
             const auto data = line.substr(colon + 1);
+
+            // ch02 小节长度：整段一个数值（文件值 = 整小节记号倍数，1 = 4/4；模型存四分拍 ×4）
+            if (rule->semantics == bms::ChannelSemantics::MeasureLen) {
+                double beats = 0.0;
+                if (parse_double_text(data, beats))
+                    measure_defs.emplace_back(measure, beats * 4.0);
+                continue;
+            }
+            // 其余非 Note 语义（ch03 内联 BPM / ch04 BGA / ch08-09 引用…）粘贴暂不支持 → 跳过
+            if (rule->semantics != bms::ChannelSemantics::Note) continue;
+
             const std::size_t n_slots = data.size() / 2;
+            // 子行序号：同 (measure,channel) 第几行（FIFO；ch01 多行不冲突，2026-09）
+            const std::uint32_t sub_line = sub_line_counts[{measure, std::string(channel)}]++;
             for (std::size_t i = 0; i < n_slots; ++i) {
                 const auto slot = data.substr(i * 2, 2);
                 if (slot == "00") continue;
@@ -1070,31 +1123,50 @@ public:
                                    static_cast<std::int64_t>(n_slots));
                 ref.lane = rule->lane;
                 ref.sample = decode_id_text(chart, slot);
+                ref.sub_line = sub_line;
                 parsed.push_back(ref);
             }
         }
-        if (parsed.empty()) throw CommandError("bad_args", "未解析到任何 note（剪贴板内容无法识别）");
+        if (parsed.empty() && wav_defs.empty() && measure_defs.empty())
+            throw CommandError("bad_args",
+                               "未解析到任何 note/定义（剪贴板内容无法识别；需要 BMS 数据行或 #WAVxx 定义）");
 
-        // 偏移：剪贴板最小 measure → target_measure（默认 = 最小 measure，即原位）
-        std::uint32_t min_m = parsed.front().measure;
-        for (const auto& r : parsed) min_m = std::min(min_m, r.measure);
-        std::uint32_t target = min_m;
+        // 偏移：剪贴板最小 measure（note 与小节长共同）→ target_measure（默认 = 最小，即原位）
+        std::uint32_t min_m = 0;
+        bool have_m = false;
+        for (const auto& r : parsed) {
+            if (!have_m || r.measure < min_m) { have_m = true; min_m = r.measure; }
+        }
+        for (const auto& d : measure_defs) {
+            if (!have_m || d.first < min_m) { have_m = true; min_m = d.first; }
+        }
+        std::uint32_t target = have_m ? min_m : 0;
         if (const Json* t = args.find("target_measure")) {
             target = static_cast<std::uint32_t>(t->as_i64());
         }
-        const std::int64_t offset = static_cast<std::int64_t>(target) - min_m;
+        const std::int64_t offset =
+            have_m ? static_cast<std::int64_t>(target) - min_m : 0;
 
-        // CompositeCommand(PutNote×N) 应用
+        // CompositeCommand(#WAV 定义 ×M + 小节长 ×N + PutNote×K) 应用（一个 undo 步）
         auto comp = std::make_unique<edit::CompositeCommand>();
+        for (const auto& [id, file] : wav_defs)
+            comp->add(std::make_unique<edit::SetSampleFileCommand>(SampleKind::Wav, id, file));
+        for (const auto& [m, beats] : measure_defs)
+            comp->add(std::make_unique<edit::PutTimingCommand>(
+                edit::TimingKind::Measure,
+                static_cast<std::uint32_t>(static_cast<std::int64_t>(m) + offset),
+                Rational(0, 1), beats));
         for (const auto& r : parsed) {
             comp->add(std::make_unique<edit::PutNoteCommand>(
                 static_cast<std::uint32_t>(static_cast<std::int64_t>(r.measure) + offset),
-                r.pos, r.lane, r.sample));
+                r.pos, r.lane, r.sample, false, NoteKind::Normal, r.sub_line));
         }
         const bool ok = session.exec(std::move(comp));
         Json out = Json::object();
         out.set("ok", ok);
         out.set("notes", static_cast<std::int64_t>(parsed.size()));
+        out.set("wavs", static_cast<std::int64_t>(wav_defs.size()));
+        out.set("measures", static_cast<std::int64_t>(measure_defs.size()));
         out.set("target_measure", static_cast<std::int64_t>(target));
         out.set("undo_depth", static_cast<std::int64_t>(session.undo_depth()));
         return out;

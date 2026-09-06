@@ -532,3 +532,81 @@ TEST(EditCommands, ClipboardPasteBadText) {
     EXPECT_FALSE(resp.at("ok").as_bool());
     EXPECT_EQ(resp.at("error").at("code").as_str(), "bad_args");
 }
+
+TEST(EditCommands, ClipboardPasteWavDefsAndMeasures) {
+    // 2026-09：切音导出 raw 整段粘贴——#WAV 定义 + #NNN02: 小节长 + ch01 数据行（一个 undo 步）
+    using beatbench::cmd::global_registry;
+    auto& session = beatbench::edit::global_editor_session();
+    session.load(make_chart());
+    const std::size_t before = session.chart().notes.size();
+
+    Json args = Json::object();
+    args.set("text",
+             "#WAV01 kick.wav\n"
+             "#WAVAA slices/slice_170.wav\n"
+             "#00002:2\n"
+             "#00201:0100AA\n");
+    args.set("target_measure", 5);
+    Json req = Json::object();
+    req.set("command", "clipboard.paste");
+    req.set("args", std::move(args));
+    const Json resp = global_registry().dispatch(req);
+    ASSERT_TRUE(resp.at("ok").as_bool()) << resp.dump();
+    EXPECT_EQ(resp.at("result").at("notes").as_i64(), 2);
+    EXPECT_EQ(resp.at("result").at("wavs").as_i64(), 2);
+    EXPECT_EQ(resp.at("result").at("measures").as_i64(), 1);
+
+    const auto& chart = session.chart();
+    // #WAV 定义创建（01 → id1；AA → id370）
+    auto it = chart.samples.find({SampleKind::Wav, 1});
+    ASSERT_NE(it, chart.samples.end());
+    EXPECT_EQ(it->second.file, "kick.wav");
+    it = chart.samples.find({SampleKind::Wav, 370});
+    ASSERT_NE(it, chart.samples.end());
+    EXPECT_EQ(it->second.file, "slices/slice_170.wav");
+    // 小节长：ch02 值 2 = 2×4 四分拍；原 measure 0 + 偏移 5 → m5
+    bool found_mea = false;
+    for (const auto& e : chart.measure_events) {
+        if (e.measure == 5 && e.pos == Rational(0, 1)) {
+            EXPECT_DOUBLE_EQ(e.value.beats, 8.0);
+            found_mea = true;
+        }
+    }
+    EXPECT_TRUE(found_mea);
+    // note：m2（偏移后 m7）两个 ch01 note（sample 1 / AA）
+    std::size_t in_m7 = 0;
+    for (const auto& e : chart.notes)
+        if (e.measure == 7 && e.value.lane.kind == LaneKind::Bgm) ++in_m7;
+    EXPECT_EQ(in_m7, 2u);
+    // 撤销一次 = 全部移除（note + #WAV 定义 + 小节长）
+    ASSERT_TRUE(session.undo());
+    EXPECT_EQ(session.chart().notes.size(), before);
+    EXPECT_EQ(session.chart().samples.count({SampleKind::Wav, 1}), 0u);
+    EXPECT_EQ(session.chart().samples.count({SampleKind::Wav, 370}), 0u);
+    EXPECT_TRUE(session.chart().measure_events.empty());
+}
+
+TEST(EditCommands, ClipboardPasteBgmSubLineFifo) {
+    // 2026-09：同小节多行 ch01 = 子行（sub_line FIFO 与原解析器一致），粘贴不挤压成一行
+    using beatbench::cmd::global_registry;
+    auto& session = beatbench::edit::global_editor_session();
+    session.load(make_chart());
+    Json args = Json::object();
+    args.set("text", "#00001:0100\n#00001:0200\n");
+    Json req = Json::object();
+    req.set("command", "clipboard.paste");
+    req.set("args", std::move(args));
+    const Json resp = global_registry().dispatch(req);
+    ASSERT_TRUE(resp.at("ok").as_bool()) << resp.dump();
+    EXPECT_EQ(resp.at("result").at("notes").as_i64(), 2);
+
+    std::size_t s0 = 0, s1 = 0;
+    for (const auto& e : session.chart().notes) {
+        if (e.measure == 0 && e.value.lane.kind == LaneKind::Bgm && e.pos == Rational(0, 1)) {
+            if (e.value.sub_line == 0) ++s0;
+            if (e.value.sub_line == 1) ++s1;
+        }
+    }
+    EXPECT_EQ(s0, 1u);
+    EXPECT_EQ(s1, 1u);
+}

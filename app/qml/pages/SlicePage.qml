@@ -709,7 +709,7 @@ Item {
                         BbToolButton {
                             text: qsTr("复制 raw")
                             enabled: root.rawText.length > 0
-                            onClicked: sliceWorkspace.copyToClipboard(root.rawText)
+                            onClicked: clipboard.setText(root.rawText)
                         }
                     }
 

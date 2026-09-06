@@ -6,11 +6,9 @@
 // - offset 仅数据（画 note 刻度/列表显示时 +offsetSec）；切片边界推导（M6.2）再消费。
 #include "bridge/SliceWorkspace.hpp"
 
-#include <QClipboard>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QGuiApplication>
 #include <QMetaObject>
 #include <QThreadPool>
 #include <QVariantMap>
@@ -190,10 +188,6 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
     if (!errors.isEmpty())
         res.insert(QStringLiteral("error"), errors.join(QStringLiteral("; ")));
     return res;
-}
-
-void SliceWorkspace::copyToClipboard(const QString& text) {
-    QGuiApplication::clipboard()->setText(text);
 }
 
 void SliceWorkspace::setStatus(const QString& text) {

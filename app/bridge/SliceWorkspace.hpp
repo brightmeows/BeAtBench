@@ -75,8 +75,6 @@ public:
     /// 建议的铺放起始小节（1-based）：当前谱面已用小节数 + 1（下一空小节；
     /// 无谱面 → 1）。「起始小节」SpinBox 默认值用；夹逼 [1,999]。
     Q_INVOKABLE int suggestedStartMeasure() const;
-    /// 复制文本到系统剪贴板（QML「复制 raw」按钮用；Qt 6 QML 无内置剪贴板 API）。
-    Q_INVOKABLE void copyToClipboard(const QString& text);
 
     /// 导入参考音频（异步解码；完成 → 波形金字塔 + 交给 AudioEngine 预览）。
     /// 返回 false = 立即失败（无文件/格式不支持）；解码失败异步报 statusText。

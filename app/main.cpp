@@ -30,6 +30,7 @@
 
 #include "bridge/AudioEngine.hpp"
 #include "bridge/ChartSession.hpp"
+#include "bridge/ClipboardBridge.hpp"
 #include "bridge/CommandDispatcher.hpp"
 #include "bridge/KeyMonitor.hpp"
 #include "bridge/LintListModel.hpp"
@@ -255,6 +256,8 @@ int main(int argc, char** argv) {
     // 全局修饰键监控（Ctrl 按住态；QML Keys 收不到独立修饰键，Alt 又被菜单栏拦截）
     beatbench::app::KeyMonitor keyMonitor;
     app.installEventFilter(&keyMonitor);
+    // 系统剪贴板桥（2026-09 编辑页 Ctrl+V 读系统剪贴板 BMS 原始行；Ctrl+C 镜像回写）
+    beatbench::app::ClipboardBridge clipboardBridge;
 
     QQmlApplicationEngine engine;
     QObject::connect(&engine, &QQmlEngine::warnings, &dumpQmlWarnings);
@@ -267,6 +270,7 @@ int main(int argc, char** argv) {
     engine.rootContext()->setContextProperty(QStringLiteral("audioEngine"), &audioEngine);
     engine.rootContext()->setContextProperty(QStringLiteral("sliceWorkspace"), &sliceWorkspace);
     engine.rootContext()->setContextProperty(QStringLiteral("keyMonitor"), &keyMonitor);
+    engine.rootContext()->setContextProperty(QStringLiteral("clipboard"), &clipboardBridge);
     // M5 播放：AudioEngine 连 ChartSession（渲染完成装载 PCM；编辑即停；waitRender 续播）
     audioEngine.setChartSession(&chartSession);
 
@@ -408,6 +412,14 @@ int main(int argc, char** argv) {
     if (openIdx >= 0 && openIdx + 1 < args.size()) {
         if (QObject* root = engine.rootObjects().value(0))
             root->setProperty("debugOpenPath", args.at(openIdx + 1));
+    }
+
+    // --paste-text <文本>：调试——启动后把文本写入系统剪贴板并触发编辑页 Ctrl+V 粘贴
+    // 同一路径（配 --open --screenshot 验收「系统剪贴板 BMS 原始行 → 谱面」链路）。
+    const int pasteIdx = args.indexOf(QStringLiteral("--paste-text"));
+    if (pasteIdx >= 0 && pasteIdx + 1 < args.size()) {
+        if (QObject* root = engine.rootObjects().value(0))
+            root->setProperty("debugPasteText", args.at(pasteIdx + 1));
     }
 
     // --screenshot <png>：截图后退出（见 scheduleScreenshot）
