@@ -281,6 +281,164 @@ CLI=批处理"架构。
 
 ---
 
+
+## 11. 附录（M3 权威设计说明，2026-09 从 doc/04 迁入）：note 移动机制与数据模型抽象
+
+### note 移动机制与数据模型抽象（设计参考，2026-09 归纳）
+
+> 目标：把分散在各轮修复里的 note 移动逻辑收敛成一份**单一权威说明**，并厘清
+> "轨道类别" 与 "note 类型" 的关系，便于将来导入其它格式时判断扩展点。
+
+#### 1) 两个 `kind` 必须区分
+
+模型里有**两个** `kind`，刻意分开，别混：
+
+- **`Lane.kind`（`LaneKind`）＝轨道（通道）类别**，`core/.../Lane.hpp`：
+  `enum class LaneKind { Key, Scratch, Pedal, Bgm }`；`struct Lane { player, kind, index }`。
+  注释明确定位：*"Lane 只管轨道身份；BMS 通道号（11-19/51-59/D1-D9…）只是 codec 层映射规则，
+  模型层不出现通道号"*。`player`（0/1，预留扩展）= SP/DP；`index`（`uint8_t`）= Key 的键号
+  （当前模式 1..9，**类型本身可到 255**，非硬上限）；Scratch/Pedal/Bgm 的 index 恒 0。
+- **`Note.kind`（`NoteKind`）＝note 的属性类型**，`core/.../Payloads.hpp`：
+  `enum class NoteKind { Normal, Landmine, /* 预留 Hidden */ }`；注释：*"特殊属性放这里而非
+  Lane（Lane 只管轨道身份）"*。
+
+即：**note 的角色（判定键/皿/背景）由 `lane` 决定；note 的附加属性（地雷/LN/Hidden）由
+`Note.kind`/`ln_channel` 决定；note 的身份是 `sample`（WAV id）**。BMS 里 note 本身没有
+"类型"——身份是 id，角色来自通道，属性来自通道段（D1-E9 地雷、51-69 LN、#LNOBJ）。
+该现实已被正确建模：`BmsChannelRule` 把通道解读为
+`{ semantics, lane, note_kind, ln_channel, bga_layer }`。
+
+#### 2) Note / Lane / Column 结构要点
+
+- `Note = { lane, sample, kind(NoteKind), ln_pair?, ln_channel, bgm_line }`。
+- `lane` = `{player, kind(LaneKind), index}`。
+- ⚠️ **`bgm_line` 对非 BGM note 恒为 0**（解析器非 ch01 一律写 0）。这正是"多轨→BGM 挤成一行"
+  等一系列 bug 的**根源**——判别"是否 BGM note"必须看 `lane.kind==="bgm"`，**不能**看 `bgm_line>=0`。
+- `Column = { lane, label, bgmLine, bgmCol, bgaLayer, bpm, stop, ... }`，是把通道渲染成一列
+  的视图结构。列序 = on-screen 连续序：BPM → STOP → S(皿) → key1..N → [2P] → [BGA 层] → BGM
+  （聚合列 `bgmLine=-1` 或展开的 bgm1..bgmN `bgmLine=0..M`）。**BGA 层的 lane 也是 `{0,bgm,0}`**，
+  区分靠 `bgaLayer` 而非 lane。
+
+#### 3) 目标列识别（`laneAtX`）三类目标
+
+拖拽横向落点命中后按**三个互斥字段**分派：
+
+| 命中列 | 判别字段 | 语义 |
+|---|---|---|
+| 游玩轨 / BGM | `laneKind`=key/scratch/pedal/bgm，`bgaLayer=-1` 无 `metaKind` | note 空间内移动 |
+| BGA 层 | `bgaLayer>=0`（0..3=base/poor/layer/layer2） | note → BGA 事件（转换） |
+| BPM / STOP | `metaKind`="bpm"/"stop" | note → 时序事件（转换） |
+
+#### 4) `moveSelection` 分派与优先级
+
+```
+空选 → 提示返回
+├─ 目标=metaKind(bpm/stop) → note.convert(整组转时序事件, id不变) ，返回
+├─ 目标=bgaLayer>=0       → note.convert(整组转BGA事件, id不变) ，返回
+└─ 否则（note 空间内多选移动）：
+     grabCol = columnIndexForRef(拖起note)
+     ├─ a. 目标=bgm   → 全部转 BGM，sub_line = max(0, t0 + gap)
+     ├─ b. 目标=演出轨(key/scratch/pedal) 且 源=演出轨（同 player）
+     │                  → 「连续演出轨道」平移：各 note 落 targetCol + gap，
+     │                    laneAtColumn → 该列轨道（key5-7 拖到 S → S,key1,key2）
+     └─ c. 跨族兜底(非演出轨源，如 BGM 源 → 目标演出轨)
+                      → 拖起族 note 改目标 kind；key 目标 index = clamp(1,7, 基数+gap)
+```
+
+- "列秩 gap" = `columnIndexForRef(该note) − grabCol`（**on-screen 列间距**）。
+- 纯时间移动（`targetLane` 空）→ 只动时间、lane 不变。
+- 元事件/BGA 的转换是**整组一次** `note.convert`（一个 undo 步），**不参与**相对距离的逐 note 变换。
+
+#### 5) 各区语义
+
+- **游玩轨（Key/Scratch/Pedal）**：真实通道。**BMS 文件层面通道无差异**（只是 id/效果不同，
+  读写一致）——编辑视图把它们当**一条连续演出轨道**，多选/跨 kind 拖动 = **连续平移**（各 note 落
+  `目标列下标 + 与拖起列的列距 gap`，经 `laneAtColumn` 映射回该列轨道）。如 key5-7 拖到 S →
+  `key5→S, key6→key1, key7→key2`。不再把皿/踏板当"会塌缩的单列"特例。
+- **BGM 虚拟子通道**：ch01 容器，`sub_line`=行号（读侧 FIFO：同小节第几次读 ch01）。BGM→BGM
+  用 `gap`（列序差=sub_line 差）保距；展开列按 `sub_line` 精确落点，聚合列 `t0=0` 交由行号铺开。
+- **BGA 通道**：`bga_layer` 0..3，**转换目标**——拖 note 上去 = 变成 BGA 事件。
+- **控制通道（BPM/STOP）**：`metaKind`，**转换目标**——拖 note 上去 = 变成时序事件。
+- **跨区**：note↔note（游玩↔BGM）= 连续轨道刚性平移（gap 保距）；note↔BGA/时序 = **类型转换**
+  （`note.convert`，id 不变，整组批量）。BGA/时序**对象**本身的移动/编辑走 `metaMoveRequested`/
+  `metaMove` 另一套，不在 note 移动机制内。
+
+#### 6) "连续轨道"统一变换与边界钳制
+
+note 空间内（游玩+BGM）任何跨 lane 移动用**同一变换**：`目标序 = 目标基数 + gap`。钳制：
+key `clamp(1,7)`、bgm `max(0, t0+gap)`。**"塞不下"即来自钳制**：若"按住最右 key3 拖到 bgm0"，
+key1/key2 的相对 gap 为负（在 key3 左边），落到 bgm0 之前没有通道 → 钳成 0 → 塌缩（符合预期——
+保距的刚性平移与"目标点往前无通道"相冲突）。负向越界延续到另一端（回绕）是另一语义，当前不做。
+
+#### 7) ghost 预览 / 后端命令
+
+- `ChartViewItem::drawPreview` 与 `moveSelection` 镜像同一套分支（a/b/c），拖拽中先见落点。
+- 后端：note 空间内用 `note.move`（`MoveNoteCommand` 逐个、Composite 一个 undo 步；`to.bgm_line`
+  显式给，否则按 `(measure,pos)` 自动分配不冲突行）；跨命名空间用 `note.convert`。
+
+#### 8) 格式扩展性（forward-compat）
+
+- **已格式无关**：`player`（可扩展）、`index`（`uint8_t`）、`bgm_line`（多路音频）、`NoteKind`
+  （预留 Hidden）。模式差异（SP/DP/PMS/Battle）收敛在 ChartMode 配置的 Lane 集合，解析逻辑不变。
+- **固定的是 `LaneKind` 语义分类**（可玩列 / 特殊单列 / 非判定背景音三族）：绝大多数音游都落在其中。
+  其它格式的**普通可玩列**映射为 `{Key, index=N}`——"Key"只是类别名，`index` 才是顺序标识，
+  数据不失真；真正特殊的列才用 Scratch/Pedal；非判定音频用 Bgm。**不是"只能 Key"，是"只能四类"**。
+- **真正需要新增 `LaneKind` 的边界**：仅当一种格式的可玩列具有与"键"本质不同的语义（矩阵/其它
+  拓扑），或引入全新的轨道角色（既非键/皿/踏板、也非背景）时。这是受控扩展点（加枚举值 + 处理若干
+  分派），非设计缺陷。
+- **建议**：保持 `Lane{player,kind,index}` 不变；新**属性**走 `NoteKind` 或新字段（勿往 Lane 塞
+  通道号，现已遵守）；仅新**轨道角色**才扩 `LaneKind`（编译期、局部改动）。唯一代价：编辑器的列序
+  渲染、`columnIndexForRef` 列秩、配色都假设"线性 Key + 特殊 + BGM"拓扑，非拓扑布局需编辑器层适配。
+
+#### 9) `bgm_line` → `sub_line` 泛化（2026-09 与用户多轮定稿——**务必保留此节**）
+
+> ✅ **已实施**（重命名 + capability flag + lint）。本节为**单一权威说明**（设计 + 实现），
+> 压缩上下文前先固化。结论经多轮问答收敛：**把 BGM 专属的 `bgm_line` 泛化成通用的 `sub_line`
+> （子通道/子行）**，让"任意基础通道同小节多行"被统一建模，而非 ch01 特例。
+> 实现：`Note.sub_line`（全量重命名 `bgm_line`→`sub_line`，core+前端+测试）；`BmsChannelRule.
+> allow_sub_lines`（默认 false，ch01 显式 true）；parser 按 (measure,channel) FIFO 赋值、
+> writer 按 sub_line 分组、lint 新增 `sub_lines_not_allowed`（Info 软警告）；前端
+> `columnIndexForRef`/moveSelection/ghost 的 sub_line 保留。单测覆盖
+> `ChannelMap.AllowSubLinesFlag` `MetaLint.LintSubLines*` `BmsRoundTrip.Ch01SubLinesPreserved`。
+
+**动机**（用户 Q1）：短期只是**命名**（`bgm_line` 读起来像 BGM 专属，概念上就是"通道子行"）；
+但若将来遇到类似通道复用（如 ch01 这种背景音），此概念确有使用必要 → 值得泛化。
+
+**已确认的模型**：
+
+1. **`sub_line` = 每个 note 上的字段**（沿用 `bgm_line` 形态，只泛化命名），表示该 note 在其
+   所在通道**子行**中的行号。读侧 FIFO：该小节第几条行。
+2. **磁盘上没有"子通道"**——子行就是**同一通道的重复行**（如一个 measure 6 条 `#00401:...`）。
+   `sub_line` 是读/编辑侧的行序号；写回按 (measure, sub_line) 分组还原成重复行；空行（`00`）
+   只服务前端排版（类似 CSV 空行/空列）。**`sub_line==0` 即基础行；无重复行时暴露出来的也只是 0。**
+3. **语义上仍是"一个通道"**：ch01 无论几行都是同一**自动播放**的背景通道；`sub_line` 不改变
+   "它是一路音"的事实。
+4. **能力由 channel mapping 声明**：给 `BmsChannelRule` 加 `allow_sub_lines`（**默认 false =
+   "不应有子行/不可展开"**），**ch01 显式置 true**。这一个 flag 同时驱动：解析（是否为重复行赋
+   行号）/ 写回（是否分组多行）/ lint（是否允许重复）/ 编辑器（是否可展开）。编辑器"已展开"状态
+   是独立视图开关（现 `bgmExpanded`）。
+5. **lint 姿态（用户强调）**：BMS 是"程序友好 + 仍可直接编辑"的格式，内容基本只剩数据，很多
+   行为取决于编辑器/播放器的实际实现——**无法做很严格/明确的 lint 限制**。所以对"不该有子行的
+   通道（如游玩轨）同小节多行"，lint 只做**软提醒**（警告），不做硬拦截。
+
+**已拍板的关键决策**：
+- **`sub_line` 排除出 `Note::operator==`、但保留在编辑器选择键**（`noteRefKey`/选中高亮）——
+  它是"编辑身份 + 布局"属性，不属于音符语义身份（同 (measure,pos,lane,sample) 只是行号不同 →
+  仍是同一路音/同一样本）。⚠️ 这正是过去"误多选"的根源，必须显式区分。
+- **违规文件原样保留**：`allow_sub_lines=false` 的通道若真出多行，解析器**仍赋 `sub_line` 保留**
+  （不丢数据、不静默合并），同时 **lint 警告**"该通道不应有子行"。**优先"原样保留"格式**。
+- **`bgm_line` 全量重命名 `sub_line`，不留别名**：范围 = core（Note/命令/parser/writer）+
+  前端（ChartViewItem・SessionController・ChartView）+ doc。内部字段、磁盘格式本就是重复行 →
+  无持久化兼容需求，别名只会加心智负担。
+- **一个 flag 即可**（`allow_sub_lines`），暂不拆"允许重复行"与"编辑器可展开"两个概念。
+
+**实施要点（动手时对照）**：
+- 把 parser 里 `if (lane.kind==Bgm && channel=="01")` 的缩行判定，改为读 `BmsChannelRule.allow_sub_lines`。
+- writer 的"按行分组"同样由该 flag 驱动（ch01 分组；无该 flag 的通道单行）。
+- 编辑器"可展开成子列"由该 flag 决定（现硬编码 `lane.kind==="bgm"` 泛化）；`columnIndexForRef`
+  列秩、moveSelection 的 BGM 相对距离分支、`noteRefKey`、`drawHaloLabel` 标签的 sub_line 保留。
+- lint：新增"非 allow_sub_lines 通道同小节多行"**软警告**。
+
 ## 参考
 
 - beatoraja（GPL-3.0，PortAudio）：<https://github.com/exch-bms2/beatoraja>
