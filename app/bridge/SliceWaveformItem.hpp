@@ -99,18 +99,25 @@ signals:
     void scrollRequested(int dir);
     /// Ctrl+滚轮：dir = ±1（+1 = 放大/每行时长更短）。QML 改缩放档位。
     void zoomRequested(int dir);
+    /// 双击（M6.4c 手动切分）：已吸附到拍子网格的秒（QML → SliceWorkspace::toggleManualPoint）。
+    void manualToggleRequested(double seconds);
+    /// 右键：已吸附的秒（QML → SliceWorkspace::removeManualPoint）。
+    void manualDeleteRequested(double seconds);
 
 protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
 
 private:
     SliceWorkspace* workspaceObj() const;
     ThemeManager* themeObj() const;
-    /// x/y（widget 坐标）→ 绝对秒（按当前行视口换算），发出 seekRequested。
+    /// x/y（widget 坐标）→ 绝对秒（按当前行视口换算）+ 网格吸附（gridVisible 时），发 seekRequested。
     void requestSeek(qreal x, qreal y);
+    /// x/y → 绝对秒 + 吸附（网格模式）；手动切分用（双击/右键）。越界 → -1。
+    double manualPointAt(qreal x, qreal y) const;
     /// 画一行：波形列 + 中央轴 + 网格 + MIDI 线 + 切片线 + 播放头（行内裁剪）。
     /// pcm/pcmFrames：深档直读原始 PCM（每像素 <256 采样时金字塔 256 采样/桶会
     /// 把高频波形糊成实心；直接扫 min/max 才能看到正弦周期）；nullptr = 走金字塔。

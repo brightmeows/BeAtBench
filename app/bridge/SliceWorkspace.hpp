@@ -103,6 +103,12 @@ public:
     Q_INVOKABLE void clearSlices();
     /// 切片「放置」开关（M6.3 铺放预选；越界忽略）。
     Q_INVOKABLE void setSliceEnabled(int index, bool v);
+    // ---- M6.4c 手动切分点（双击添加/切换、右键删除；快照变化不影响已有点） ----
+    /// 双击：t 已是内部边界 → 合并（删除该切分点）；否则拆分包含它的切片（新增切分点）。
+    /// 返回是否发生变更；状态经 statusText。t 建议先经波形 snapToGrid（网格模式）。
+    Q_INVOKABLE bool toggleManualPoint(double t);
+    /// 右键：仅当 t 命中内部边界时删除（合并两侧）；否则 no-op。
+    Q_INVOKABLE bool removeManualPoint(double t);
     QVariantList slices() const;
     bool hasSlices() const { return !m_slices.empty(); }
     qreal midiTempoBpm() const;
@@ -144,6 +150,12 @@ signals:
 
 private:
     void setStatus(const QString& text);
+    /// M6.4c 手动切分点：命中内部边界（startSec ≈ t，i>=1）的切片序号；无 → -1。
+    int findBoundaryIndex(double t) const;
+    /// 合并 i-1/i（删除边界）；不校验命中，直接操作。
+    bool removeManualPointAt(std::size_t i);
+    /// 重排 slice index（拆分/合并后）。
+    void renumberSlices();
     /// 解码完成（UI 线程）：ok 且 track 有效 → 移入 m_track + 交 AudioEngine 预览；
     /// 失败 → statusText（原参考音轨保留）。
     void audioDecoded(bool ok, beatbench::audio::ReferenceTrack* track,

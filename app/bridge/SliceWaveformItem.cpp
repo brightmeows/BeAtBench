@@ -18,9 +18,12 @@
 
 namespace beatbench::app {
 
+// 行绘制共用常量：左侧标签 gutter 宽（跨 paint/交互函数使用；先于其定义）
+static constexpr qreal kGutterW = 64.0;
+
 SliceWaveformItem::SliceWaveformItem(QQuickItem* parent) : QQuickPaintedItem(parent) {
     setAntialiasing(false);  // 波形逐列 1px：抗锯齿反而糊
-    setAcceptedMouseButtons(Qt::LeftButton);
+    setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
 }
 
 void SliceWaveformItem::setWorkspace(QObject* v) {
@@ -163,8 +166,40 @@ void SliceWaveformItem::mousePressEvent(QMouseEvent* event) {
         event->accept();
         forceActiveFocus();  // 键盘滚动（方向键）入口
         requestSeek(event->position().x(), event->position().y());
+    } else if (event->button() == Qt::RightButton) {
+        event->accept();
+        forceActiveFocus();
+        // M6.4c 手动切分：右键删除切分点（落点须命中边界；吸附后发）
+        const double t = manualPointAt(event->position().x(), event->position().y());
+        if (t >= 0.0) emit manualDeleteRequested(t);
     }
     QQuickPaintedItem::mousePressEvent(event);
+}
+
+void SliceWaveformItem::mouseDoubleClickEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton) {
+        event->accept();
+        // M6.4c 手动切分：双击 = 添加切分点（已命中边界时切换为删除，由 workspace 判定）
+        const double t = manualPointAt(event->position().x(), event->position().y());
+        if (t >= 0.0) emit manualToggleRequested(t);
+    }
+    QQuickPaintedItem::mouseDoubleClickEvent(event);
+}
+
+double SliceWaveformItem::manualPointAt(qreal x, qreal y) const {
+    const SliceWorkspace* ws = workspaceObj();
+    if (!ws || !ws->hasAudio()) return -1.0;
+    const double dur = static_cast<double>(ws->audioDurationSec());
+    const double rs = (m_rowSec > 0.0) ? m_rowSec : dur;
+    const qreal plotW = std::max<qreal>(1.0, width() - kGutterW);
+    const int vis = std::max(1, m_visibleRows);
+    const qreal rowH = height() / vis;
+    const int rowIdx = static_cast<int>(std::floor(y / rowH));
+    double t = (static_cast<double>(m_scrollRow) + rowIdx) * rs +
+               static_cast<double>(x - kGutterW) / (plotW / rs);
+    if (t < 0.0 || t > dur) return -1.0;
+    if (m_gridVisible) t = snapToGrid(t);  // 网格模式：落点吸附拍子线
+    return t;
 }
 
 void SliceWaveformItem::mouseMoveEvent(QMouseEvent* event) {
@@ -194,7 +229,7 @@ void SliceWaveformItem::wheelEvent(QWheelEvent* event) {
 }
 
 // 行绘制共用常量：左侧标签 gutter 宽
-static constexpr qreal kGutterW = 64.0;
+// （定义于文件上部 namespace 起始处）
 
 void SliceWaveformItem::paint(QPainter* p) {
     const qreal w = width();

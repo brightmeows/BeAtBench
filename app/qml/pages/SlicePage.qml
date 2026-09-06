@@ -113,6 +113,7 @@ Item {
         { label: qsTr("4小节"), measures: 4 },
         { label: qsTr("2小节"), measures: 2 },
         { label: qsTr("1小节"), measures: 1 },
+        { label: qsTr("2拍"), measures: 0.5 },
         { label: qsTr("1拍"), measures: 0.25 },
         { label: qsTr("1/2拍"), measures: 0.125 },
         { label: qsTr("1/4拍"), measures: 0.0625 },
@@ -467,15 +468,18 @@ Item {
                                 color: Theme.textMuted
                             }
                             BbToolButton {
-                                text: qsTr("手动切片划分…")
-                                enabled: false
+                                text: qsTr("手动切分：双击添加 · 右键删除")
                                 ToolTip.visible: hovered
-                                ToolTip.text: qsTr("开发中（M6.4）：点击波形/拖动范围手动分区")
+                                ToolTip.text: qsTr("在波形上双击 = 添加切分点（吸附当前拍子线）；"
+                                                   + "再次双击已有点或右键 = 删除。"
+                                                   + "修改 BPM/细分只影响新加点，已有切分点不动。")
+                                onClicked: sliceWorkspace.setStatus(
+                                    qsTr("手动切分：双击波形添加切分点（吸附拍子线）；再双击或右键删除"))
                             }
                             Label {
                                 Layout.fillWidth: true
-                                text: qsTr("目前仅支持 BPM+拍子固定均分。规划：在波形上拖选区间生成手动切片；"
-                                           + "「MIDI 线」开关（Ctrl 临时显示）可作对位参考。")
+                                text: qsTr("已有网格切片上可再手动细分：双击波形任意拍子线添加切分点，"
+                                           + "再次双击该点或右键删除；BPM/细分改动不影响已加点。")
                                 color: Theme.textFaint
                                 wrapMode: Text.WordWrap
                             }
@@ -559,6 +563,9 @@ Item {
                         // 缩到全曲后继续缩小 → 索引变负，再放大要先补回 0 才有效果）
                         onZoomRequested: (dir) => root.zoomIndex =
                             Math.max(0, Math.min(root.zoomLevels.length - 1, root.zoomIndex + dir))
+                        // M6.4c 手动切分：双击 = 添加/切换；右键 = 删除（已吸附拍子线）
+                        onManualToggleRequested: (t) => sliceWorkspace.toggleManualPoint(t)
+                        onManualDeleteRequested: (t) => sliceWorkspace.removeManualPoint(t)
                         // 键盘：方向键整行滚动（点击波形获得焦点）；Page/Home/End 走通用 onPressed
                         Keys.onUpPressed: { root.scrollRow--; event.accepted = true }
                         Keys.onDownPressed: { root.scrollRow++; event.accepted = true }

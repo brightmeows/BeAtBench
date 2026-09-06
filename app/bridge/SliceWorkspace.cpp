@@ -397,6 +397,77 @@ void SliceWorkspace::setSliceEnabled(int index, bool v) {
     emit slicesChanged();
 }
 
+// ---- M6.4c 手动切分点 ----
+
+namespace {
+/// 边界判定容差（秒）：手动点与切片起点的「同一性」判断。
+constexpr double kPointEps = 1e-4;
+}
+
+/// 命中内部边界的切片序号（startSec ≈ t 且 i >= 1；靠后优先——负数容差对称无所谓）。
+int SliceWorkspace::findBoundaryIndex(double t) const {
+    for (std::size_t i = 1; i < m_slices.size(); ++i) {
+        if (std::abs(m_slices[i].startSec - t) <= kPointEps)
+            return static_cast<int>(i);
+    }
+    return -1;
+}
+
+void SliceWorkspace::renumberSlices() {
+    for (std::size_t i = 0; i < m_slices.size(); ++i)
+        m_slices[i].index = static_cast<int>(i);
+}
+
+bool SliceWorkspace::toggleManualPoint(double t) {
+    if (m_slices.empty()) {
+        setStatus(QStringLiteral("无切片可切分（先生成切片再双击）"));
+        return false;
+    }
+    const int bi = findBoundaryIndex(t);
+    if (bi >= 0) return removeManualPointAt(static_cast<std::size_t>(bi));
+    // 拆分包含 t 的切片（t 须在切片内部，非边界）
+    for (std::size_t i = 0; i < m_slices.size(); ++i) {
+        const auto& s = m_slices[i];
+        if (t > s.startSec + kPointEps && t < s.endSec - kPointEps) {
+            const bool en = m_sliceEnabled[i];
+            beatbench::slice::Slice a = s; a.endSec = t;
+            beatbench::slice::Slice b = s; b.startSec = t;
+            m_slices.insert(m_slices.begin() + static_cast<std::ptrdiff_t>(i + 1), b);
+            m_slices[i] = a;
+            m_sliceEnabled.insert(m_sliceEnabled.begin() + static_cast<std::ptrdiff_t>(i + 1), en);
+            renumberSlices();
+            emit slicesChanged();
+            setStatus(QStringLiteral("手动切分点：+1（第 %1 片拆为 %2/%3）")
+                          .arg(i + 1).arg(i + 1).arg(i + 2));
+            return true;
+        }
+    }
+    setStatus(QStringLiteral("该位置不在现有切片内（无法放置切分点）"));
+    return false;
+}
+
+bool SliceWorkspace::removeManualPoint(double t) {
+    const int bi = findBoundaryIndex(t);
+    if (bi < 0) return false;
+    return removeManualPointAt(static_cast<std::size_t>(bi));
+}
+
+bool SliceWorkspace::removeManualPointAt(std::size_t i) {
+    // 合并 i-1 与 i：[start_{i-1}, end_i)；两侧须连续（网格切片必连续）
+    if (i == 0 || i >= m_slices.size()) return false;
+    if (std::abs(m_slices[i - 1].endSec - m_slices[i].startSec) > kPointEps) {
+        setStatus(QStringLiteral("该边界两侧不连续，无法合并"));
+        return false;
+    }
+    m_slices[i - 1].endSec = m_slices[i].endSec;
+    m_slices.erase(m_slices.begin() + static_cast<std::ptrdiff_t>(i));
+    m_sliceEnabled.erase(m_sliceEnabled.begin() + static_cast<std::ptrdiff_t>(i));
+    renumberSlices();
+    emit slicesChanged();
+    setStatus(QStringLiteral("手动切分点：-1（第 %1/%2 片合并）").arg(i).arg(i + 1));
+    return true;
+}
+
 QVariantList SliceWorkspace::slices() const {
     QVariantList out;
     for (std::size_t i = 0; i < m_slices.size(); ++i) {

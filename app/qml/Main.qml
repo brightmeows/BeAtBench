@@ -911,6 +911,15 @@ ApplicationWindow {
         slicePage.zoomIndex = Math.max(0, Math.min(slicePage.zoomLevels.length - 1, debugSliceZoom))
     property int debugSliceRow: -1
     onDebugSliceRowChanged: if (debugSliceRow >= 0) slicePage.scrollRow = debugSliceRow
+    // M6.4c 调试参数：--slice-toggle-point <秒>（手动切分点切换验收；等待切片就绪）
+    property real debugSliceTogglePoint: -1
+    onDebugSliceTogglePointChanged: if (debugSliceTogglePoint >= 0) doDebugTogglePoint()
+    Timer { id: sliceToggleRetry; interval: 300; repeat: true; onTriggered: doDebugTogglePoint() }
+    function doDebugTogglePoint() {
+        if (!sliceWorkspace.hasSlices) { sliceToggleRetry.start(); return }
+        sliceToggleRetry.stop()
+        sliceWorkspace.toggleManualPoint(debugSliceTogglePoint)
+    }
     // --wait-render 截图等待标志（main.cpp 轮询；波形验收用）
     property bool debugRenderDone: false
     // 渲染完成次数（--wait-render 增量验收：等待全量 + 增量都完成）
