@@ -220,6 +220,12 @@ public:
     /// timing()->time_us / 1e6；无 timing / 留白区（拍位<0）→ 0。与cursorPosition 同源换算。
     Q_INVOKABLE double timeAtY(qreal y) const;
 
+    /// 秒 → 屏幕 y（与 yOf 同构——**变拍高感知**：走 linearPosOf 的按小节高度累计，
+    /// 不是均匀小节高；播放头叠层/AB 标记换算用；无效（无图/无 timing/负秒）→ -1e9。
+    /// ⚠️ 2026-09 修复：旧 PlayheadOverlayItem::yForSec 用均匀小节高，x2/x0.5 小节处红线错位。
+    /// 公有（PlayheadOverlayItem 委托调用）。
+    qreal yForSec(double sec) const;
+
     /// M5 seek 交互：把秒对应的拍位滚到**红线（视口 90%）**下方（=scrollToStart 的任意拍位版）。
     /// 与红线=视口光标模型一致：seek 后红线读数 = 该时间。无 timing / 负秒 → no-op。
     Q_INVOKABLE void scrollCursorToSec(double seconds);

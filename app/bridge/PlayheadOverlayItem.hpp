@@ -19,12 +19,16 @@
 namespace beatbench::app {
 
 class ChartSession;
+class ChartViewItem;
 
 class PlayheadOverlayItem : public QQuickPaintedItem {
     Q_OBJECT
     QML_ELEMENT
 
     Q_PROPERTY(QObject* session READ session WRITE setSession NOTIFY sessionChanged)
+    /// 2026-09 变拍高修复：换算源改走 ChartViewItem（yOf 按小节高度累计）；
+    /// 设置后 yForSec 不自行用均匀小节高（x2/x0.5 小节处红线错位根因）。
+    Q_PROPERTY(QObject* chartView READ chartView WRITE setChartView NOTIFY chartViewChanged)
     Q_PROPERTY(qreal measureHeight READ measureHeight WRITE setMeasureHeight NOTIFY measureHeightChanged)
     Q_PROPERTY(qreal scrollY READ scrollY WRITE setScrollY NOTIFY scrollYChanged)
     Q_PROPERTY(qreal contentHeight READ contentHeight WRITE setContentHeight NOTIFY contentHeightChanged)
@@ -48,6 +52,8 @@ public:
 
     QObject* session() const { return m_session; }
     void setSession(QObject* session);
+    QObject* chartView() const { return m_chartView; }
+    void setChartView(QObject* v);
     qreal measureHeight() const { return m_measureHeight; }
     void setMeasureHeight(qreal v);
     qreal scrollY() const { return m_scrollY; }
@@ -69,6 +75,7 @@ public:
 
 signals:
     void sessionChanged();
+    void chartViewChanged();
     void measureHeightChanged();
     void scrollYChanged();
     void contentHeightChanged();
@@ -85,6 +92,7 @@ private:
     qreal yForSec(double sec) const;
 
     QObject* m_session = nullptr;
+    QObject* m_chartView = nullptr;  ///< ChartViewItem（yForSec 委托；不拥有）
     qreal m_measureHeight = 96.0;
     qreal m_scrollY = 0.0;
     qreal m_contentHeight = 0.0;

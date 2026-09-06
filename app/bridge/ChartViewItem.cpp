@@ -1235,6 +1235,15 @@ qreal ChartViewItem::yOf(qreal measureFloat) const {
     return contentPosOf(measureFloat) - m_scrollY;
 }
 
+qreal ChartViewItem::yForSec(double sec) const {
+    const ChartSession* cs = sessionObj();
+    if (!cs || !cs->timing() || sec < 0.0) return -1e9;
+    const auto pos = cs->timing()->position_at(static_cast<std::int64_t>(sec * 1e6));
+    if (!pos) return -1e9;
+    // 与 PlayheadOverlayItem 旧实现同构的拍位换算，但 y 走 yOf（变拍高感知）
+    return yOf(static_cast<qreal>(pos->measure) + posDouble(pos->pos));
+}
+
 qreal ChartViewItem::measureAt(qreal screenY) const {
     const qreal c = screenY + m_scrollY;  // 屏幕 → 内容坐标
     // 转成线性（自顶向下）内容坐标：topHigh 下内容坐标翻转（0 小节在底）→ 取反

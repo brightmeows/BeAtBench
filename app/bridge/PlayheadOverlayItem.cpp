@@ -8,6 +8,7 @@
 #include <QPolygonF>
 
 #include "bridge/ChartSession.hpp"
+#include "bridge/ChartViewItem.hpp"
 #include "beatbench/core/timing/TimingEngine.hpp"
 
 namespace beatbench::app {
@@ -28,6 +29,13 @@ void PlayheadOverlayItem::setSession(QObject* session) {
     if (m_session == session) return;
     m_session = session;
     emit sessionChanged();
+    update();
+}
+
+void PlayheadOverlayItem::setChartView(QObject* v) {
+    if (m_chartView == v) return;
+    m_chartView = v;
+    emit chartViewChanged();
     update();
 }
 
@@ -99,6 +107,11 @@ ChartSession* PlayheadOverlayItem::sessionObj() const {
 }
 
 qreal PlayheadOverlayItem::yForSec(double sec) const {
+    // 2026-09 变拍高修复：换算委托 ChartViewItem（yOf 按每小节高度累计——x2/x0.5 小节不
+    // 再错位）；未接线时走旧均匀公式兜底（防御）。
+    if (auto* view = qobject_cast<ChartViewItem*>(m_chartView)) {
+        return view->yForSec(sec);
+    }
     const ChartSession* cs = sessionObj();
     if (!cs || !cs->timing() || sec < 0.0) return -1e9;
     const auto pos = cs->timing()->position_at(static_cast<std::int64_t>(sec * 1e6));
