@@ -128,6 +128,7 @@ Item {
         id: playheadOverlay
         anchors.fill: view
         session: typeof chartSession !== "undefined" ? chartSession : null
+        chartView: view  // 2026-09 变拍高修复：y 换算委托 ChartViewItem（按小节高度累计）
         measureHeight: view.measureHeight
         scrollY: view.scrollY
         contentHeight: view.contentHeight
@@ -386,6 +387,9 @@ Item {
                 if (obj.kind === "bga" || obj.kind === "bpm" || obj.kind === "stop") {
                     // BGA/BPM/STOP 对象：选中 + 进入移动准备（与 note 平行；值/id 由命令层保持）
                     root.metaObjectClicked(obj, ctrl)
+                    // 2026-09 修复：pan（拖拽）工具下 meta 对象同样**只点选、不移动**——
+                    // 与 note 的 pan 语义一致（点选/试听可用，拖动保持平移视口语义）。
+                    if (root.editorTool === "pan") return
                     _moving = true
                     _moveKind = obj.kind
                     _moveObj = obj
