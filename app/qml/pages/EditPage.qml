@@ -338,11 +338,20 @@ Item {
             SplitView.fillWidth: true
             SplitView.minimumWidth: 320
             color: Theme.bg
-            border.width: root.focusRegionId === "editCenter" ? 2 : 1
-            border.color: root.focusRegionId === "editCenter" ? Theme.focusRing : Theme.border
+            border.color: Theme.border
+            // focus 顶层描边（2026-09 修复：自带 border 画在边缘、被铺满的子项（视口头/
+            // ChartView）覆盖 → 只见底部；描边放子项之上，z 高不挡交互（Rectangle 无 mouse 处理））
+            Rectangle {
+                anchors.fill: parent
+                z: 10
+                color: "transparent"
+                border.width: root.focusRegionId === "editCenter" ? 2 : 1
+                border.color: root.focusRegionId === "editCenter" ? Theme.focusRing : Theme.border
+            }
 
             ColumnLayout {
                 anchors.fill: parent
+                anchors.margins: 4
                 spacing: 0
 
                 // 视口头（对照 preview.html .viewport-head）

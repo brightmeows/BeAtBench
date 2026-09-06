@@ -157,6 +157,16 @@ Item {
         var sub = subBox.value > 0 ? subBox.value : 1
         return 60 / bpm / sub
     }
+    /// 快捷键序列 → 显示文本（Space→空格、Left→←…；按钮文本/tooltip 提示用，读注册表——
+    /// 将来改绑自动更新显示）。
+    function prettyShortcut(seq) {
+        if (!seq) return ""
+        var m = { Space: "空格", Left: "←", Right: "→", Up: "↑", Down: "↓" }
+        var parts = String(seq).split("+")
+        for (var i = 0; i < parts.length; ++i)
+            if (m[parts[i]]) parts[i] = m[parts[i]]
+        return parts.join("+")
+    }
 
     // ---- M6.4f 键盘快捷键（woslicer 系 2026-09；序列来自 uiActions 注册表——将来设置页
     // 改绑（setShortcut/keymap.json）自动生效；enabled 门控 = 页面激活 + 无文本输入 + 无对话框；
@@ -333,9 +343,14 @@ Item {
             }
             Item { Layout.fillWidth: true }
             BbToolButton {
-                text: audioEngine.refPlaying ? qsTr("暂停") : qsTr("播放")
+                text: (audioEngine.refPlaying ? qsTr("暂停") : qsTr("播放"))
+                      + (uiActions.shortcut("slice.playPause")
+                         ? "   " + root.prettyShortcut(uiActions.shortcut("slice.playPause")) : "")
                 enabled: audioEngine.refHasPcm
                 onClicked: audioEngine.refTogglePlay()
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("播放/暂停参考音频（%1）")
+                    .arg(root.prettyShortcut(uiActions.shortcut("slice.playPause")))
             }
             BbToolButton {
                 text: qsTr("停止")
@@ -468,6 +483,7 @@ Item {
 
                 ColumnLayout {
                     anchors.fill: parent
+                    anchors.margins: 4      // 2026-09：内容距边 4px，避免被 focus 描边（2px）遮挡
                     spacing: 4
 
                     BbTabStrip {
@@ -577,7 +593,9 @@ Item {
                                 visible: !sliceWorkspace.hasSlices
                                 text: qsTr("（无切片——选「网格/MIDI」切片源后点「生成切片」；"
                                            + "或直接在波形上点击选中拍子（青色光标）→ 再击同一拍子 = "
-                                           + "添加切分点，右键 = 删除。列表行双击 = 编辑边界）")
+                                           + "添加切分点，右键 = 删除。列表行双击 = 编辑边界）\n"
+                                           + "键盘：空格=播放/暂停 · ←→=选中拍子移动 · ↑↓=视口滚动 · "
+                                           + "Z=放置/消去切分点 · C=清除全部切分点 · V/B=复制/粘贴切分点")
                                 color: Theme.textFaint
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
@@ -646,6 +664,7 @@ Item {
                 SplitView.minimumWidth: 320
                 ColumnLayout {
                     anchors.fill: parent
+                    anchors.margins: 4      // 2026-09：内容距边 4px，避免被 focus 描边遮挡
                     spacing: 6
 
                 // ---- 视图条：行数 / 缩放档位 / 视口范围 ----
@@ -810,6 +829,7 @@ Item {
 
                 ColumnLayout {
                     anchors.fill: parent
+                    anchors.margins: 4      // 2026-09：内容距边 4px，避免被 focus 描边遮挡
                     spacing: 4
 
                     RowLayout {
