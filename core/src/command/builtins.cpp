@@ -1178,11 +1178,15 @@ public:
             for (const auto& r : parsed)
                 if (r.lane.kind == LaneKind::Bgm) max_row = std::max(max_row, r.sub_line);
             const std::uint32_t base = any ? hi + 1 : 0;
-            if (base + max_row > 11)
+            // 上限 = 主流播放器（beatoraja 等）默认 64 个 BGM 采样序列（虚拟子通道），
+            // 行号 0..63。2026-09 修正：原 12 是旧 iBMSC 显示惯例，不是播放器/格式限制。
+            constexpr std::uint32_t kMaxBgmSubLine = 63;
+            if (base + max_row > kMaxBgmSubLine)
                 throw CommandError("bad_args",
                                    "子行空间不足：目标小节段已有 " +
                                        std::to_string(any ? hi + 1 : 0) + " 行 + 本次 " +
-                                       std::to_string(max_row + 1) + " 行 > 12 上限");
+                                       std::to_string(max_row + 1) +
+                                       " 行 > 64 上限（beatoraja 默认 64 采样序列）");
             for (auto& r : parsed)
                 if (r.lane.kind == LaneKind::Bgm) r.sub_line += base;
         }

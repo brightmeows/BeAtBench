@@ -682,18 +682,47 @@ TEST(EditCommands, ClipboardPasteSubLineContinueUniformEmptyAndOverflow) {
     EXPECT_EQ(perSubLine[0], 1);
     EXPECT_EQ(perSubLine[1], 1);
 
-    // 已有 11 行（sub_line 0-10）时再贴 2 行 → 空间不足
+    // 上限 = beatoraja 默认 64 采样序列（行号 0..63）。本场景已有 2 行（sub 0/1）：
+    // 再贴 61 行（sub 2-62）= 63 行 → 第 64 行（base=63）通过；>64 → 超限报错不写入
+    // （2026-09 修正：原 12 为 iBMSC 显示惯例，不是播放器/格式限制）。
     const std::size_t before = session.chart().notes.size();
     Json a2 = Json::object();
     std::string big;
-    for (int i = 0; i < 11; ++i) big += "#00001:" + std::to_string(16 + i) + "0000\n";
+    for (int i = 0; i < 61; ++i) big += "#00001:" + std::to_string(16 + i) + "0000\n";
     a2.set("text", big);
     a2.set("sub_line_mode", "uniform");
     Json req2 = Json::object();
     req2.set("command", "clipboard.paste");
     req2.set("args", std::move(a2));
     const Json resp2 = global_registry().dispatch(req2);
-    ASSERT_FALSE(resp2.at("ok").as_bool()) << resp2.dump();
-    EXPECT_EQ(std::string(resp2.at("error").at("code").as_str()), "bad_args");
-    EXPECT_EQ(session.chart().notes.size(), before) << "失败不应写入";
+    ASSERT_TRUE(resp2.at("ok").as_bool()) << resp2.dump();
+
+    // 63 行（sub 0-62）已有 + 贴 1 行 → base=63，正好 64 行（sub_line 63）→ 通过
+    Json a3 = Json::object();
+    a3.set("text", "#00001:800000\n");
+    a3.set("sub_line_mode", "uniform");
+    Json req3 = Json::object();
+    req3.set("command", "clipboard.paste");
+    req3.set("args", std::move(a3));
+    const Json resp3 = global_registry().dispatch(req3);
+    ASSERT_TRUE(resp3.at("ok").as_bool()) << resp3.dump();
+    bool saw63 = false;
+    for (const auto& e : session.chart().notes)
+        if (e.measure == 0 && e.value.lane.kind == LaneKind::Bgm &&
+            e.value.sub_line == 63)
+            saw63 = true;
+    EXPECT_TRUE(saw63) << "第 64 行（sub_line 63）应存在";
+
+    // 再贴 2 行 → 64 + 2 > 64 → bad_args，且不写入
+    const std::size_t before2 = session.chart().notes.size();
+    Json a4 = Json::object();
+    a4.set("text", "#00001:810000\n#00001:820000\n");
+    a4.set("sub_line_mode", "uniform");
+    Json req4 = Json::object();
+    req4.set("command", "clipboard.paste");
+    req4.set("args", std::move(a4));
+    const Json resp4 = global_registry().dispatch(req4);
+    ASSERT_FALSE(resp4.at("ok").as_bool()) << resp4.dump();
+    EXPECT_EQ(std::string(resp4.at("error").at("code").as_str()), "bad_args");
+    EXPECT_EQ(session.chart().notes.size(), before2) << "失败不应写入";
 }
