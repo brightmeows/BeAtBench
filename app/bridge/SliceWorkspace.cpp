@@ -419,9 +419,26 @@ void SliceWorkspace::renumberSlices() {
 }
 
 bool SliceWorkspace::toggleManualPoint(double t) {
+    // 纯手动（M6.4e）：无切片时 = 隐式整轨单切片 [0, dur)——首次加点直接拆出 2 片
     if (m_slices.empty()) {
-        setStatus(QStringLiteral("无切片可切分（先生成切片再双击）"));
-        return false;
+        const double dur = audioDurationSec();
+        if (dur <= 0.0) {
+            setStatus(QStringLiteral("无参考音频（无法手动切分）"));
+            return false;
+        }
+        if (t <= kPointEps || t >= dur - kPointEps) {
+            setStatus(QStringLiteral("切分点须在曲内（曲首/曲尾不可）"));
+            return false;
+        }
+        beatbench::slice::Slice a;
+        a.index = 0; a.startSec = 0.0; a.endSec = t; a.kind = "manual";
+        beatbench::slice::Slice b;
+        b.index = 1; b.startSec = t; b.endSec = dur; b.kind = "manual";
+        m_slices = {a, b};
+        m_sliceEnabled = {true, true};
+        emit slicesChanged();
+        setStatus(QStringLiteral("手动切片：+1（首点，整轨拆为 2 片，kind=manual）"));
+        return true;
     }
     const int bi = findBoundaryIndex(t);
     if (bi >= 0) return removeManualPointAt(static_cast<std::size_t>(bi));

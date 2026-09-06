@@ -911,12 +911,13 @@ ApplicationWindow {
         slicePage.zoomIndex = Math.max(0, Math.min(slicePage.zoomLevels.length - 1, debugSliceZoom))
     property int debugSliceRow: -1
     onDebugSliceRowChanged: if (debugSliceRow >= 0) slicePage.scrollRow = debugSliceRow
-    // M6.4c 调试参数：--slice-toggle-point <秒>（手动切分点切换验收；等待切片就绪）
+    // M6.4c 调试参数：--slice-toggle-point <秒>（手动切分点切换验收；等待音频就绪——
+    // 纯手动模式无切片也可加点）
     property real debugSliceTogglePoint: -1
     onDebugSliceTogglePointChanged: if (debugSliceTogglePoint >= 0) doDebugTogglePoint()
     Timer { id: sliceToggleRetry; interval: 300; repeat: true; onTriggered: doDebugTogglePoint() }
     function doDebugTogglePoint() {
-        if (!sliceWorkspace.hasSlices) { sliceToggleRetry.start(); return }
+        if (!sliceWorkspace.hasAudio) { sliceToggleRetry.start(); return }
         sliceToggleRetry.stop()
         sliceWorkspace.toggleManualPoint(debugSliceTogglePoint)
     }

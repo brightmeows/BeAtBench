@@ -415,7 +415,7 @@ Item {
                         Label {
                             anchors.fill: parent
                             visible: root.dockTab === 1 && !sliceWorkspace.hasSlices
-                            text: qsTr("（先生成切片）")
+                            text: qsTr("（无切片——生成网格切片，或直接在波形上点击手动添加）")
                             color: Theme.textFaint
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
@@ -447,7 +447,7 @@ Item {
                                 Label {
                                     text: modelData.kind === "midi"
                                           ? ("MIDI " + modelData.note)
-                                          : qsTr("网格")
+                                          : (modelData.kind === "manual" ? qsTr("手动") : qsTr("网格"))
                                     color: Theme.text
                                     elide: Text.ElideRight
                                 }
@@ -482,8 +482,9 @@ Item {
                             }
                             Label {
                                 Layout.fillWidth: true
-                                text: qsTr("点击波形选中拍子（青色光标）；再点击同一拍子 = 添加/删除切分点"
-                                           + "（不限时间）；右键 = 删除；BPM/细分改动不影响已加点。")
+                                text: qsTr("不生成切片也可以：直接在波形上点击选中拍子（青色光标），"
+                                           + "再击同一拍子 = 添加切分点（纯手动逐点建切片)；"
+                                           + "右键 = 删除；BPM/细分改动不影响已加点。")
                                 color: Theme.textFaint
                                 wrapMode: Text.WordWrap
                             }
