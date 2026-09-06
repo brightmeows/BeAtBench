@@ -201,6 +201,7 @@ void ThemeManager::resetDefault() {
     BB_THEME_RESET_COLOR(ln, "#428b9cf8")
     BB_THEME_RESET_COLOR(wave, "#1f8b9cf8")
     BB_THEME_RESET_COLOR(accent2, "#22d3ee")
+    BB_THEME_RESET_COLOR(focusRing, "#22d3ee")   // 默认 = accent 同系（皮肤可独立改）
     BB_THEME_RESET_COLOR(keyOdd, "#ffffff")
     BB_THEME_RESET_COLOR(scratchNote, "#ef5350")
     BB_THEME_RESET_COLOR(bgmNote, "#4ade80")

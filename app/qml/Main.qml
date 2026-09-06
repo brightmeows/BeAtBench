@@ -748,7 +748,13 @@ ApplicationWindow {
                 onBmpDeleteRequested: (id) => bmpDelete(id)
                 onBmpSelected: (id) => setCurrentBmp(id)
             }
-            SlicePage { id: slicePage }
+            SlicePage {
+                id: slicePage
+                // M6.4f 快捷键门控（父注入：跨文档绑定里无法引用 window 的 id）：
+                // 页面激活（currentPage）&& 无文本输入焦点（SpinBox 聚焦时 activeFocusItem
+                // 是其 TextInput → textInputFocused=true → ↑↓ 调值不被快捷键抢）
+                kbdPageActive: window.currentPage === 1 && !window.textInputFocused
+            }
             TestPage {}
         }
 
@@ -912,6 +918,37 @@ ApplicationWindow {
     // M6.3 调试参数：--slice-place <0|1>（导出时同时铺入编辑区谱面；配 --slice-export）
     property int debugSlicePlace: -1
     onDebugSlicePlaceChanged: if (debugSlicePlace >= 0) slicePage.placeToChart = (debugSlicePlace !== 0)
+    // M6.4f 切音页键盘动作（uiActions slice.* → SlicePage.sliceAct；快捷/UI/调试同一入口；
+    // 置回空串防重复触发）。⚠️ 调试链 --slice-act：解码/检测异步 → 动作入队，队列头为切片
+    // 类动作且未就绪时等待（Timer 轮询），就绪后按序执行（人类按键走 Shortcut 直调，不经队列）。
+    property string debugSliceAct: ""
+    property var _debugActQueue: []
+    // M6.4f 焦点区域高亮验收：--focus-region <editLeft|editCenter|editRight|sliceLeft|sliceCenter|sliceRight>
+    property string debugFocusRegion: ""
+    onDebugFocusRegionChanged: if (debugFocusRegion.length > 0) {
+        if (typeof editPage !== "undefined" && editPage)
+            editPage.focusRegionId = debugFocusRegion
+        if (typeof slicePage !== "undefined" && slicePage)
+            slicePage.focusRegionId = debugFocusRegion
+    }
+    Timer {
+        id: debugActFlush
+        interval: 200
+        repeat: true
+        onTriggered: {
+            if (_debugActQueue.length === 0) { stop(); return }
+            if (!sliceWorkspace.hasSlices && _debugActQueue[0] !== "playPause" &&
+                _debugActQueue[0] !== "rowUp" && _debugActQueue[0] !== "rowDown" &&
+                _debugActQueue[0] !== "beatLeft" && _debugActQueue[0] !== "beatRight")
+                return  // 等切片就绪（解码/检测异步）
+            slicePage.sliceAct(_debugActQueue.shift())
+        }
+    }
+    onDebugSliceActChanged: if (debugSliceAct.length > 0) {
+        _debugActQueue.push(debugSliceAct)
+        debugSliceAct = ""
+        debugActFlush.start()
+    }
     // 2026-09「同时铺入编辑区」成功 → 刷新左 dock 采样列表（#WAV 定义新入谱面；
     // contentChanged 只刷新时间轴/波形，定义表须显式重取 session.samples）。
     Connections {

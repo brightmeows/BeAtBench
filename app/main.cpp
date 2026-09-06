@@ -344,6 +344,29 @@ int main(int argc, char** argv) {
         uiActions.add(UiActionDef{"view.page.edit", QCoreApplication::tr("编辑页"), "", "view", nullptr, setProp("currentPage", 0), true});
         uiActions.add(UiActionDef{"view.page.slice", QCoreApplication::tr("切音页"), "", "view", nullptr, setProp("currentPage", 1), true});
         uiActions.add(UiActionDef{"view.page.test", QCoreApplication::tr("测试页"), "", "view", nullptr, setProp("currentPage", 2), true});
+        // 切音页动作（M6.4f 键盘 2026-09 用户 woslicer 系；category=slice 无菜单，仅快捷键）。
+        // handler = QML 根属性 debugSliceAct（Main.qml 转发 → SlicePage.sliceAct，与调试参数同
+        // 路径——快捷、UI 调用、调试注入三个入口收敛到一个方法）；enabled 门控在 QML Shortcut
+        // （页面可见 + 无文本输入 + 无对话框），不走 registry 谓词。
+        const auto sliceAct = [&engine](const char* act) {
+            return ActionHandler([&engine, act](const QVariantMap&) {
+                QObject* root = engine.rootObjects().value(0);
+                if (!root) {
+                    qWarning() << "UiActionRegistry: QML 根不可用" << act;
+                    return false;
+                }
+                return root->setProperty("debugSliceAct", QLatin1String(act));
+            });
+        };
+        uiActions.add(UiActionDef{"slice.playPause", QCoreApplication::tr("播放/暂停（参考音频）"), "Space", "slice", nullptr, sliceAct("playPause")});
+        uiActions.add(UiActionDef{"slice.beatLeft", QCoreApplication::tr("选中拍子左移"), "Left", "slice", nullptr, sliceAct("beatLeft")});
+        uiActions.add(UiActionDef{"slice.beatRight", QCoreApplication::tr("选中拍子右移"), "Right", "slice", nullptr, sliceAct("beatRight")});
+        uiActions.add(UiActionDef{"slice.rowUp", QCoreApplication::tr("视口上行"), "Up", "slice", nullptr, sliceAct("rowUp")});
+        uiActions.add(UiActionDef{"slice.rowDown", QCoreApplication::tr("视口下行"), "Down", "slice", nullptr, sliceAct("rowDown")});
+        uiActions.add(UiActionDef{"slice.togglePoint", QCoreApplication::tr("放置/消去切分点"), "Z", "slice", nullptr, sliceAct("togglePoint")});
+        uiActions.add(UiActionDef{"slice.clearPoints", QCoreApplication::tr("清除全部切分点"), "C", "slice", nullptr, sliceAct("clearPoints")});
+        uiActions.add(UiActionDef{"slice.copyPoints", QCoreApplication::tr("复制切分点"), "V", "slice", nullptr, sliceAct("copyPoints")});
+        uiActions.add(UiActionDef{"slice.pastePoints", QCoreApplication::tr("粘贴切分点"), "B", "slice", nullptr, sliceAct("pastePoints")});
         qInfo("UI 动作注册完成：%d 个", static_cast<int>(uiActions.ids().size()));
 
         // keymap.json 覆写快捷键（--keymap <path>；皮肤可携带）。须在 loadFromModule 前应用，
@@ -526,6 +549,23 @@ int main(int argc, char** argv) {
             if (QObject* root = engine.rootObjects().value(0))
                 root->setProperty("debugSlicePlace", v);
         }
+    }
+    // --slice-act <name>：切音页键盘动作（playPause/beatLeft/beatRight/rowUp/rowDown/
+    // togglePoint/clearPoints/copyPoints/pastePoints；M6.4f 验收；与快捷键同一入口）。
+    // 可重复出现（按序入队执行，如 "--slice-act togglePoint --slice-act copyPoints"）。
+    for (int i = 0; i + 1 < args.size(); ++i) {
+        if (args.at(i) == QStringLiteral("--slice-act")) {
+            if (QObject* root = engine.rootObjects().value(0))
+                root->setProperty("debugSliceAct", args.at(i + 1));
+            ++i;
+        }
+    }
+    // --focus-region <editLeft|editCenter|editRight|sliceLeft|sliceCenter|sliceRight>：
+    // 焦点区域高亮验收（PR 式边缘；配 --page N --screenshot）
+    const int frIdx = args.indexOf(QStringLiteral("--focus-region"));
+    if (frIdx >= 0 && frIdx + 1 < args.size()) {
+        if (QObject* root = engine.rootObjects().value(0))
+            root->setProperty("debugFocusRegion", args.at(frIdx + 1));
     }
     // --slice-tab N：切音页左 dock 页签（0 切片 1 MIDI 音符；配 --screenshot 验收）
     const int stIdx = args.indexOf(QStringLiteral("--slice-tab"));

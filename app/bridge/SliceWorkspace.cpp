@@ -515,6 +515,18 @@ void SliceWorkspace::renumberSlices() {
 }
 
 bool SliceWorkspace::toggleManualPoint(double t) {
+    // 命中内部边界 → 合并（删除该切分点）；否则拆分（新增）
+    const int bi = findBoundaryIndex(t);
+    if (bi >= 0) return removeManualPointAt(static_cast<std::size_t>(bi));
+    if (splitSliceAt(t)) {
+        m_manualPoints.push_back(t);
+        std::sort(m_manualPoints.begin(), m_manualPoints.end());
+        return true;
+    }
+    return false;
+}
+
+bool SliceWorkspace::splitSliceAt(double t) {
     // 纯手动（M6.4e）：无切片时 = 隐式整轨单切片 [0, dur)——首次加点直接拆出 2 片
     if (m_slices.empty()) {
         const double dur = audioDurationSec();
@@ -536,8 +548,6 @@ bool SliceWorkspace::toggleManualPoint(double t) {
         setStatus(QStringLiteral("手动切片：+1（首点，整轨拆为 2 片，kind=manual）"));
         return true;
     }
-    const int bi = findBoundaryIndex(t);
-    if (bi >= 0) return removeManualPointAt(static_cast<std::size_t>(bi));
     // 拆分包含 t 的切片（t 须在切片内部，非边界）
     for (std::size_t i = 0; i < m_slices.size(); ++i) {
         const auto& s = m_slices[i];
@@ -572,13 +582,68 @@ bool SliceWorkspace::removeManualPointAt(std::size_t i) {
         setStatus(QStringLiteral("该边界两侧不连续，无法合并"));
         return false;
     }
+    const double t = m_slices[i].startSec;
     m_slices[i - 1].endSec = m_slices[i].endSec;
     m_slices.erase(m_slices.begin() + static_cast<std::ptrdiff_t>(i));
     m_sliceEnabled.erase(m_sliceEnabled.begin() + static_cast<std::ptrdiff_t>(i));
     renumberSlices();
     emit slicesChanged();
     setStatus(QStringLiteral("手动切分点：-1（第 %1/%2 片合并）").arg(i).arg(i + 1));
+    // 集合同步（可能因表重排已过期 → 找不到就跳过；setSliceBounds 后集合为尽力而为）
+    m_manualPoints.erase(
+        std::remove_if(m_manualPoints.begin(), m_manualPoints.end(),
+                       [t](double p) { return std::abs(p - t) <= kPointEps; }),
+        m_manualPoints.end());
     return true;
+}
+
+int SliceWorkspace::clearManualPoints() {
+    const std::vector<double> pts = m_manualPoints;
+    m_manualPoints.clear();
+    int n = 0;
+    for (const double t : pts) {
+        const int bi = findBoundaryIndex(t);
+        if (bi >= 0) {
+            removeManualPointAt(static_cast<std::size_t>(bi));
+            ++n;
+        }
+    }
+    setStatus(n > 0 ? QStringLiteral("已清除 %1 个手动切分点（剩余 %2 片）")
+                          .arg(n).arg(m_slices.size())
+                    : QStringLiteral("没有手动切分点可清除"));
+    return n;
+}
+
+bool SliceWorkspace::copyManualPoints() {
+    m_copiedPoints = m_manualPoints;
+    if (m_copiedPoints.empty()) {
+        setStatus(QStringLiteral("没有可复制的切分点（先 Z 放置）"));
+        return false;
+    }
+    setStatus(QStringLiteral("已复制 %1 个切分点（B 粘贴）").arg(m_copiedPoints.size()));
+    return true;
+}
+
+int SliceWorkspace::pasteManualPoints() {
+    if (m_copiedPoints.empty()) {
+        setStatus(QStringLiteral("剪贴板为空（先 V 复制），无法粘贴"));
+        return 0;
+    }
+    const std::vector<double> pts = m_copiedPoints;  // 副本（clear 可能刷新集合）
+    clearManualPoints();                             // 整体替换（woslicer 语义）
+    std::vector<double> sorted = pts;
+    std::sort(sorted.begin(), sorted.end());
+    int n = 0;
+    for (const double t : sorted) {
+        // 拆分式插入（不 toggle——避免"命中即合并"吃掉重复点）；恰与现有边界重合 → 记入集合
+        if (splitSliceAt(t) || findBoundaryIndex(t) >= 0) {
+            m_manualPoints.push_back(t);
+            ++n;
+        }
+    }
+    std::sort(m_manualPoints.begin(), m_manualPoints.end());
+    setStatus(QStringLiteral("已粘贴 %1 个切分点（替换式；共 %2 片）").arg(n).arg(m_slices.size()));
+    return n;
 }
 
 QVariantList SliceWorkspace::slices() const {

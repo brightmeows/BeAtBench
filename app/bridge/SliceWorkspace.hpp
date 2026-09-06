@@ -115,6 +115,16 @@ public:
     Q_INVOKABLE bool toggleManualPoint(double t);
     /// 右键：仅当 t 命中内部边界时删除（合并两侧）；否则 no-op。
     Q_INVOKABLE bool removeManualPoint(double t);
+    /// M6.4f 键盘（2026-09 用户 woslicer 系）：清除全部手动切分点（自动源切片边界不受影响；
+    /// 边界集合在 setSliceBounds 等重排后可能过期——尽力清除，找不到的跳过）。
+    /// 返回实际清除数；状态经 statusText。
+    Q_INVOKABLE int clearManualPoints();
+    /// V：手动切分点集（秒，升序）复制到内部剪贴板；空集 → false + 提示。
+    Q_INVOKABLE bool copyManualPoints();
+    /// B：**整体替换**（woslicer 语义：清现有手动点 → 应用剪贴板集）；空剪贴板 → 0 + 提示。
+    /// 粘贴点是"拆分式插入"（不 toggle，避免命中边界被合并）；恰与现有边界重合的点记入集合。
+    /// 返回粘贴/生效点数。
+    Q_INVOKABLE int pasteManualPoints();
     QVariantList slices() const;
     bool hasSlices() const { return !m_slices.empty(); }
     qreal midiTempoBpm() const;
@@ -162,6 +172,9 @@ private:
     void setStatus(const QString& text);
     /// M6.4c 手动切分点：命中内部边界（startSec ≈ t，i>=1）的切片序号；无 → -1。
     int findBoundaryIndex(double t) const;
+    /// 拆分包含 t 的切片（空表 → 先建整轨 [0,dur) 再拆；t 须在片内，曲内非边界）。
+    /// 纯拆分不合并——pasteManualPoints 用（与 toggle 的"命中即合并"区分）。
+    bool splitSliceAt(double t);
     /// 合并 i-1/i（删除边界）；不校验命中，直接操作。
     bool removeManualPointAt(std::size_t i);
     /// 重排 slice index（拆分/合并后）。
@@ -180,6 +193,9 @@ private:
     // ---- M6.2 切片 ----
     std::vector<beatbench::slice::Slice> m_slices;  ///< 切片表（core 计算结果）
     std::vector<bool> m_sliceEnabled;               ///< 放置开关（与 m_slices 一一对应）
+    // ---- M6.4f 手动切分点集合（键盘 Z/C/V/B；集合与内部边界相互维护、尽力同步） ----
+    std::vector<double> m_manualPoints;  ///< 手动切分点（秒，≈内部边界；可能因表重排过期）
+    std::vector<double> m_copiedPoints;  ///< V 复制的切分点集（粘贴源）
     qreal m_offsetSec = 0.0;
     bool m_busy = false;
     QString m_statusText;

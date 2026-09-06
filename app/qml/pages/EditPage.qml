@@ -27,6 +27,34 @@ Item {
     property bool showExtras: false
     /// 槽位弱线显示开关（「网格」按钮；默认开）。吸附不依赖此开关。
     property bool showGrid: true
+    /// 焦点区域高亮（PR 式 2026-09）：页内最后点击区域 → 边缘高亮（editLeft/editCenter/
+    /// editRight）；切页清除（onVisibleChanged）。不用 activeFocus——按钮 TabFocus 后点击
+    /// 不再聚焦，focus 语义达不到「点击即亮」；用页级 propagate MouseArea 记录（accept=false
+    /// 不拦截，事件继续传给下层控件）。
+    property string focusRegionId: ""
+    onVisibleChanged: if (!visible) focusRegionId = ""
+
+    /// 页内点击 → 区域 id（区域矩形命中判断；点中三区以外 → ""）。
+    function regionAt(mx, my) {
+        var cands = [["editLeft", leftDockRect], ["editCenter", editAreaRect],
+                     ["editRight", rightDockRect]]
+        for (var i = 0; i < cands.length; ++i) {
+            const r = cands[i][1]
+            const p = r.mapFromItem(root, mx, my)
+            if (p.x >= 0 && p.y >= 0 && p.x <= r.width && p.y <= r.height) return cands[i][0]
+        }
+        return ""
+    }
+    /// 全局点击记录（最顶层、不拦截；→ 下层控件继续处理）。
+    MouseArea {
+        anchors.fill: parent
+        z: 100
+        propagateComposedEvents: true
+        onPressed: (mouse) => {
+            focusRegionId = regionAt(mouse.x, mouse.y)
+            mouse.accepted = false
+        }
+    }
     /// M5.2 播放头跟随（默认开——用户拍板；**单向绑定**：Main checkbox ↔ 本属性；
     /// 用户滚动 ChartView 内部 root.followPlayhead=false → 本属性自动跟随（绑定）
     /// ——无需回写，避免 QML 绑定循环断绑（2026-09 实测：双向回写断绑定 → 默认关+无效果））。
@@ -246,10 +274,12 @@ Item {
 
         // ---------- 左 Dock（面板容器） ----------
         Rectangle {
+            id: leftDockRect
             SplitView.preferredWidth: 240
             SplitView.minimumWidth: 180
             color: Theme.surface
-            border.color: Theme.border
+            border.width: root.focusRegionId === "editLeft" ? 2 : 1
+            border.color: root.focusRegionId === "editLeft" ? Theme.focusRing : Theme.border
 
             ColumnLayout {
                 anchors.fill: parent
@@ -304,10 +334,12 @@ Item {
             }
         }
         Rectangle {
+            id: editAreaRect
             SplitView.fillWidth: true
             SplitView.minimumWidth: 320
             color: Theme.bg
-            border.color: Theme.border
+            border.width: root.focusRegionId === "editCenter" ? 2 : 1
+            border.color: root.focusRegionId === "editCenter" ? Theme.focusRing : Theme.border
 
             ColumnLayout {
                 anchors.fill: parent
@@ -393,10 +425,12 @@ Item {
 
         // ---------- 右 Dock（属性检查器 / 时间轴 标签页） ----------
         Rectangle {
+            id: rightDockRect
             SplitView.preferredWidth: 230
             SplitView.minimumWidth: 160
             color: Theme.surface
-            border.color: Theme.border
+            border.width: root.focusRegionId === "editRight" ? 2 : 1
+            border.color: root.focusRegionId === "editRight" ? Theme.focusRing : Theme.border
 
             ColumnLayout {
                 anchors.fill: parent

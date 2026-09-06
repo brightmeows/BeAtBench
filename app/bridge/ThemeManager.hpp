@@ -35,6 +35,7 @@ public:
     BB_THEME_COLOR_PROP(primarySoft)    // 主色 15% 底（激活工具）
     BB_THEME_COLOR_PROP(onAccent)       // 主色上文字
     BB_THEME_COLOR_PROP(accent)         // 强调（青）
+    BB_THEME_COLOR_PROP(focusRing)      // 焦点区域高亮边缘（PR 式；默认 = accent 同系）
     BB_THEME_COLOR_PROP(success)
     BB_THEME_COLOR_PROP(warning)
     BB_THEME_COLOR_PROP(danger)
@@ -134,6 +135,7 @@ public:
     BB_THEME_SETTER(primarySoft)
     BB_THEME_SETTER(onAccent)
     BB_THEME_SETTER(accent)
+    BB_THEME_SETTER(focusRing)
     BB_THEME_SETTER(success)
     BB_THEME_SETTER(warning)
     BB_THEME_SETTER(danger)
@@ -189,6 +191,7 @@ private:
     BB_THEME_COLOR_MEMBER(primarySoft, "#266366f1")  // AARRGGBB：主色 15%
     BB_THEME_COLOR_MEMBER(onAccent, "#ffffff")
     BB_THEME_COLOR_MEMBER(accent, "#22d3ee")
+    BB_THEME_COLOR_MEMBER(focusRing, "#22d3ee")      // 默认 = accent 同系（皮肤可独立改）
     BB_THEME_COLOR_MEMBER(success, "#34d399")
     BB_THEME_COLOR_MEMBER(warning, "#fbbf24")
     BB_THEME_COLOR_MEMBER(danger, "#f87171")

@@ -29,6 +29,36 @@ Item {
     /// 「同时铺入编辑区」（M6.3 2026-09）：导出成功后把 raw 直接铺进当前谱面 ch01
     /// （子行接续：目标小节段已有最高子行 +1 起；一个撤销步）。
     property bool placeToChart: false
+    /// M6.4f 键盘快捷键门控（Main 注入：页面激活 && 无文本输入焦点）；
+    /// 本页自持 = 页面可见（StackLayout 激活）&& 切片编辑对话框未开。
+    property bool kbdPageActive: false
+    readonly property bool kbdEnabled: root.kbdPageActive && root.visible && !sliceEditDialog.visible
+    /// 焦点区域高亮（PR 式 2026-09；同 EditPage）：页内最后点击区域 → 边缘高亮（sliceLeft/
+    /// sliceCenter/sliceRight）；切页清除。页级 propagate MouseArea 记录（accept=false 不拦截）。
+    property string focusRegionId: ""
+    onVisibleChanged: if (!visible) focusRegionId = ""
+
+    /// 页内点击 → 区域 id（三栏矩形命中；点中三栏以外 → ""）。
+    function regionAt(mx, my) {
+        var cands = [["sliceLeft", leftDockItem], ["sliceCenter", centerBox],
+                     ["sliceRight", rawDockItem]]
+        for (var i = 0; i < cands.length; ++i) {
+            const r = cands[i][1]
+            const p = r.mapFromItem(root, mx, my)
+            if (p.x >= 0 && p.y >= 0 && p.x <= r.width && p.y <= r.height) return cands[i][0]
+        }
+        return ""
+    }
+    /// 全局点击记录（最顶层、不拦截 → 下层控件继续处理）
+    MouseArea {
+        anchors.fill: parent
+        z: 100
+        propagateComposedEvents: true
+        onPressed: (mouse) => {
+            focusRegionId = regionAt(mouse.x, mouse.y)
+            mouse.accepted = false
+        }
+    }
     /// 左 dock 页签：0 = 切片（默认·放置开关/编辑）/ 1 = MIDI 音符。
     /// 2026-09 用户：网格页（纯引导文字，无实际效果）删除。
     property int dockTab: 0
@@ -89,6 +119,57 @@ Item {
     function debugSelectBeat(t) {
         sliceWaveform.selectedBeatSec = t
     }
+
+    // ---- M6.4f 键盘动作（uiActions slice.* → debugSliceAct → 本函数；快捷/UI/调试同入口） ----
+    function sliceAct(act) {
+        switch (act) {
+        case "playPause": audioEngine.refTogglePlay(); break
+        case "beatLeft": moveSelectedBeat(-1); break
+        case "beatRight": moveSelectedBeat(1); break
+        case "rowUp": root.scrollRow--; root.clampScroll(); break
+        case "rowDown": root.scrollRow++; root.clampScroll(); break
+        case "togglePoint": {
+            var t = sliceWaveform.selectedBeatSec
+            if (t < 0) t = Math.max(0, root.playheadSec)
+            sliceWorkspace.toggleManualPoint(t)
+            break
+        }
+        case "clearPoints": sliceWorkspace.clearManualPoints(); break
+        case "copyPoints": sliceWorkspace.copyManualPoints(); break
+        case "pastePoints": sliceWorkspace.pasteManualPoints(); break
+        }
+    }
+    /// 选中拍子移动（←→）：步长 = 1 网格细分（60/BPM ÷ 细分/拍）；移出可见行 → 视口跟随。
+    function moveSelectedBeat(dir) {
+        var t = sliceWaveform.selectedBeatSec
+        if (t < 0) t = Math.max(0, root.playheadSec)
+        t = Math.max(0, Math.min(sliceWorkspace.audioDurationSec, t + dir * root.gridStepSec()))
+        sliceWaveform.selectedBeatSec = t
+        var row = Math.floor(t / root.rowSecOf())
+        if (row < root.scrollRow) root.scrollRow = row
+        else if (row > root.scrollRow + root.visibleRows - 1)
+            root.scrollRow = row - root.visibleRows + 1
+        root.clampScroll()
+    }
+    /// 网格步长（秒）：一拍 = 60/BPM，再 ÷「细分/拍」（与波形网格参考线同源参数）。
+    function gridStepSec() {
+        var bpm = bpmBox.value > 0 ? bpmBox.value : 120
+        var sub = subBox.value > 0 ? subBox.value : 1
+        return 60 / bpm / sub
+    }
+
+    // ---- M6.4f 键盘快捷键（woslicer 系 2026-09；序列来自 uiActions 注册表——将来设置页
+    // 改绑（setShortcut/keymap.json）自动生效；enabled 门控 = 页面激活 + 无文本输入 + 无对话框；
+    // ↑↓/←→/空格 与编辑页快捷键按 currentPage 互斥（编辑页 Space 有 currentPage===0 门控）） ----
+    Shortcut { sequence: uiActions.shortcut("slice.playPause");  enabled: root.kbdEnabled; onActivated: root.sliceAct("playPause") }
+    Shortcut { sequence: uiActions.shortcut("slice.beatLeft");   enabled: root.kbdEnabled; onActivated: root.sliceAct("beatLeft") }
+    Shortcut { sequence: uiActions.shortcut("slice.beatRight");  enabled: root.kbdEnabled; onActivated: root.sliceAct("beatRight") }
+    Shortcut { sequence: uiActions.shortcut("slice.rowUp");      enabled: root.kbdEnabled; onActivated: root.sliceAct("rowUp") }
+    Shortcut { sequence: uiActions.shortcut("slice.rowDown");    enabled: root.kbdEnabled; onActivated: root.sliceAct("rowDown") }
+    Shortcut { sequence: uiActions.shortcut("slice.togglePoint"); enabled: root.kbdEnabled; onActivated: root.sliceAct("togglePoint") }
+    Shortcut { sequence: uiActions.shortcut("slice.clearPoints"); enabled: root.kbdEnabled; onActivated: root.sliceAct("clearPoints") }
+    Shortcut { sequence: uiActions.shortcut("slice.copyPoints");  enabled: root.kbdEnabled; onActivated: root.sliceAct("copyPoints") }
+    Shortcut { sequence: uiActions.shortcut("slice.pastePoints"); enabled: root.kbdEnabled; onActivated: root.sliceAct("pastePoints") }
 
     Timer {
         interval: 100
@@ -371,9 +452,19 @@ Item {
 
             // ================= 左 dock =================
             Item {
+                id: leftDockItem
                 SplitView.preferredWidth: 250
                 SplitView.minimumWidth: 180
                 SplitView.maximumWidth: 360
+
+                // 左 dock 高亮描边（焦点区域；透明不挡交互）
+                Rectangle {
+                    anchors.fill: parent
+                    z: 10
+                    color: "transparent"
+                    border.width: root.focusRegionId === "sliceLeft" ? 2 : 1
+                    border.color: root.focusRegionId === "sliceLeft" ? Theme.focusRing : Theme.border
+                }
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -549,10 +640,13 @@ Item {
             }
 
             // ================= 中央：视图条 + 波形（换行视口） + 滚动条 =================
-            ColumnLayout {
+            Item {
+                id: centerBox
                 SplitView.fillWidth: true
                 SplitView.minimumWidth: 320
-                spacing: 6
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 6
 
                 // ---- 视图条：行数 / 缩放档位 / 视口范围 ----
                 RowLayout {
@@ -626,9 +720,8 @@ Item {
                         // M6.4c 手动切分：双击 = 添加/切换；右键 = 删除（已吸附拍子线）
                         onManualToggleRequested: (t) => sliceWorkspace.toggleManualPoint(t)
                         onManualDeleteRequested: (t) => sliceWorkspace.removeManualPoint(t)
-                        // 键盘：方向键整行滚动（点击波形获得焦点）；Page/Home/End 走通用 onPressed
-                        Keys.onUpPressed: { root.scrollRow--; event.accepted = true }
-                        Keys.onDownPressed: { root.scrollRow++; event.accepted = true }
+                        // 键盘：↑↓ 走页面级 Shortcut（窗口级优先消费，此处不再重复处理）；
+                        // Page/Home/End 走通用 onPressed
                         Keys.onPressed: {
                             if (event.key === Qt.Key_PageUp) { root.scrollRow -= root.visibleRows; event.accepted = true }
                             else if (event.key === Qt.Key_PageDown) { root.scrollRow += root.visibleRows; event.accepted = true }
@@ -688,13 +781,32 @@ Item {
                     color: Theme.textFaint
                     elide: Text.ElideRight
                 }
+                }
+                // 中央区高亮描边（焦点区域；透明不挡交互）
+                Rectangle {
+                    anchors.fill: parent
+                    z: 10
+                    color: "transparent"
+                    border.width: root.focusRegionId === "sliceCenter" ? 2 : 1
+                    border.color: root.focusRegionId === "sliceCenter" ? Theme.focusRing : Theme.border
+                }
             }
 
             // ================= 右 dock：WAV 定义 · ch01（raw） =================
             Item {
+                id: rawDockItem
                 SplitView.preferredWidth: 250
                 SplitView.minimumWidth: 180
                 SplitView.maximumWidth: 400
+
+                // 右 dock 高亮描边（焦点区域；透明不挡交互）
+                Rectangle {
+                    anchors.fill: parent
+                    z: 10
+                    color: "transparent"
+                    border.width: root.focusRegionId === "sliceRight" ? 2 : 1
+                    border.color: root.focusRegionId === "sliceRight" ? Theme.focusRing : Theme.border
+                }
 
                 ColumnLayout {
                     anchors.fill: parent

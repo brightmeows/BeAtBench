@@ -13,6 +13,10 @@ import QtQuick.Controls
 ToolButton {
     id: root
 
+    // 2026-09 快捷键纪律：点击不抢焦点（Space/方向键不被按钮吞掉）；Tab 导航仍可达。
+    // 同类：BbCheckBox / BbTabButton / BbTabStrip 内按钮。
+    focusPolicy: Qt.TabFocus
+
     property bool flatStyle: false
     property bool active: false      // 外部激活（互斥单选组）
     readonly property bool lit: root.active || (root.checkable && root.checked)

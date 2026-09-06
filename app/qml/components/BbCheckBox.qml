@@ -9,6 +9,9 @@ import QtQuick.Controls
 CheckBox {
     id: root
 
+    // 2026-09 快捷键纪律：点击不抢焦点（与 BbToolButton 同；Tab 导航保留）
+    focusPolicy: Qt.TabFocus
+
     property color textColor: Theme.text
     property color boxColor: Theme.surface2
     property color boxBorder: Theme.borderStrong
