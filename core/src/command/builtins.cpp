@@ -5,9 +5,16 @@
 // M3：读写统一走 CodecRegistry（format 参数/扩展名 → codec），格式无关。
 #include "beatbench/core/command/Builtins.hpp"
 
-#include <filesystem>
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <filesystem>
+#include <map>
+#include <numeric>
+#include <optional>
+#include <set>
+#include <tuple>
+#include <utility>
 
 #include "beatbench/core/Version.hpp"
 #include "beatbench/core/bms/BmsCodec.hpp"
@@ -931,8 +938,10 @@ public:
 };
 
 // —— 剪贴板（BMS 原始行文本；2026-08 用户提议，外部工具兼容） ——
-// copy：选中 note 集合 → BMS 数据行文本（#mmmcc:槽位序列，同通道同 measure 合并 LCM）。
-// paste：BMS 数据行文本 → note 集合 → 插入（以剪贴板最小 measure 为基准偏移到目标）。
+// copy：从权威 chart 找选中对象，按真实 kind/ln_channel/sub_line 生成 BMS 数据行
+// （地雷 D/E、LN 5x/6x、BGM 按子行分行）；半选 LN 拒绝。
+// paste：BMS 数据行 → 按通道规则还原 kind/ln_channel；有 target_measure 则相对平移，
+// 无则原位（切音铺入不传 target + uniform）。
 // 读取兼容：外部工具（BMSE/iBMSC）复制的原始行可直接粘贴解析。
 // 2026-09 扩展（切音导出 raw 整段粘贴）：额外识别 `#WAVxx <file>` 采样定义行与
 // `#NNN02:<值>` 小节长度行（ch01 多行按 sub_line FIFO 与原解析器一致）。
@@ -946,43 +955,67 @@ public:
         const auto& chart = session.chart();
         const std::string mode = chart.mode_id.value_or("sp7k");
 
-        // 收集选中 note 的 NoteRef 列表
-        std::vector<edit::NoteRef> refs;
-        if (const Json* sel = args.find("selection")) {
-            if (!sel->is_array()) throw CommandError("bad_args", "selection 应为数组");
-            for (const auto& item : sel->as_array()) {
-                edit::NoteRef ref;
-                ref.measure = u32_arg(item, "measure");
-                ref.pos = pos_from_json(item);
-                // lane 在子对象 "lane" 里（{player,kind,index}）；兼容顶层直接给 lane 字段
-                if (const Json* lj = item.find("lane")) {
-                    ref.lane = lane_from_json(*lj);
-                } else {
-                    ref.lane = lane_from_json(item);
-                }
-                ref.sample = u32_arg(item, "sample");
-                refs.push_back(ref);
-            }
-        }
+        const auto refs = selection_from_json(args);
         if (refs.empty()) throw CommandError("empty_selection", "选择集为空（无可复制内容）");
 
-        // 按 (measure, channel) 分组重建行
-        std::map<std::pair<std::uint32_t, std::string>, std::vector<edit::NoteRef>> groups;
+        struct CopyCell {
+            edit::NoteRef ref;
+            std::string channel;
+            const Event<Note>* ev = nullptr;
+        };
+        std::vector<CopyCell> cells;
+        cells.reserve(refs.size());
+        std::vector<std::size_t> selected_idx;
         for (const auto& ref : refs) {
-            const auto ch = bms::bms_channel_for_mode(mode, ref.lane, false, NoteKind::Normal);
-            if (ch.empty()) continue;  // 无法表示（Bgm 等）→ 跳过
-            groups[{ref.measure, ch}].push_back(ref);
+            const Event<Note>* found = nullptr;
+            std::size_t found_i = 0;
+            for (std::size_t i = 0; i < chart.notes.size(); ++i) {
+                const auto& ev = chart.notes[i];
+                if (ev.measure == ref.measure && ev.pos == ref.pos &&
+                    ev.value.lane == ref.lane && ev.value.sample.id == ref.sample &&
+                    ev.value.sub_line == ref.sub_line) {
+                    found = &ev;
+                    found_i = i;
+                    break;
+                }
+            }
+            if (!found)
+                throw CommandError("not_found", "选择集中的 note 在谱面中不存在（可能已被删除）");
+            const bool want_ln =
+                found->value.ln_channel && found->value.lane.kind != LaneKind::Bgm;
+            const auto ch = bms::bms_channel_for_mode(mode, found->value.lane, want_ln,
+                                                      found->value.kind);
+            if (ch.empty())
+                throw CommandError("unsupported", "选中 note 无法表示为 BMS 通道");
+            cells.push_back(CopyCell{ref, ch, found});
+            selected_idx.push_back(found_i);
         }
+
+        // 半选 LN：选中集合必须同时包含成对两端，否则拒绝（零输出）。
+        std::set<std::size_t> selected_set(selected_idx.begin(), selected_idx.end());
+        for (const std::size_t i : selected_idx) {
+            const auto pair = chart.notes[i].value.ln_pair;
+            if (!pair || *pair >= chart.notes.size()) continue;
+            if (!selected_set.count(*pair))
+                throw CommandError("incomplete_ln",
+                                   "半选 LN：请完整选择头尾两端后再复制（未修改谱面）");
+        }
+
+        // 按 (measure, channel, sub_line) 分组重建行——BGM 多子行不得挤进同一行。
+        std::map<std::tuple<std::uint32_t, std::string, std::uint32_t>, std::vector<CopyCell>>
+            groups;
+        for (const auto& cell : cells)
+            groups[{cell.ref.measure, cell.channel, cell.ev->value.sub_line}].push_back(cell);
         Json lines = Json::array();
         for (const auto& [key, grp] : groups) {
-            const auto& [measure, channel] = key;
-            // 槽位：分母 = 各 pos 分母 LCM
+            const auto& [measure, channel, sub_line] = key;
+            (void)sub_line;
             std::int64_t n = 1;
-            for (const auto& r : grp) n = std::lcm(n, r.pos.den);
+            for (const auto& c : grp) n = std::lcm(n, c.ref.pos.den);
             std::vector<std::string> slots(static_cast<std::size_t>(n), "00");
-            for (const auto& r : grp) {
-                const auto idx = static_cast<std::size_t>(r.pos.num * n / r.pos.den);
-                slots[idx] = fmt_id_text(chart, r.sample);
+            for (const auto& c : grp) {
+                const auto idx = static_cast<std::size_t>(c.ref.pos.num * n / c.ref.pos.den);
+                slots[idx] = fmt_id_text(chart, c.ref.sample);
             }
             std::string line = "#" + pad3(measure) + channel + ":";
             for (const auto& s : slots) line += s;
@@ -1053,6 +1086,8 @@ public:
 
         // 解析每行 → note 数据行 / #WAVxx 定义 / #NNN02: 小节长度
         std::vector<edit::NoteRef> parsed;
+        std::vector<bool> parsed_ln;
+        std::vector<NoteKind> parsed_kind;
         std::vector<std::pair<std::uint32_t, std::string>> wav_defs;  // (id, file)
         std::vector<std::pair<std::uint32_t, double>> measure_defs;   // (measure, 四分拍数)
         // BGM 子行 FIFO（同 (measure,channel) 多行 = 子行；与 bms_parser 赋值一致，2026-09）
@@ -1139,6 +1174,8 @@ public:
                 ref.sample = decode_id_text(chart, slot);
                 ref.sub_line = sub_line;
                 parsed.push_back(ref);
+                parsed_ln.push_back(rule->ln_channel && rule->lane.kind != LaneKind::Bgm);
+                parsed_kind.push_back(rule->note_kind);
             }
         }
         if (parsed.empty() && wav_defs.empty() && measure_defs.empty())
@@ -1194,10 +1231,14 @@ public:
                 edit::TimingKind::Measure,
                 static_cast<std::uint32_t>(static_cast<std::int64_t>(m) + offset),
                 Rational(0, 1), beats));
-        for (const auto& r : parsed) {
+        for (std::size_t i = 0; i < parsed.size(); ++i) {
+            const auto& r = parsed[i];
+            const bool ln_kind = i < parsed_ln.size() && parsed_ln[i];
+            const NoteKind kind =
+                (i < parsed_kind.size()) ? parsed_kind[i] : NoteKind::Normal;
             comp->add(std::make_unique<edit::PutNoteCommand>(
                 static_cast<std::uint32_t>(static_cast<std::int64_t>(r.measure) + offset),
-                r.pos, r.lane, r.sample, false, NoteKind::Normal, r.sub_line));
+                r.pos, r.lane, r.sample, ln_kind, kind, r.sub_line));
         }
         const bool ok = session.exec(std::move(comp));
         Json out = Json::object();
@@ -1583,30 +1624,47 @@ public:
         if (!session.has_chart()) {
             throw CommandError("no_chart", "未加载谱面（先 session.load）");
         }
-        const std::uint32_t measure = u32_arg(args, "measure");
-        const Rational pos = pos_from_json(args);
-        // lane 在子对象 "lane"（{player,kind,index}）；兼容顶层直接给 lane 字段
-        const Lane lane = [&] {
-            if (const Json* lj = args.find("lane")) {
-                if (lj->is_object()) return lane_from_json(*lj);
-                if (lj->is_number()) {
-                    return Lane{0, LaneKind::Key, static_cast<std::uint8_t>(lj->as_i64())};
+        auto make_one = [&](const Json& item) {
+            const std::uint32_t measure = u32_arg(item, "measure");
+            const Rational pos = pos_from_json(item);
+            const Lane lane = [&] {
+                if (const Json* lj = item.find("lane")) {
+                    if (lj->is_object()) return lane_from_json(*lj);
+                    if (lj->is_number()) {
+                        return Lane{0, LaneKind::Key, static_cast<std::uint8_t>(lj->as_i64())};
+                    }
+                    throw CommandError("bad_args", "lane 应为对象 {player,kind,index}");
                 }
-                throw CommandError("bad_args", "lane 应为对象 {player,kind,index}");
+                return lane_from_json(item);
+            }();
+            const std::uint32_t sample = u32_arg(item, "sample");
+            std::uint32_t sub_line = 0;
+            if (const Json* bl = item.find("sub_line")) {
+                if (!bl->is_int()) throw CommandError("bad_args", "sub_line 应为整数");
+                sub_line = static_cast<std::uint32_t>(bl->as_i64());
             }
-            return lane_from_json(args);  // 顶层字段兼容（旧测试）
-        }();
-        const std::uint32_t sample = u32_arg(args, "sample");
-        // BGM 行序号（消歧；非 Bgm = 0）
-        std::uint32_t sub_line = 0;
-        if (const Json* bl = args.find("sub_line")) {
-            if (!bl->is_int()) throw CommandError("bad_args", "sub_line 应为整数");
-            sub_line = static_cast<std::uint32_t>(bl->as_i64());
+            return std::make_unique<edit::DeleteNoteCommand>(measure, pos, lane, sample, sub_line);
+        };
+        // selection 数组 = 批量删除（一个 CompositeCommand / 一次备份）；单对象路径保持兼容。
+        if (args.find("selection")) {
+            const auto refs = selection_from_json(args);
+            if (refs.empty()) throw CommandError("empty_selection", "选择集为空（无可删除内容）");
+            auto comp = std::make_unique<edit::CompositeCommand>();
+            for (const auto& item : args.find("selection")->as_array()) {
+                if (!item.is_object()) throw CommandError("bad_args", "selection 元素应为对象");
+                comp->add(make_one(item));
+            }
+            const bool ok = session.exec(std::move(comp));
+            Json out = Json::object();
+            out.set("ok", ok);
+            out.set("deleted", static_cast<std::int64_t>(refs.size()));
+            out.set("undo_depth", static_cast<std::int64_t>(session.undo_depth()));
+            return out;
         }
-        const bool ok = session.exec(
-            std::make_unique<edit::DeleteNoteCommand>(measure, pos, lane, sample, sub_line));
+        const bool ok = session.exec(make_one(args));
         Json out = Json::object();
         out.set("ok", ok);
+        out.set("deleted", ok ? 1 : 0);
         out.set("undo_depth", static_cast<std::int64_t>(session.undo_depth()));
         return out;
     }

@@ -733,3 +733,179 @@ TEST(EditCommands, ClipboardPasteSubLineContinueUniformEmptyAndOverflow) {
     EXPECT_TRUE(saw65) << "超出 64 上限仍应写入（lint 提示，不阻止）";
     EXPECT_GT(session.chart().notes.size(), before2);
 }
+
+namespace {
+
+Json note_sel_item(const Event<Note>& e) {
+    Json item = Json::object();
+    item.set("measure", static_cast<std::int64_t>(e.measure));
+    Json pos = Json::object();
+    pos.set("num", e.pos.num);
+    pos.set("den", e.pos.den);
+    item.set("pos", std::move(pos));
+    Json lane = Json::object();
+    lane.set("player", static_cast<std::int64_t>(e.value.lane.player));
+    lane.set("index", static_cast<std::int64_t>(e.value.lane.index));
+    const char* kind = "key";
+    if (e.value.lane.kind == LaneKind::Bgm) kind = "bgm";
+    else if (e.value.lane.kind == LaneKind::Scratch) kind = "scratch";
+    else if (e.value.lane.kind == LaneKind::Pedal) kind = "pedal";
+    lane.set("kind", kind);
+    item.set("lane", std::move(lane));
+    item.set("sample", static_cast<std::int64_t>(e.value.sample.id));
+    item.set("sub_line", static_cast<std::int64_t>(e.value.sub_line));
+    return item;
+}
+
+}  // namespace
+
+TEST(EditCommands, ClipboardCopyMineAndBgmPreserveChannels) {
+    auto& session = global_editor_session();
+    Chart c;
+    c.meta["BPM"] = "130";
+    Event<Note> mine{1, Rational(0, 1), {}};
+    mine.value.lane = {0, LaneKind::Key, 1};
+    mine.value.sample.id = 3;
+    mine.value.kind = NoteKind::Landmine;
+    Event<Note> bgm0{1, Rational(0, 1), {}};
+    bgm0.value.lane = {0, LaneKind::Bgm, 0};
+    bgm0.value.sample.id = 4;
+    bgm0.value.sub_line = 0;
+    Event<Note> bgm1{1, Rational(0, 1), {}};
+    bgm1.value.lane = {0, LaneKind::Bgm, 0};
+    bgm1.value.sample.id = 5;
+    bgm1.value.sub_line = 1;
+    c.notes = {mine, bgm0, bgm1};
+    session.load(std::move(c));
+
+    Json args = Json::object();
+    Json sel = Json::array();
+    for (const auto& e : session.chart().notes) sel.push_back(note_sel_item(e));
+    args.set("selection", std::move(sel));
+    Json req = Json::object();
+    req.set("command", "clipboard.copy");
+    req.set("args", std::move(args));
+    const Json resp = global_registry().dispatch(req);
+    ASSERT_TRUE(resp.at("ok").as_bool()) << resp.dump();
+    const auto& lines = resp.at("result").at("lines").as_array();
+    ASSERT_EQ(lines.size(), 3u);
+    bool saw_mine = false, saw_bgm_a = false, saw_bgm_b = false;
+    for (const auto& line : lines) {
+        const auto& s = line.as_str();
+        if (s.find("#001D1:") == 0) saw_mine = true;
+        if (s == "#00101:04") saw_bgm_a = true;
+        if (s == "#00101:05") saw_bgm_b = true;
+    }
+    EXPECT_TRUE(saw_mine);
+    EXPECT_TRUE(saw_bgm_a);
+    EXPECT_TRUE(saw_bgm_b);
+
+    const std::size_t before = session.chart().notes.size();
+    Json paste = Json::object();
+    paste.set("lines", resp.at("result").at("lines"));
+    paste.set("target_measure", 8);
+    Json preq = Json::object();
+    preq.set("command", "clipboard.paste");
+    preq.set("args", std::move(paste));
+    const Json presp = global_registry().dispatch(preq);
+    ASSERT_TRUE(presp.at("ok").as_bool()) << presp.dump();
+    EXPECT_EQ(presp.at("result").at("notes").as_i64(), 3);
+    std::size_t mines = 0, bgms = 0;
+    for (const auto& e : session.chart().notes) {
+        if (e.measure != 8) continue;
+        if (e.value.kind == NoteKind::Landmine) ++mines;
+        if (e.value.lane.kind == LaneKind::Bgm) ++bgms;
+    }
+    EXPECT_EQ(mines, 1u);
+    EXPECT_EQ(bgms, 2u);
+    ASSERT_TRUE(session.undo());
+    EXPECT_EQ(session.chart().notes.size(), before);
+}
+
+TEST(EditCommands, ClipboardCopyRejectsHalfSelectedLn) {
+    auto& session = global_editor_session();
+    Chart c;
+    c.meta["BPM"] = "130";
+    c.meta["LNTYPE"] = "1";
+    session.load(std::move(c));
+    ASSERT_TRUE(session.exec(std::make_unique<PutNoteCommand>(
+        1, Rational(0, 1), Lane{0, LaneKind::Key, 1}, 1, true)));
+    ASSERT_TRUE(session.exec(std::make_unique<PutNoteCommand>(
+        1, Rational(1, 2), Lane{0, LaneKind::Key, 1}, 1, true)));
+    ASSERT_EQ(session.chart().notes.size(), 2u);
+    const auto before = session.chart();
+
+    Json args = Json::object();
+    Json sel = Json::array();
+    sel.push_back(note_sel_item(session.chart().notes[0]));  // 只选头
+    args.set("selection", std::move(sel));
+    Json req = Json::object();
+    req.set("command", "clipboard.copy");
+    req.set("args", std::move(args));
+    const Json resp = global_registry().dispatch(req);
+    EXPECT_FALSE(resp.at("ok").as_bool());
+    EXPECT_EQ(resp.at("error").at("code").as_str(), "incomplete_ln");
+    EXPECT_EQ(session.chart().notes.size(), before.notes.size());
+}
+
+TEST(EditCommands, ClipboardCopyPasteLnPairRoundtrip) {
+    auto& session = global_editor_session();
+    Chart c;
+    c.meta["BPM"] = "130";
+    c.meta["LNTYPE"] = "1";
+    session.load(std::move(c));
+    ASSERT_TRUE(session.exec(std::make_unique<PutNoteCommand>(
+        2, Rational(0, 1), Lane{0, LaneKind::Key, 3}, 7, true)));
+    ASSERT_TRUE(session.exec(std::make_unique<PutNoteCommand>(
+        2, Rational(1, 2), Lane{0, LaneKind::Key, 3}, 7, true)));
+    Json args = Json::object();
+    Json sel = Json::array();
+    for (const auto& e : session.chart().notes) sel.push_back(note_sel_item(e));
+    args.set("selection", std::move(sel));
+    Json req = Json::object();
+    req.set("command", "clipboard.copy");
+    req.set("args", std::move(args));
+    const Json resp = global_registry().dispatch(req);
+    ASSERT_TRUE(resp.at("ok").as_bool()) << resp.dump();
+    const auto& lines = resp.at("result").at("lines").as_array();
+    ASSERT_EQ(lines.size(), 1u);
+    EXPECT_NE(lines[0].as_str().find("#00253:"), std::string::npos);
+
+    const std::size_t before = session.chart().notes.size();
+    Json paste = Json::object();
+    paste.set("lines", resp.at("result").at("lines"));
+    paste.set("target_measure", 6);
+    Json preq = Json::object();
+    preq.set("command", "clipboard.paste");
+    preq.set("args", std::move(paste));
+    const Json presp = global_registry().dispatch(preq);
+    ASSERT_TRUE(presp.at("ok").as_bool()) << presp.dump();
+    std::size_t ln_notes = 0;
+    for (const auto& e : session.chart().notes) {
+        if (e.measure == 6 && e.value.ln_channel) ++ln_notes;
+    }
+    EXPECT_EQ(ln_notes, 2u);
+    ASSERT_TRUE(session.undo());
+    EXPECT_EQ(session.chart().notes.size(), before);
+}
+
+TEST(EditCommands, NoteDeleteSelectionIsSingleUndo) {
+    auto& session = global_editor_session();
+    session.load(make_chart());
+    const std::size_t before = session.chart().notes.size();
+    const std::size_t undo_before = session.undo_depth();
+    Json args = Json::object();
+    Json sel = Json::array();
+    for (const auto& e : session.chart().notes) sel.push_back(note_sel_item(e));
+    args.set("selection", std::move(sel));
+    Json req = Json::object();
+    req.set("command", "note.delete");
+    req.set("args", std::move(args));
+    const Json resp = global_registry().dispatch(req);
+    ASSERT_TRUE(resp.at("ok").as_bool()) << resp.dump();
+    EXPECT_EQ(resp.at("result").at("deleted").as_i64(), static_cast<std::int64_t>(before));
+    EXPECT_EQ(session.chart().notes.size(), 0u);
+    EXPECT_EQ(session.undo_depth(), undo_before + 1);
+    ASSERT_TRUE(session.undo());
+    EXPECT_EQ(session.chart().notes.size(), before);
+}

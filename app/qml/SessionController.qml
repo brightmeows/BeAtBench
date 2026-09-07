@@ -66,22 +66,11 @@ QtObject {
             setStatus(qsTr("没有选中（点击 note 选中 / Shift+框选）"))
             return
         }
-        var refs = window.selectionRefs.slice()
-        var done = 0
-        for (var i = 0; i < refs.length; i++) {
-            var args = {
-                measure: refs[i].measure, pos: refs[i].pos,
-                lane: refs[i].lane, sample: refs[i].sample
-            }
-            if (refs[i].sub_line !== undefined) args.sub_line = refs[i].sub_line
-            var r = dispatchCmd("note.delete", args)
-            if (r) done++
-        }
-        if (done > 0) {
-            chartSession.refresh()
-            refreshLint()  // 2026-09 用户：删除后 lint 也要刷新（之前只刷新视图没刷新 lint）
+        var n = window.selectionRefs.length
+        var r = sessionCmd("note.delete", { selection: window.selectionRefs })
+        if (r) {
             window.selectionRefs = []
-            setStatus(qsTr("已删除 %1 个 note（Undo 可恢复）").arg(done))
+            setStatus(qsTr("已删除 %1 个 note（Undo 可恢复）").arg(r.deleted || n))
         }
     }
     function placeNote(hit) {
