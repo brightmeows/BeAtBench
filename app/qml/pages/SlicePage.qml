@@ -156,6 +156,23 @@ Item {
         case "clearPoints": sliceWorkspace.clearManualPoints(); break
         case "copyPoints": sliceWorkspace.copyManualPoints(); break
         case "pastePoints": sliceWorkspace.pasteManualPoints(); break
+        case "detect":
+            if (sliceWorkspace.detectSlices(
+                    sliceSourceBox.currentIndex === 0 ? "grid" : "midi",
+                    bpmBox.value, subBox.value, sliceWorkspace.audioDurationSec,
+                    root.midiExtendNext))
+                root.dockTab = 0
+            break
+        case "clearSlices": sliceWorkspace.clearSlices(); break
+        case "export": root.doExport(); break
+        case "importAudio": audioFileDialog.open(); break
+        case "importMidi": midiFileDialog.open(); break
+        case "zoomIn":
+            root.zoomIndex = Math.min(root.zoomLevels.length - 1, root.zoomIndex + 1)
+            break
+        case "zoomOut":
+            root.zoomIndex = Math.max(0, root.zoomIndex - 1)
+            break
         }
     }
     /// 选中拍子移动（←→）：步长 = 1 网格细分（60/BPM ÷ 细分/拍）；移出可见行 → 视口跟随。
@@ -199,6 +216,11 @@ Item {
     Shortcut { sequence: uiActions.shortcut("slice.clearPoints"); enabled: root.kbdEnabled; onActivated: root.sliceAct("clearPoints") }
     Shortcut { sequence: uiActions.shortcut("slice.copyPoints");  enabled: root.kbdEnabled; onActivated: root.sliceAct("copyPoints") }
     Shortcut { sequence: uiActions.shortcut("slice.pastePoints"); enabled: root.kbdEnabled; onActivated: root.sliceAct("pastePoints") }
+    Shortcut { sequence: uiActions.shortcut("slice.detect"); enabled: root.kbdEnabled; onActivated: root.sliceAct("detect") }
+    Shortcut { sequence: uiActions.shortcut("slice.clearSlices"); enabled: root.kbdEnabled; onActivated: root.sliceAct("clearSlices") }
+    Shortcut { sequence: uiActions.shortcut("slice.export"); enabled: root.kbdEnabled; onActivated: root.sliceAct("export") }
+    Shortcut { sequence: uiActions.shortcut("slice.importAudio"); enabled: root.kbdEnabled; onActivated: root.sliceAct("importAudio") }
+    Shortcut { sequence: uiActions.shortcut("slice.importMidi"); enabled: root.kbdEnabled; onActivated: root.sliceAct("importMidi") }
 
     Timer {
         interval: 100
@@ -329,11 +351,15 @@ Item {
 
             BbToolButton {
                 text: qsTr("导入音频…")
+                      + (uiActions.shortcut("slice.importAudio")
+                         ? "   " + root.prettyShortcut(uiActions.shortcut("slice.importAudio")) : "")
                 enabled: !sliceWorkspace.busy
                 onClicked: audioFileDialog.open()
             }
             BbToolButton {
                 text: qsTr("导入 MIDI…")
+                      + (uiActions.shortcut("slice.importMidi")
+                         ? "   " + root.prettyShortcut(uiActions.shortcut("slice.importMidi")) : "")
                 onClicked: midiFileDialog.open()
             }
             BbToolButton {
@@ -439,17 +465,14 @@ Item {
             }
             BbToolButton {
                 text: qsTr("生成切片")
-                onClicked: {
-                    if (sliceWorkspace.detectSlices(
-                            sliceSourceBox.currentIndex === 0 ? "grid" : "midi",
-                            bpmBox.value, subBox.value, sliceWorkspace.audioDurationSec,
-                            root.midiExtendNext)) {
-                        root.dockTab = 0   // 生成成功 → 切到「切片」页签核对放置开关
-                    }
-                }
+                      + (uiActions.shortcut("slice.detect")
+                         ? "   " + root.prettyShortcut(uiActions.shortcut("slice.detect")) : "")
+                onClicked: root.sliceAct("detect")
             }
             BbToolButton {
                 text: qsTr("清除切片")
+                      + (uiActions.shortcut("slice.clearSlices")
+                         ? "   " + root.prettyShortcut(uiActions.shortcut("slice.clearSlices")) : "")
                 enabled: sliceWorkspace.hasSlices
                 onClicked: sliceWorkspace.clearSlices()
             }
@@ -614,7 +637,8 @@ Item {
                                            + "或直接在波形上点击选中拍子（青色光标）→ 再击同一拍子 = "
                                            + "添加切分点，右键 = 删除。列表行双击 = 编辑边界）\n"
                                            + "键盘：空格=播放/暂停 · ←→=选中拍子移动 · ↑↓=视口滚动 · "
-                                           + "Z=放置/消去切分点 · C=清除全部切分点 · V/B=复制/粘贴切分点")
+                                           + "Z=放置/消去切分点 · C=清除全部切分点 · V/B=复制/粘贴切分点 · "
+                                            + "Ctrl+G=生成切片 · Ctrl+E=导出 · -/= 缩放")
                                 color: Theme.textFaint
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
@@ -704,14 +728,16 @@ Item {
                     BbToolButton {
                         text: "−"
                         ToolTip.visible: hovered
-                        ToolTip.text: qsTr("缩小（每行时长更长）")
-                        onClicked: root.zoomIndex = Math.max(0, root.zoomIndex - 1)
+                        ToolTip.text: qsTr("缩小（每行时长更长；%1）")
+                            .arg(root.prettyShortcut(uiActions.shortcut("view.zoomOut")))
+                        onClicked: root.sliceAct("zoomOut")
                     }
                     BbToolButton {
                         text: "+"
                         ToolTip.visible: hovered
-                        ToolTip.text: qsTr("放大（每行时长更短；Ctrl+滚轮同效）")
-                        onClicked: root.zoomIndex = Math.min(root.zoomLevels.length - 1, root.zoomIndex + 1)
+                        ToolTip.text: qsTr("放大（每行时长更短；%1 / Ctrl+滚轮）")
+                            .arg(root.prettyShortcut(uiActions.shortcut("view.zoomIn")))
+                        onClicked: root.sliceAct("zoomIn")
                     }
                     BbToolButton {
                         text: qsTr("适应全曲")
@@ -951,6 +977,8 @@ Item {
             }
             BbToolButton {
                 text: qsTr("导出分片")
+                      + (uiActions.shortcut("slice.export")
+                         ? "   " + root.prettyShortcut(uiActions.shortcut("slice.export")) : "")
                 enabled: sliceWorkspace.hasSlices && sliceWorkspace.hasAudio
                 onClicked: root.doExport()
             }

@@ -326,6 +326,8 @@ int main(int argc, char** argv) {
         uiActions.add(UiActionDef{"view.toggleGrid", QCoreApplication::tr("网格"), "", "view", nullptr, qml("toggleGrid"), true});
         uiActions.add(UiActionDef{"view.toggleChannelIds", QCoreApplication::tr("通道 ID"), "", "view", nullptr, qml("uiActionToggleChannelIds"), true});
         uiActions.add(UiActionDef{"view.toggleExtras", QCoreApplication::tr("更多轨道"), "", "view", nullptr, qml("uiActionToggleExtras"), true});
+        uiActions.add(UiActionDef{"view.zoomIn", QCoreApplication::tr("放大"), "=", "view", nullptr, qml("zoomInView")});
+        uiActions.add(UiActionDef{"view.zoomOut", QCoreApplication::tr("缩小"), "-", "view", nullptr, qml("zoomOutView")});
         // 工具动作（数字键 1-5；handler = 设置 editorTool 属性）
         // toolbar="tool" = 编辑工具条工具选择条（互斥单选；value = 当前工具，prefix = 快捷键前缀）。
         uiActions.add(UiActionDef{"tool.pan", QCoreApplication::tr("拖拽"), "1", "tool", nullptr, setProp("editorTool", "pan"), false, false, false, "tool", "button", QCoreApplication::tr("平移视口（拖拽空白区）"), "pan", "1 "});
@@ -367,6 +369,11 @@ int main(int argc, char** argv) {
         uiActions.add(UiActionDef{"slice.clearPoints", QCoreApplication::tr("清除全部切分点"), "C", "slice", nullptr, sliceAct("clearPoints")});
         uiActions.add(UiActionDef{"slice.copyPoints", QCoreApplication::tr("复制切分点"), "V", "slice", nullptr, sliceAct("copyPoints")});
         uiActions.add(UiActionDef{"slice.pastePoints", QCoreApplication::tr("粘贴切分点"), "B", "slice", nullptr, sliceAct("pastePoints")});
+        uiActions.add(UiActionDef{"slice.detect", QCoreApplication::tr("生成切片"), "Ctrl+G", "slice", nullptr, sliceAct("detect")});
+        uiActions.add(UiActionDef{"slice.clearSlices", QCoreApplication::tr("清除切片"), "Ctrl+Shift+G", "slice", nullptr, sliceAct("clearSlices")});
+        uiActions.add(UiActionDef{"slice.export", QCoreApplication::tr("导出分片"), "Ctrl+E", "slice", nullptr, sliceAct("export")});
+        uiActions.add(UiActionDef{"slice.importAudio", QCoreApplication::tr("导入音频"), "Ctrl+I", "slice", nullptr, sliceAct("importAudio")});
+        uiActions.add(UiActionDef{"slice.importMidi", QCoreApplication::tr("导入 MIDI"), "Ctrl+M", "slice", nullptr, sliceAct("importMidi")});
         qInfo("UI 动作注册完成：%d 个", static_cast<int>(uiActions.ids().size()));
 
         // keymap.json 覆写快捷键（--keymap <path>；皮肤可携带）。须在 loadFromModule 前应用，

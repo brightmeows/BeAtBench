@@ -236,6 +236,10 @@ Item {
     function resetZoom() {
         if (chartView) chartView.resetZoom()
     }
+    /// 键盘缩放一步（视口中心；与滚轮同档，不跟光标以免无鼠标位置）。
+    function zoomStep(up) {
+        if (chartView) chartView.zoomStep(chartView.height / 2, up)
+    }
 
     /// 2026-09「加一小节」：透传到 ChartView → ChartViewItem.extendMeasures()。
     function extendMeasures() {

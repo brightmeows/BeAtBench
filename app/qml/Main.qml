@@ -260,6 +260,14 @@ ApplicationWindow {
                enabled: currentPage === 0 && !window.textInputFocused
                onActivated: uiActions.invoke("tool.mine") }
 
+    // 缩放（编辑页 + 切音页共用 - / =；文本框让行）
+    Shortcut { sequence: uiActions.shortcut("view.zoomIn")
+               enabled: !window.textInputFocused && (currentPage === 0 || currentPage === 1)
+               onActivated: uiActions.invoke("view.zoomIn") }
+    Shortcut { sequence: uiActions.shortcut("view.zoomOut")
+               enabled: !window.textInputFocused && (currentPage === 0 || currentPage === 1)
+               onActivated: uiActions.invoke("view.zoomOut") }
+
     // Esc：取消未完成的 LN 头（LNTYPE 2 放置；文本输入焦点时让行）
     // 注意：Esc 不在注册表中（非全局动作），保留硬编码
     Shortcut { sequence: "Esc"; enabled: currentPage === 0 && editorTool === "ln" &&
@@ -496,7 +504,7 @@ ApplicationWindow {
                                enabled: chartMeta !== null
                                onClicked: { editPage.resetZoom(); setStatus(qsTr("缩放已重置")) }
                                ToolTip.visible: hovered
-                               ToolTip.text: qsTr("当前缩放（点击恢复 100% = 小节高度 96px）；Ctrl+滚轮缩放（最大 500%）") }
+                               ToolTip.text: qsTr("当前缩放（点击恢复 100% = 小节高度 96px）；-/= 或 Ctrl+滚轮缩放（最大 500%）") }
                 BbCheckBox {
                     text: qsTr("光标缩放")
                     checked: window.zoomToCursor
@@ -959,6 +967,8 @@ ApplicationWindow {
         target: sliceWorkspace
         function onSamplesPlaced() { session.refreshSamples() }
         function onSliceHistoryChanged() { updateActionStates() }
+        function onSlicesChanged() { updateActionStates() }
+        function onAudioChanged() { updateActionStates() }
     }
     Timer { id: sliceExportRetry; interval: 300; repeat: true; onTriggered: doDebugSliceExport() }
     function doDebugSliceExport() {
@@ -1415,6 +1425,14 @@ ApplicationWindow {
     }
     function uiActionToggleChannelIds() { window.showChannelIds = !window.showChannelIds }
     function uiActionToggleExtras() { window.showExtras = !window.showExtras }
+    function zoomInView() {
+        if (currentPage === 1) slicePage.sliceAct("zoomIn")
+        else if (currentPage === 0 && editPage) editPage.zoomStep(true)
+    }
+    function zoomOutView() {
+        if (currentPage === 1) slicePage.sliceAct("zoomOut")
+        else if (currentPage === 0 && editPage) editPage.zoomStep(false)
+    }
     function uiActionMirror() { transformSelection(true, 0) }
     function uiActionRotate() { transformSelection(false, 1) }
     /// 注册表 enabled 状态同步（QML 状态变化 → setEnabled → stateChanged → 菜单/工具条重算）。
@@ -1446,6 +1464,13 @@ ApplicationWindow {
         setActionEnabled("tool.note", currentPage === 0)
         setActionEnabled("tool.ln", currentPage === 0)
         setActionEnabled("tool.mine", currentPage === 0)
+        setActionEnabled("view.zoomIn", currentPage === 0 || currentPage === 1)
+        setActionEnabled("view.zoomOut", currentPage === 0 || currentPage === 1)
+        setActionEnabled("slice.detect", currentPage === 1)
+        setActionEnabled("slice.clearSlices", currentPage === 1 && sliceWorkspace.hasSlices)
+        setActionEnabled("slice.export", currentPage === 1 && sliceWorkspace.hasSlices && sliceWorkspace.hasAudio)
+        setActionEnabled("slice.importAudio", currentPage === 1)
+        setActionEnabled("slice.importMidi", currentPage === 1)
         setActionEnabled("view.toggleGrid", chartMeta !== null)
     }
     /// 勾选态同步（doc/09 §12 打通）：QML 会话状态 → 注册表 `setChecked`（checkable 动作）。
