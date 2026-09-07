@@ -68,8 +68,8 @@ QVariantList SliceWorkspace::occupiedWavIds() const {
 }
 
 int SliceWorkspace::nextFreeWavId() const {
-    std::set<std::uint32_t> taken(occupied_wav_ids(m_chartSession).begin(),
-                                  occupied_wav_ids(m_chartSession).end());
+    const auto occupied = occupied_wav_ids(m_chartSession);
+    const std::set<std::uint32_t> taken(occupied.begin(), occupied.end());
     std::uint32_t cand = 1;
     while (taken.count(cand)) ++cand;
     return static_cast<int>(cand);

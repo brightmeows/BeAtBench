@@ -108,6 +108,22 @@ add_test(NAME reference_track_tests COMMAND reference_track_test)
 # 配置（gtest 走 FetchContent）。
 find_package(Qt6 COMPONENTS Core QUIET)
 if (Qt6Core_FOUND)
+    # Bridge queries use real session/workspace implementations without opening audio devices.
+    add_executable(slice_workspace_test slice_workspace_test.cpp
+        ${CMAKE_SOURCE_DIR}/app/bridge/SliceWorkspace.cpp
+        ${CMAKE_SOURCE_DIR}/app/bridge/SliceWorkspace.hpp
+        ${CMAKE_SOURCE_DIR}/app/bridge/ChartSession.cpp
+        ${CMAKE_SOURCE_DIR}/app/bridge/ChartSession.hpp
+        ${CMAKE_SOURCE_DIR}/app/bridge/AudioEngine.cpp
+        ${CMAKE_SOURCE_DIR}/app/bridge/AudioEngine.hpp)
+    target_include_directories(slice_workspace_test PRIVATE ${CMAKE_SOURCE_DIR}/app)
+    target_link_libraries(slice_workspace_test PRIVATE
+        beatbench_core beatbench_audio Qt6::Core GTest::gtest_main)
+    set_target_properties(slice_workspace_test PROPERTIES AUTOMOC ON)
+    beatbench_set_warnings(slice_workspace_test)
+    add_test(NAME slice_workspace_tests COMMAND slice_workspace_test)
+    set_tests_properties(slice_workspace_tests PROPERTIES TIMEOUT 20)
+
     add_executable(ui_action_registry_test ui_action_registry_test.cpp
         ${CMAKE_SOURCE_DIR}/app/bridge/UiActionRegistry.cpp
         ${CMAKE_SOURCE_DIR}/app/bridge/UiActionRegistry.hpp)  # Q_OBJECT 头须显式列入（AUTOMOC 扫描不可靠）
