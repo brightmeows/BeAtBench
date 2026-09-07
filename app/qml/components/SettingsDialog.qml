@@ -51,30 +51,48 @@ Dialog {
             anchors.rightMargin: 10
             spacing: 8
             Item { Layout.fillWidth: true }
-            // 关闭按钮（主题化 BbToolButton）
             BbToolButton {
-                text: qsTr("关闭")
-                onClicked: root.close()
+                text: qsTr("确定")
+                onClicked: {
+                    uiActions.saveUserKeymap()
+                    root.keymapDraft = null
+                    root.close()
+                }
+            }
+            BbToolButton {
+                text: qsTr("取消")
+                onClicked: {
+                    if (root.keymapDraft !== null)
+                        uiActions.restoreUserKeymap(root.keymapDraft)
+                    root.keymapDraft = null
+                    root.close()
+                }
             }
         }
     }
 
     /// 皮肤切换请求（Main.qml 处理：applySkinByName + keymap 同步）
     signal skinRequested(string name)
+    /// 快捷键列表刷新（Main.uiStateTick）
+    property int keymapTick: 0
+    property var keymapDraft: null
+    onClosed: {
+        if (root.keymapDraft !== null) {
+            uiActions.restoreUserKeymap(root.keymapDraft)
+            root.keymapDraft = null
+        }
+    }
 
     // 左导航 item 模型（顺序 = 显示顺序；done = 已实现内容）
     property var sections: [
         { id: "display",  label: qsTr("显示"),  done: true  },
         { id: "audio",    label: qsTr("音频"),  done: true  },
         { id: "editor",   label: qsTr("编辑器"), done: false },
-        { id: "shortcut", label: qsTr("快捷键"), done: false }
+        { id: "shortcut", label: qsTr("快捷键"), done: true  }
     ]
     property string currentSection: "audio"
 
-    onOpened: {
-        // 打开时刷新设备列表与设置（可能设备热插拔/外部变更）
-        // （audioEngine.devices 属性绑定已自动，此处确保首帧正确）
-    }
+    onOpened: keymapDraft = uiActions.userKeymapSnapshot()
 
     // ⚠️ contentItem 用 Item + 内部 RowLayout（anchors.fill）——直接 RowLayout 作
     // contentItem 不会自动 fill（Layout 属性只在布局容器内有效）→ 白色默认背景露出（M4.2 实测）。
@@ -411,10 +429,137 @@ Dialog {
                             color: Theme.textFaint; font.pixelSize: Theme.fsSmall }
                 }
 
-                // ---- 快捷键（占位） ----
+                // ---- 快捷键 ----
                 ColumnLayout {
-                    Label { text: qsTr("快捷键（占位）——keymap.json 覆写入口，后置。")
-                            color: Theme.textFaint; font.pixelSize: Theme.fsSmall }
+                    spacing: 8
+                    Label {
+                        text: qsTr("点一行后按下新组合。Esc 取消录制，Backspace 清除该动作快捷键。确定后保存，取消则还原。")
+                        color: Theme.textMuted
+                        font.pixelSize: Theme.fsSmall
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+                    Label {
+                        id: shortcutHint
+                        visible: text.length > 0
+                        color: Theme.danger
+                        font.pixelSize: Theme.fsTiny
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+                    ListView {
+                        id: shortcutList
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        flickableDirection: Flickable.VerticalFlick
+                        // 文件管理器式：一格滚轮 ≈ 三行。
+                        property int rowHeight: 28
+                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                        property string captureId: ""
+                        readonly property var actionIds: {
+                            var tick = root.keymapTick
+                            var src = uiActions.ids()
+                            var out = []
+                            for (var i = 0; i < src.length; ++i)
+                                if (!uiActions.isSeparator(src[i])) out.push(src[i])
+                            return out
+                        }
+                        model: actionIds
+                        delegate: Rectangle {
+                            required property string modelData
+                            width: shortcutList.width
+                            height: shortcutList.rowHeight
+                            color: shortcutList.captureId === modelData ? Theme.primarySoft : "transparent"
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 4
+                                anchors.rightMargin: 4
+                                spacing: 8
+                                Label {
+                                    text: uiActions.category(modelData)
+                                    color: Theme.textFaint
+                                    font.pixelSize: Theme.fsTiny
+                                    Layout.preferredWidth: 48
+                                }
+                                Label {
+                                    text: uiActions.label(modelData)
+                                    color: Theme.text
+                                    font.pixelSize: Theme.fsSmall
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+                                Label {
+                                    text: shortcutList.captureId === modelData
+                                          ? qsTr("按下新键…")
+                                          : ((root.keymapTick >= 0 ? uiActions.shortcut(modelData) : "") || qsTr("无"))
+                                    color: shortcutList.captureId === modelData ? Theme.primary : Theme.accent
+                                    font.family: Theme.fontMono
+                                    font.pixelSize: Theme.fsSmall
+                                    Layout.preferredWidth: 140
+                                    horizontalAlignment: Text.AlignRight
+                                }
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    shortcutHint.text = ""
+                                    shortcutList.captureId = modelData
+                                    shortcutList.forceActiveFocus()
+                                }
+                            }
+                        }
+                        WheelHandler {
+                            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                            onWheel: (event) => {
+                                const maxY = Math.max(0, shortcutList.contentHeight - shortcutList.height)
+                                if (maxY <= 0) { event.accepted = true; return }
+                                const step = shortcutList.rowHeight * 3
+                                const dir = event.angleDelta.y !== 0 ? event.angleDelta.y
+                                                                    : event.pixelDelta.y
+                                if (dir === 0) { event.accepted = true; return }
+                                shortcutList.contentY = Math.max(0, Math.min(maxY,
+                                    shortcutList.contentY - Math.sign(dir) * step))
+                                event.accepted = true
+                            }
+                        }
+                        Keys.onPressed: (event) => {
+                            if (shortcutList.captureId === "") return
+                            event.accepted = true
+                            if (event.key === Qt.Key_Escape) {
+                                shortcutList.captureId = ""
+                                shortcutHint.text = ""
+                                return
+                            }
+                            if (event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete) {
+                                uiActions.setShortcut(shortcutList.captureId, "")
+                                shortcutList.captureId = ""
+                                shortcutHint.text = ""
+                                return
+                            }
+                            const seq = uiActions.sequenceFromKey(event.key, event.modifiers, event.text)
+                            if (!seq) return
+                            const clash = uiActions.conflictId(shortcutList.captureId, seq)
+                            if (clash !== "") {
+                                shortcutHint.text = qsTr("与「%1」冲突，未改绑").arg(uiActions.label(clash))
+                                return
+                            }
+                            uiActions.setShortcut(shortcutList.captureId, seq)
+                            shortcutList.captureId = ""
+                            shortcutHint.text = ""
+                        }
+                    }
+                    RowLayout {
+                        BbToolButton {
+                            text: qsTr("恢复全部默认")
+                            onClicked: {
+                                uiActions.clearUserKeymap()
+                                shortcutList.captureId = ""
+                                shortcutHint.text = ""
+                            }
+                        }
+                    }
                 }
             }
         }

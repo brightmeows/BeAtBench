@@ -36,6 +36,8 @@ ApplicationWindow {
     property string chartPath: ""        // 当前谱面路径（info 返回的规范化路径）
     /// 元信息面板草稿（未点面板「保存」、也未 Ctrl+S）也算未保存。
     property bool metaDraftDirty: false
+    /// 菜单/工具条 enabled 绑定重算（uiActions.stateChanged +1）。Shortcut.sequence 直接读 shortcut()。
+    property int uiStateTick: 0
     property string statusText: qsTr("就绪")
     property string currentSampleId: ""  // 当前采样（会话状态，M3 放置落点）
     property string currentBmpId: ""     // 当前 #BMP（视口 BGA 列放置用；BGA 面板行点击设置）
@@ -221,63 +223,63 @@ ApplicationWindow {
     // 序列 + enabled 条件（含文本焦点让行等注册表不建模的细节）。
 
     // 文件动作
-    Shortcut { sequence: uiActions.shortcut("file.new")
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("file.new") : ""
                onActivated: uiActions.invoke("file.new") }
-    Shortcut { sequence: uiActions.shortcut("file.open")
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("file.open") : ""
                onActivated: uiActions.invoke("file.open") }
-    Shortcut { sequence: uiActions.shortcut("file.save")
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("file.save") : ""
                enabled: chartMeta !== null
                onActivated: uiActions.invoke("file.save") }
-    Shortcut { sequence: uiActions.shortcut("file.saveAs")
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("file.saveAs") : ""
                enabled: chartMeta !== null
                onActivated: uiActions.invoke("file.saveAs") }
-    Shortcut { sequence: uiActions.shortcut("file.exit")
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("file.exit") : ""
                onActivated: uiActions.invoke("file.exit") }
 
     // 编辑动作
-    Shortcut { sequence: uiActions.shortcut("edit.undo")
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("edit.undo") : ""
                enabled: !window.textInputFocused &&
                         ((currentPage === 0 && chartMeta !== null) ||
                          (currentPage === 1 && sliceWorkspace.canUndoSlice))
                onActivated: uiActions.invoke("edit.undo") }
-    Shortcut { sequence: uiActions.shortcut("edit.redo")
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("edit.redo") : ""
                enabled: !window.textInputFocused &&
                         ((currentPage === 0 && chartMeta !== null) ||
                          (currentPage === 1 && sliceWorkspace.canRedoSlice))
                onActivated: uiActions.invoke("edit.redo") }
-    Shortcut { sequence: uiActions.shortcut("edit.copy")
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("edit.copy") : ""
                enabled: chartMeta !== null && currentPage === 0 &&
                         !window.textInputFocused && window.selectionRefs.length > 0
                onActivated: uiActions.invoke("edit.copy") }
-    Shortcut { sequence: uiActions.shortcut("edit.paste")
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("edit.paste") : ""
                enabled: chartMeta !== null && currentPage === 0 && !window.textInputFocused
                onActivated: uiActions.invoke("edit.paste") }
-    Shortcut { sequence: uiActions.shortcut("edit.delete")
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("edit.delete") : ""
                enabled: chartMeta !== null && currentPage === 0
                onActivated: uiActions.invoke("edit.delete") }
 
     // 工具动作（数字 1-5：文本输入焦点时让行）
-    Shortcut { sequence: uiActions.shortcut("tool.pan")
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("tool.pan") : ""
                enabled: currentPage === 0 && !window.textInputFocused
                onActivated: uiActions.invoke("tool.pan") }
-    Shortcut { sequence: uiActions.shortcut("tool.select")
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("tool.select") : ""
                enabled: currentPage === 0 && !window.textInputFocused
                onActivated: uiActions.invoke("tool.select") }
-    Shortcut { sequence: uiActions.shortcut("tool.note")
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("tool.note") : ""
                enabled: currentPage === 0 && !window.textInputFocused
                onActivated: uiActions.invoke("tool.note") }
-    Shortcut { sequence: uiActions.shortcut("tool.ln")
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("tool.ln") : ""
                enabled: currentPage === 0 && !window.textInputFocused
                onActivated: uiActions.invoke("tool.ln") }
-    Shortcut { sequence: uiActions.shortcut("tool.mine")
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("tool.mine") : ""
                enabled: currentPage === 0 && !window.textInputFocused
                onActivated: uiActions.invoke("tool.mine") }
 
     // 缩放（编辑页 + 切音页共用 - / =；文本框让行）
-    Shortcut { sequence: uiActions.shortcut("view.zoomIn")
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("view.zoomIn") : ""
                enabled: !window.textInputFocused && (currentPage === 0 || currentPage === 1)
                onActivated: uiActions.invoke("view.zoomIn") }
-    Shortcut { sequence: uiActions.shortcut("view.zoomOut")
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("view.zoomOut") : ""
                enabled: !window.textInputFocused && (currentPage === 0 || currentPage === 1)
                onActivated: uiActions.invoke("view.zoomOut") }
 
@@ -326,7 +328,7 @@ ApplicationWindow {
                     id: fileItem
                     required property string modelData
                     readonly property bool isSep: uiActions.isSeparator(modelData)
-                    text: isSep ? "" : uiActions.label(modelData) + "    " + uiActions.shortcut(modelData)
+                    text: isSep ? "" : uiActions.label(modelData) + "    " + (uiActions.shortcutRevision >= 0 ? uiActions.shortcut(modelData) : "")
                     enabled: !isSep && window.uiStateTick >= 0 && uiActions.enabled(modelData)
                     visible: true
                     onTriggered: if (!isSep) uiActions.invoke(modelData)
@@ -362,7 +364,7 @@ ApplicationWindow {
                     id: editItem
                     required property string modelData
                     readonly property bool isSep: uiActions.isSeparator(modelData)
-                    text: isSep ? "" : uiActions.label(modelData) + "    " + uiActions.shortcut(modelData)
+                    text: isSep ? "" : uiActions.label(modelData) + "    " + (uiActions.shortcutRevision >= 0 ? uiActions.shortcut(modelData) : "")
                     enabled: !isSep && window.uiStateTick >= 0 && uiActions.enabled(modelData)
                     onTriggered: if (!isSep) uiActions.invoke(modelData)
                     background: Rectangle {
@@ -1232,7 +1234,7 @@ ApplicationWindow {
         id: unsavedConfirmDialog
         title: qsTr("未保存的更改")
         width: 420
-        height: 186
+        height: 200
         showCancel: false
         Label {
             Layout.fillWidth: true
@@ -1659,7 +1661,6 @@ ApplicationWindow {
     // 菜单/工具条 enabled 绑定依赖的「重算触发器」：QML 绑定不会因函数返回值自动重算，
     // 绑定到 uiStateTick（stateChanged 信号 +1），表达式统一形如
     // `enabled: window.uiStateTick >= 0 && uiActions.enabled("id")`。
-    property int uiStateTick: 0
     Connections {
         target: uiActions
         function onStateChanged() { window.uiStateTick++ }
@@ -1693,6 +1694,7 @@ ApplicationWindow {
     // 首选项（M4.2）：音频设置 + 显示（皮肤）。皮肤切换经信号 → applySkinByName（与菜单同源）。
     SettingsDialog {
         id: settingsDialog
+        keymapTick: window.uiStateTick
         onSkinRequested: (name) => window.applySkinByName(name)
     }
 

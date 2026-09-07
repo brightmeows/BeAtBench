@@ -392,6 +392,7 @@ int main(int argc, char** argv) {
             }
         }
         if (!keymapPath.isEmpty()) loadKeymap(keymapPath, uiActions);
+        else uiActions.loadUserKeymap();
     }
 
     engine.loadFromModule(QStringLiteral("BeatBench"), QStringLiteral("Main"));

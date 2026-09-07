@@ -4,7 +4,9 @@
 
 #include <QDebug>
 #include <QFile>
+#include <QSettings>
 #include <QTextStream>
+#include <Qt>
 
 #include <algorithm>
 
@@ -121,9 +123,9 @@ QString UiActionRegistry::label(const QString& id) const {
 QString UiActionRegistry::shortcut(const QString& id) const {
     auto* def = findConst(id);
     if (!def) return QString();
-    // keymap 覆写优先（setShortcut）；未覆写用注册时的默认值
-    const auto it = m_shortcutOverride.find(id);
-    return it != m_shortcutOverride.end() ? it->second : def->shortcut;
+    if (const auto it = m_userKeymap.find(id); it != m_userKeymap.end()) return it->second;
+    if (const auto it = m_skinKeymap.find(id); it != m_skinKeymap.end()) return it->second;
+    return def->shortcut;
 }
 
 QString UiActionRegistry::category(const QString& id) const {
@@ -230,27 +232,27 @@ void UiActionRegistry::setShortcut(const QString& id, const QString& seq) {
         qWarning() << "UiActionRegistry::setShortcut: unknown action" << id;
         return;
     }
-    const auto it = m_shortcutOverride.find(id);
-    if (it != m_shortcutOverride.end() && it->second == seq) return;
-    m_shortcutOverride[id] = seq;
+    const auto it = m_userKeymap.find(id);
+    if (it != m_userKeymap.end() && it->second == seq) return;
+    m_userKeymap[id] = seq;  // 空串 = 用户显式解绑（不回落到皮肤/默认）
+    bumpShortcutRevision();
     emit actionStateChanged(id);
     emit stateChanged();
 }
 
 int UiActionRegistry::applyKeymap(const QVariantMap& keymap) {
+    m_skinKeymap.clear();
     int applied = 0;
     for (auto it = keymap.constBegin(); it != keymap.constEnd(); ++it) {
         if (!findConst(it.key())) {
             qWarning() << "UiActionRegistry::applyKeymap: unknown id" << it.key();
             continue;
         }
-        const QString seq = it.value().toString();
-        m_shortcutOverride[it.key()] = seq;
+        m_skinKeymap[it.key()] = it.value().toString();
         ++applied;
     }
-    if (applied > 0) {
-        emit stateChanged();
-    }
+    bumpShortcutRevision();
+    emit stateChanged();
     return applied;
 }
 
@@ -271,7 +273,6 @@ int UiActionRegistry::applyKeymapFile(const QString& path) {
                                QString::fromUtf8(v.as_str().c_str()));
             }
         }
-        // 空 map（或无 keymap 文件）→ 清除既有快捷键覆写（切回默认皮肤时恢复内置默认）
         const int n = applyKeymap(map);
         qInfo("keymap 应用：%d 个（%s）", n, qPrintable(path));
         return n;
@@ -283,10 +284,127 @@ int UiActionRegistry::applyKeymapFile(const QString& path) {
 }
 
 void UiActionRegistry::clearKeymap() {
-    if (m_shortcutOverride.empty()) return;
-    m_shortcutOverride.clear();
+    if (m_skinKeymap.empty()) return;
+    m_skinKeymap.clear();
+    bumpShortcutRevision();
     emit stateChanged();
-    qInfo("keymap 覆写已清除（恢复内置默认快捷键）");
+}
+
+QString UiActionRegistry::defaultShortcut(const QString& id) const {
+    auto* def = findConst(id);
+    return def ? def->shortcut : QString();
+}
+
+int UiActionRegistry::loadUserKeymap() {
+    QSettings s;
+    s.beginGroup(QStringLiteral("keymap"));
+    const QStringList keys = s.childKeys();
+    int n = 0;
+    for (const QString& id : keys) {
+        if (!findConst(id)) continue;
+        m_userKeymap[id] = s.value(id).toString();
+        ++n;
+    }
+    s.endGroup();
+    if (n > 0) {
+        bumpShortcutRevision();
+        emit stateChanged();
+    }
+    return n;
+}
+
+void UiActionRegistry::saveUserKeymap() const {
+    QSettings s;
+    s.beginGroup(QStringLiteral("keymap"));
+    s.remove(QString());
+    for (const auto& [id, seq] : m_userKeymap)
+        s.setValue(id, seq);
+    s.endGroup();
+}
+
+void UiActionRegistry::clearUserKeymap() {
+    if (m_userKeymap.empty()) return;
+    m_userKeymap.clear();
+    bumpShortcutRevision();
+    emit stateChanged();
+}
+
+QVariantMap UiActionRegistry::userKeymapSnapshot() const {
+    QVariantMap m;
+    for (const auto& [id, seq] : m_userKeymap)
+        m.insert(id, seq);
+    return m;
+}
+
+void UiActionRegistry::restoreUserKeymap(const QVariantMap& map) {
+    m_userKeymap.clear();
+    for (auto it = map.constBegin(); it != map.constEnd(); ++it) {
+        if (!findConst(it.key())) continue;
+        m_userKeymap[it.key()] = it.value().toString();
+    }
+    bumpShortcutRevision();
+    emit stateChanged();
+}
+
+void UiActionRegistry::bumpShortcutRevision() {
+    ++m_shortcutRevision;
+    emit shortcutRevisionChanged();
+}
+
+QString UiActionRegistry::conflictId(const QString& id, const QString& seq) const {
+    if (seq.isEmpty()) return {};
+    for (const auto& a : m_actions) {
+        if (a.separator || a.id == id) continue;
+        if (shortcut(a.id) == seq) return a.id;
+    }
+    return {};
+}
+
+QString UiActionRegistry::sequenceFromKey(int key, int modifiers, const QString& text) const {
+    if (key == Qt::Key_Control || key == Qt::Key_Shift || key == Qt::Key_Alt ||
+        key == Qt::Key_Meta || key == Qt::Key_unknown)
+        return {};
+    QString name;
+    switch (key) {
+        case Qt::Key_Escape: name = QStringLiteral("Esc"); break;
+        case Qt::Key_Backspace: name = QStringLiteral("Backspace"); break;
+        case Qt::Key_Return: name = QStringLiteral("Return"); break;
+        case Qt::Key_Enter: name = QStringLiteral("Enter"); break;
+        case Qt::Key_Insert: name = QStringLiteral("Ins"); break;
+        case Qt::Key_Delete: name = QStringLiteral("Del"); break;
+        case Qt::Key_Home: name = QStringLiteral("Home"); break;
+        case Qt::Key_End: name = QStringLiteral("End"); break;
+        case Qt::Key_Left: name = QStringLiteral("Left"); break;
+        case Qt::Key_Up: name = QStringLiteral("Up"); break;
+        case Qt::Key_Right: name = QStringLiteral("Right"); break;
+        case Qt::Key_Down: name = QStringLiteral("Down"); break;
+        case Qt::Key_PageUp: name = QStringLiteral("PageUp"); break;
+        case Qt::Key_PageDown: name = QStringLiteral("PageDown"); break;
+        case Qt::Key_Space: name = QStringLiteral("Space"); break;
+        case Qt::Key_Plus: name = QLatin1String("+"); break;
+        case Qt::Key_Minus: name = QLatin1String("-"); break;
+        case Qt::Key_Equal: name = QLatin1String("="); break;
+        default:
+            if (key >= Qt::Key_F1 && key <= Qt::Key_F12)
+                name = QStringLiteral("F%1").arg(key - Qt::Key_F1 + 1);
+            else if (key >= Qt::Key_A && key <= Qt::Key_Z)
+                name = QChar(QLatin1Char('A' + (key - Qt::Key_A)));
+            else if (key >= Qt::Key_0 && key <= Qt::Key_9)
+                name = QChar(QLatin1Char('0' + (key - Qt::Key_0)));
+            else if (text.size() == 1) {
+                const QChar ch = text.at(0).toUpper();
+                if (ch.isLetterOrNumber()) name = ch;
+            }
+            break;
+    }
+    if (name.isEmpty()) return {};
+    QStringList parts;
+    if (modifiers & Qt::ControlModifier) parts << QStringLiteral("Ctrl");
+    if (modifiers & Qt::ShiftModifier) parts << QStringLiteral("Shift");
+    if (modifiers & Qt::AltModifier) parts << QStringLiteral("Alt");
+    if (modifiers & Qt::MetaModifier) parts << QStringLiteral("Meta");
+    parts << name;
+    return parts.join(QLatin1Char('+'));
 }
 
 }  // namespace beatbench::app

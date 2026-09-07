@@ -7,6 +7,7 @@
 
 #include <QFile>
 #include <QString>
+#include <Qt>
 #include <QTemporaryDir>
 #include <QVariantMap>
 
@@ -204,10 +205,10 @@ TEST(UiActionRegistry, KeymapOverrideShortcut) {
     km.insert(QStringLiteral("unknown.id"), QStringLiteral("Ctrl+Q"));
     const int n = r.applyKeymap(km);
     EXPECT_EQ(n, 2);  // file.save + edit.undo（unknown.id 跳过）
-    EXPECT_EQ(r.shortcut(QStringLiteral("file.save")), QStringLiteral("Ctrl+Alt+S"));
+    // 用户层优先于皮肤层
+    EXPECT_EQ(r.shortcut(QStringLiteral("file.save")), QStringLiteral("Ctrl+Shift+S"));
     EXPECT_EQ(r.shortcut(QStringLiteral("edit.undo")), QStringLiteral("Ctrl+Y"));
     EXPECT_EQ(state, 2);
-    // 空序列 = 清除快捷键
     r.setShortcut(QStringLiteral("file.save"), QString());
     EXPECT_TRUE(r.shortcut(QStringLiteral("file.save")).isEmpty());
 }
@@ -240,6 +241,61 @@ TEST(UiActionRegistry, KeymapFileApplyAndClear) {
 
     // 缺失文件 → -1（不阻塞，不崩溃）
     EXPECT_EQ(r.applyKeymapFile(QStringLiteral("/nonexistent/keymap.json")), -1);
+}
+
+TEST(UiActionRegistry, DefaultShortcutAndConflictId) {
+    UiActionRegistry r;
+    UiActionDef a = make_def(QStringLiteral("file.save"));
+    a.shortcut = QStringLiteral("Ctrl+S");
+    r.add(a);
+    UiActionDef b = make_def(QStringLiteral("file.open"));
+    b.shortcut = QStringLiteral("Ctrl+O");
+    r.add(b);
+    EXPECT_EQ(r.defaultShortcut(QStringLiteral("file.save")), QStringLiteral("Ctrl+S"));
+    r.setShortcut(QStringLiteral("file.save"), QStringLiteral("Ctrl+Alt+S"));
+    EXPECT_EQ(r.shortcut(QStringLiteral("file.save")), QStringLiteral("Ctrl+Alt+S"));
+    EXPECT_EQ(r.defaultShortcut(QStringLiteral("file.save")), QStringLiteral("Ctrl+S"));
+    EXPECT_EQ(r.conflictId(QStringLiteral("file.save"), QStringLiteral("Ctrl+O")),
+              QStringLiteral("file.open"));
+    EXPECT_TRUE(r.conflictId(QStringLiteral("file.save"), QStringLiteral("Ctrl+S")).isEmpty());
+    EXPECT_TRUE(r.conflictId(QStringLiteral("file.save"), QString()).isEmpty());
+}
+
+TEST(UiActionRegistry, UserKeymapOverridesSkin) {
+    UiActionRegistry r;
+    UiActionDef d = make_def(QStringLiteral("file.save"));
+    d.shortcut = QStringLiteral("Ctrl+S");
+    r.add(d);
+    QVariantMap skin;
+    skin.insert(QStringLiteral("file.save"), QStringLiteral("Ctrl+Alt+S"));
+    r.applyKeymap(skin);
+    EXPECT_EQ(r.shortcut(QStringLiteral("file.save")), QStringLiteral("Ctrl+Alt+S"));
+    r.setShortcut(QStringLiteral("file.save"), QStringLiteral("F9"));
+    EXPECT_EQ(r.shortcut(QStringLiteral("file.save")), QStringLiteral("F9"));
+    r.clearUserKeymap();
+    EXPECT_EQ(r.shortcut(QStringLiteral("file.save")), QStringLiteral("Ctrl+Alt+S"));
+    r.clearKeymap();
+    EXPECT_EQ(r.shortcut(QStringLiteral("file.save")), QStringLiteral("Ctrl+S"));
+}
+
+TEST(UiActionRegistry, RestoreUserKeymapSnapshot) {
+    UiActionRegistry r;
+    UiActionDef d = make_def(QStringLiteral("file.save"));
+    d.shortcut = QStringLiteral("Ctrl+S");
+    r.add(d);
+    r.setShortcut(QStringLiteral("file.save"), QStringLiteral("F8"));
+    const QVariantMap snap = r.userKeymapSnapshot();
+    r.setShortcut(QStringLiteral("file.save"), QStringLiteral("F9"));
+    EXPECT_EQ(r.shortcut(QStringLiteral("file.save")), QStringLiteral("F9"));
+    r.restoreUserKeymap(snap);
+    EXPECT_EQ(r.shortcut(QStringLiteral("file.save")), QStringLiteral("F8"));
+}
+
+TEST(UiActionRegistry, SequenceFromKey) {
+    UiActionRegistry r;
+    EXPECT_EQ(r.sequenceFromKey(Qt::Key_S, Qt::ControlModifier, QString()),
+              QStringLiteral("Ctrl+S"));
+    EXPECT_TRUE(r.sequenceFromKey(Qt::Key_Control, Qt::ControlModifier, QString()).isEmpty());
 }
 
 TEST(UiActionRegistry, ToolbarGroupMetadata) {

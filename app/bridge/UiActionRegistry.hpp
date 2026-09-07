@@ -78,8 +78,11 @@ public:
     /// 动作标签（人类可读名）。
     Q_INVOKABLE QString label(const QString& id) const;
 
-    /// 动作快捷键文本（空 = 无）。
+    /// 动作快捷键文本（空 = 无）。优先级：用户覆写 > 皮肤 keymap > 注册默认。
     Q_INVOKABLE QString shortcut(const QString& id) const;
+    /// Shortcut.sequence 绑定此 revision，改绑后 QML 重算（函数返回值本身无 NOTIFY）。
+    Q_PROPERTY(int shortcutRevision READ shortcutRevision NOTIFY shortcutRevisionChanged)
+    int shortcutRevision() const { return m_shortcutRevision; }
 
     /// 动作类别（域）。
     Q_INVOKABLE QString category(const QString& id) const;
@@ -111,23 +114,28 @@ public:
     /// 设置 toggle 动作的勾选态（处理器内部调用；非 checkable 动作调用 = qWarning）。
     Q_INVOKABLE void setChecked(const QString& id, bool checked);
 
-    /// 覆写动作快捷键（keymap.json：动作 id → 快捷键文本；皮肤可携带 keymap）。
-    /// 未知 id = qWarning + 跳过；空序列 = 清除快捷键。变化 → stateChanged。
+    /// 用户层改绑（设置页）。空序列 = 显式解绑（该动作无快捷键）。变化 → stateChanged。
     Q_INVOKABLE void setShortcut(const QString& id, const QString& seq);
 
-    /// 批量应用 keymap（QVariantMap：id → 快捷键文本）；返回成功覆写的数量。
+    /// 皮肤 keymap（运行时换肤）。不改用户覆写。
     int applyKeymap(const QVariantMap& keymap);
-
-    /// 从 keymap.json 文件应用快捷键（运行时换肤用；皮肤目录携带 keymap.json）。
-    /// 文件不存在/解析失败返回 -1（不阻塞）；空 keymap 文件 = 清除既有覆写（切回默认）。
     Q_INVOKABLE int applyKeymapFile(const QString& path);
+    Q_INVOKABLE void clearKeymap();  ///< 清皮肤层（切回默认皮肤）
 
-    /// 清除全部快捷键覆写（切回默认皮肤：恢复注册时的内置默认快捷键）。
-    Q_INVOKABLE void clearKeymap();
+    Q_INVOKABLE QString defaultShortcut(const QString& id) const;
+    Q_INVOKABLE int loadUserKeymap();
+    Q_INVOKABLE void saveUserKeymap() const;
+    Q_INVOKABLE void clearUserKeymap();  ///< 设置页「恢复全部默认」：清用户层，保留皮肤层
+    Q_INVOKABLE QVariantMap userKeymapSnapshot() const;
+    Q_INVOKABLE void restoreUserKeymap(const QVariantMap& map);
+    Q_INVOKABLE QString conflictId(const QString& id, const QString& seq) const;
+    /// QML Keys 事件 → Qt 序列（Ctrl+S）。修饰键单独按下返回空。
+    Q_INVOKABLE QString sequenceFromKey(int key, int modifiers, const QString& text) const;
 
 signals:
     /// enabled/checked 状态变化 → QML 菜单/工具条刷新。
     void stateChanged();
+    void shortcutRevisionChanged();
 
     /// 单个动作状态变化（优化：避免全量刷新）。
     void actionStateChanged(const QString& id);
@@ -137,8 +145,11 @@ private:
     const UiActionDef* findConst(const QString& id) const;
 
     std::vector<UiActionDef> m_actions;
-    std::map<QString, bool> m_enabledOverride;   // setEnabled 覆写（id → enabled）
-    std::map<QString, QString> m_shortcutOverride;  // setShortcut 覆写（id → 快捷键文本）
+    std::map<QString, bool> m_enabledOverride;
+    std::map<QString, QString> m_skinKeymap;   // 皮肤 keymap.json
+    std::map<QString, QString> m_userKeymap;   // 设置页 / QSettings
+    int m_shortcutRevision = 0;
+    void bumpShortcutRevision();
 };
 
 }  // namespace beatbench::app

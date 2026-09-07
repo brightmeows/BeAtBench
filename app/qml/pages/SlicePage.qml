@@ -207,20 +207,20 @@ Item {
     // ---- M6.4f 键盘快捷键（woslicer 系 2026-09；序列来自 uiActions 注册表——将来设置页
     // 改绑（setShortcut/keymap.json）自动生效；enabled 门控 = 页面激活 + 无文本输入 + 无对话框；
     // ↑↓/←→/空格 与编辑页快捷键按 currentPage 互斥（编辑页 Space 有 currentPage===0 门控）） ----
-    Shortcut { sequence: uiActions.shortcut("slice.playPause");  enabled: root.kbdEnabled; onActivated: root.sliceAct("playPause") }
-    Shortcut { sequence: uiActions.shortcut("slice.beatLeft");   enabled: root.kbdEnabled; onActivated: root.sliceAct("beatLeft") }
-    Shortcut { sequence: uiActions.shortcut("slice.beatRight");  enabled: root.kbdEnabled; onActivated: root.sliceAct("beatRight") }
-    Shortcut { sequence: uiActions.shortcut("slice.rowUp");      enabled: root.kbdEnabled; onActivated: root.sliceAct("rowUp") }
-    Shortcut { sequence: uiActions.shortcut("slice.rowDown");    enabled: root.kbdEnabled; onActivated: root.sliceAct("rowDown") }
-    Shortcut { sequence: uiActions.shortcut("slice.togglePoint"); enabled: root.kbdEnabled; onActivated: root.sliceAct("togglePoint") }
-    Shortcut { sequence: uiActions.shortcut("slice.clearPoints"); enabled: root.kbdEnabled; onActivated: root.sliceAct("clearPoints") }
-    Shortcut { sequence: uiActions.shortcut("slice.copyPoints");  enabled: root.kbdEnabled; onActivated: root.sliceAct("copyPoints") }
-    Shortcut { sequence: uiActions.shortcut("slice.pastePoints"); enabled: root.kbdEnabled; onActivated: root.sliceAct("pastePoints") }
-    Shortcut { sequence: uiActions.shortcut("slice.detect"); enabled: root.kbdEnabled; onActivated: root.sliceAct("detect") }
-    Shortcut { sequence: uiActions.shortcut("slice.clearSlices"); enabled: root.kbdEnabled; onActivated: root.sliceAct("clearSlices") }
-    Shortcut { sequence: uiActions.shortcut("slice.export"); enabled: root.kbdEnabled; onActivated: root.sliceAct("export") }
-    Shortcut { sequence: uiActions.shortcut("slice.importAudio"); enabled: root.kbdEnabled; onActivated: root.sliceAct("importAudio") }
-    Shortcut { sequence: uiActions.shortcut("slice.importMidi"); enabled: root.kbdEnabled; onActivated: root.sliceAct("importMidi") }
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("slice.playPause") : "";  enabled: root.kbdEnabled; onActivated: root.sliceAct("playPause") }
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("slice.beatLeft") : "";   enabled: root.kbdEnabled; onActivated: root.sliceAct("beatLeft") }
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("slice.beatRight") : "";  enabled: root.kbdEnabled; onActivated: root.sliceAct("beatRight") }
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("slice.rowUp") : "";      enabled: root.kbdEnabled; onActivated: root.sliceAct("rowUp") }
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("slice.rowDown") : "";    enabled: root.kbdEnabled; onActivated: root.sliceAct("rowDown") }
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("slice.togglePoint") : ""; enabled: root.kbdEnabled; onActivated: root.sliceAct("togglePoint") }
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("slice.clearPoints") : ""; enabled: root.kbdEnabled; onActivated: root.sliceAct("clearPoints") }
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("slice.copyPoints") : "";  enabled: root.kbdEnabled; onActivated: root.sliceAct("copyPoints") }
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("slice.pastePoints") : ""; enabled: root.kbdEnabled; onActivated: root.sliceAct("pastePoints") }
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("slice.detect") : ""; enabled: root.kbdEnabled; onActivated: root.sliceAct("detect") }
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("slice.clearSlices") : ""; enabled: root.kbdEnabled; onActivated: root.sliceAct("clearSlices") }
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("slice.export") : ""; enabled: root.kbdEnabled; onActivated: root.sliceAct("export") }
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("slice.importAudio") : ""; enabled: root.kbdEnabled; onActivated: root.sliceAct("importAudio") }
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("slice.importMidi") : ""; enabled: root.kbdEnabled; onActivated: root.sliceAct("importMidi") }
 
     Timer {
         interval: 100
@@ -1161,9 +1161,14 @@ Item {
                 }
             }
         }
-        contentItem: ColumnLayout {
-            width: exportConflictDialog.width - 24
-            spacing: 8
+        contentItem: Item {
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                anchors.topMargin: 10
+                anchors.bottomMargin: 10
+                spacing: 8
             Label {
                 Layout.fillWidth: true
                 text: qsTr("目标目录已有同名前缀 wav。覆盖只替换本批计划文件；续号保留旧文件并从 %1 起编号。文件序号与 #WAV id 独立。").arg(exportConflictDialog.prefix + "_" + exportConflictDialog.pad3(exportConflictDialog.nextContinueIndex) + ".wav")
@@ -1188,6 +1193,7 @@ Item {
                 elide: Text.ElideRight
                 font.pixelSize: Theme.fsTiny
                 font.family: Theme.fontMono
+            }
             }
         }
     }
