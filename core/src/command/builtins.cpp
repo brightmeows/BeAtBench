@@ -1241,6 +1241,28 @@ public:
                 r.pos, r.lane, r.sample, ln_kind, kind, r.sub_line));
         }
         const bool ok = session.exec(std::move(comp));
+        Json placed = Json::array();
+        for (const auto& r : parsed) {
+            Json item = Json::object();
+            item.set("measure", static_cast<std::int64_t>(
+                         static_cast<std::uint32_t>(static_cast<std::int64_t>(r.measure) + offset)));
+            Json pos = Json::object();
+            pos.set("num", r.pos.num);
+            pos.set("den", r.pos.den);
+            item.set("pos", std::move(pos));
+            Json lane = Json::object();
+            lane.set("player", static_cast<std::int64_t>(r.lane.player));
+            lane.set("index", static_cast<std::int64_t>(r.lane.index));
+            const char* kind = "key";
+            if (r.lane.kind == LaneKind::Bgm) kind = "bgm";
+            else if (r.lane.kind == LaneKind::Scratch) kind = "scratch";
+            else if (r.lane.kind == LaneKind::Pedal) kind = "pedal";
+            lane.set("kind", kind);
+            item.set("lane", std::move(lane));
+            item.set("sample", static_cast<std::int64_t>(r.sample));
+            item.set("sub_line", static_cast<std::int64_t>(r.sub_line));
+            placed.push_back(std::move(item));
+        }
         Json out = Json::object();
         out.set("ok", ok);
         out.set("notes", static_cast<std::int64_t>(parsed.size()));
@@ -1248,6 +1270,7 @@ public:
         out.set("measures", static_cast<std::int64_t>(measure_defs.size()));
         out.set("target_measure", static_cast<std::int64_t>(target));
         out.set("undo_depth", static_cast<std::int64_t>(session.undo_depth()));
+        out.set("selection", std::move(placed));
         return out;
     }
 

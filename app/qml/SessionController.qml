@@ -720,6 +720,8 @@ QtObject {
                 target_measure: target
             })
             if (r) {
+                if (r.selection && r.selection.length > 0)
+                    window.selectionRefs = r.selection
                 var parts = []
                 if (r.notes > 0) parts.push(qsTr("%1 个 note").arg(r.notes))
                 if (r.wavs > 0) parts.push(qsTr("%1 个采样").arg(r.wavs))
@@ -737,8 +739,11 @@ QtObject {
             lines: window.clipboardLines,
             target_measure: target
         })
-        if (r2)
+        if (r2) {
+            if (r2.selection && r2.selection.length > 0)
+                window.selectionRefs = r2.selection
             setStatus(qsTr("已粘贴 %1 个 note 到小节 %2").arg(r2.notes).arg(r2.target_measure))
+        }
     }
     function undoEdit() {
         var r = sessionCmd("session.undo")

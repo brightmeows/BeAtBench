@@ -515,6 +515,10 @@ TEST(EditCommands, ClipboardPasteInsertsAtTarget) {
         if (e.measure == 5) ++in_m5;
     }
     EXPECT_EQ(in_m5, 2u);
+    const auto& placed = resp.at("result").at("selection").as_array();
+    ASSERT_EQ(placed.size(), 2u);
+    EXPECT_EQ(placed[0].at("measure").as_i64(), 5);
+    EXPECT_EQ(placed[1].at("measure").as_i64(), 5);
     // undo 一次全部移除
     ASSERT_TRUE(session.undo());
     EXPECT_EQ(session.chart().notes.size(), before);
@@ -818,6 +822,9 @@ TEST(EditCommands, ClipboardCopyMineAndBgmPreserveChannels) {
     }
     EXPECT_EQ(mines, 1u);
     EXPECT_EQ(bgms, 2u);
+    const auto& placed = presp.at("result").at("selection").as_array();
+    ASSERT_EQ(placed.size(), 3u);
+    EXPECT_EQ(placed[0].at("measure").as_i64(), 8);
     ASSERT_TRUE(session.undo());
     EXPECT_EQ(session.chart().notes.size(), before);
 }
