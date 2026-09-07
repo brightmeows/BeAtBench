@@ -43,6 +43,8 @@ class SliceWorkspace : public QObject {
     // ---- M6.2 切片 ----
     Q_PROPERTY(QVariantList slices READ slices NOTIFY slicesChanged)
     Q_PROPERTY(bool hasSlices READ hasSlices NOTIFY slicesChanged)
+    Q_PROPERTY(bool canUndoSlice READ canUndoSlice NOTIFY sliceHistoryChanged)
+    Q_PROPERTY(bool canRedoSlice READ canRedoSlice NOTIFY sliceHistoryChanged)
     /// MIDI tempo（首个 tempo 事件 → BPM；无 MIDI/无 tempo → 120）。网格参数默认值。
     Q_PROPERTY(qreal midiTempoBpm READ midiTempoBpm NOTIFY midiChanged)
 
@@ -132,6 +134,11 @@ public:
     /// 边界集合在 setSliceBounds 等重排后可能过期——尽力清除，找不到的跳过）。
     /// 返回实际清除数；状态经 statusText。
     Q_INVOKABLE int clearManualPoints();
+    /// 切音工作区撤销/重做（切片表 + 手动点；与谱面 undo 栈独立）。
+    Q_INVOKABLE bool undoSliceEdit();
+    Q_INVOKABLE bool redoSliceEdit();
+    bool canUndoSlice() const { return !m_undo.empty(); }
+    bool canRedoSlice() const { return !m_redo.empty(); }
     /// V：手动切分点集（秒，升序）复制到内部剪贴板；空集 → false + 提示。
     Q_INVOKABLE bool copyManualPoints();
     /// B：**整体替换**（woslicer 语义：清现有手动点 → 应用剪贴板集）；空剪贴板 → 0 + 提示。
@@ -176,6 +183,7 @@ signals:
     void statusChanged();
     /// M6.2 切片表变化（生成/清除/放置开关）。
     void slicesChanged();
+    void sliceHistoryChanged();
     /// 2026-09「同时铺入编辑区」成功（#WAV 定义已进谱面）→ QML 刷新采样面板
     /// （左 dock 采样列表不会因 contentChanged 自动重取——内容变化触发的是时间轴/
     /// 波形刷新，定义表需显式重拉 session.samples）。
@@ -187,11 +195,18 @@ private:
     int findBoundaryIndex(double t) const;
     /// 拆分包含 t 的切片（空表 → 先建整轨 [0,dur) 再拆；t 须在片内，曲内非边界）。
     /// 纯拆分不合并——pasteManualPoints 用（与 toggle 的"命中即合并"区分）。
-    bool splitSliceAt(double t);
+    bool splitSliceAt(double t, bool recordUndo = true);
     /// 合并 i-1/i（删除边界）；不校验命中，直接操作。
-    bool removeManualPointAt(std::size_t i);
+    bool removeManualPointAt(std::size_t i, bool recordUndo = true);
     /// 重排 slice index（拆分/合并后）。
     void renumberSlices();
+    struct SliceSnapshot {
+        std::vector<beatbench::slice::Slice> slices;
+        std::vector<bool> enabled;
+        std::vector<double> manualPoints;
+    };
+    void pushSliceUndo();
+    void restoreSliceSnapshot(const SliceSnapshot& snap);
     /// 解码完成（UI 线程）：ok 且 track 有效 → 移入 m_track + 交 AudioEngine 预览；
     /// 失败 → statusText（原参考音轨保留）。
     void audioDecoded(bool ok, beatbench::audio::ReferenceTrack* track,
@@ -209,6 +224,8 @@ private:
     // ---- M6.4f 手动切分点集合（键盘 Z/C/V/B；集合与内部边界相互维护、尽力同步） ----
     std::vector<double> m_manualPoints;  ///< 手动切分点（秒，≈内部边界；可能因表重排过期）
     std::vector<double> m_copiedPoints;  ///< V 复制的切分点集（粘贴源）
+    std::vector<SliceSnapshot> m_undo;
+    std::vector<SliceSnapshot> m_redo;
     qreal m_offsetSec = 0.0;
     bool m_busy = false;
     QString m_statusText;

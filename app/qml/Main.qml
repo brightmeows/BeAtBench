@@ -223,10 +223,14 @@ ApplicationWindow {
 
     // 编辑动作
     Shortcut { sequence: uiActions.shortcut("edit.undo")
-               enabled: chartMeta !== null
+               enabled: !window.textInputFocused &&
+                        ((currentPage === 0 && chartMeta !== null) ||
+                         (currentPage === 1 && sliceWorkspace.canUndoSlice))
                onActivated: uiActions.invoke("edit.undo") }
     Shortcut { sequence: uiActions.shortcut("edit.redo")
-               enabled: chartMeta !== null
+               enabled: !window.textInputFocused &&
+                        ((currentPage === 0 && chartMeta !== null) ||
+                         (currentPage === 1 && sliceWorkspace.canRedoSlice))
                onActivated: uiActions.invoke("edit.redo") }
     Shortcut { sequence: uiActions.shortcut("edit.copy")
                enabled: chartMeta !== null && currentPage === 0 &&
@@ -954,6 +958,7 @@ ApplicationWindow {
     Connections {
         target: sliceWorkspace
         function onSamplesPlaced() { session.refreshSamples() }
+        function onSliceHistoryChanged() { updateActionStates() }
     }
     Timer { id: sliceExportRetry; interval: 300; repeat: true; onTriggered: doDebugSliceExport() }
     function doDebugSliceExport() {
@@ -1354,7 +1359,6 @@ ApplicationWindow {
     function placeLnType2(hit) { return session.placeLnType2(hit) }
     function placeNote(hit) { return session.placeNote(hit) }
     function quantizeSelection() { return session.quantizeSelection() }
-    function redoEdit() { return session.redoEdit() }
     function refEquals(a, b) { return session.refEquals(a, b) }
     function refreshLint() { return session.refreshLint() }
     function refreshSamples() { return session.refreshSamples() }
@@ -1373,7 +1377,20 @@ ApplicationWindow {
     function toggleGrid() { return session.toggleGrid() }
     function toggleLnSelection() { return session.toggleLnSelection() }
     function transformSelection(mirror, rotate) { return session.transformSelection(mirror, rotate) }
-    function undoEdit() { return session.undoEdit() }
+    function undoEdit() {
+        if (currentPage === 1) {
+            sliceWorkspace.undoSliceEdit()
+            return
+        }
+        return session.undoEdit()
+    }
+    function redoEdit() {
+        if (currentPage === 1) {
+            sliceWorkspace.redoSliceEdit()
+            return
+        }
+        return session.redoEdit()
+    }
 
     // ---------- UI 动作注册表（doc/09）：invoke = 唯一入口；以下包装函数是 handler 落点 ----------
     // 迁移期机制：行为原点不变（原 chrome 的第 2 遍调用并入 handler）；invoke 失败 =
@@ -1410,8 +1427,12 @@ ApplicationWindow {
     function updateActionStates() {
         setActionEnabled("file.save", chartMeta !== null)
         setActionEnabled("file.saveAs", chartMeta !== null)
-        setActionEnabled("edit.undo", chartMeta !== null)
-        setActionEnabled("edit.redo", chartMeta !== null)
+        setActionEnabled("edit.undo",
+                         (currentPage === 0 && chartMeta !== null) ||
+                         (currentPage === 1 && sliceWorkspace.canUndoSlice))
+        setActionEnabled("edit.redo",
+                         (currentPage === 0 && chartMeta !== null) ||
+                         (currentPage === 1 && sliceWorkspace.canRedoSlice))
         setActionEnabled("edit.copy", chartMeta !== null && selectionRefs.length > 0)
         setActionEnabled("edit.paste", chartMeta !== null && currentPage === 0)
         setActionEnabled("edit.delete", chartMeta !== null && currentPage === 0 &&

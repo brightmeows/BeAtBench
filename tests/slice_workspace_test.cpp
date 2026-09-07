@@ -329,4 +329,92 @@ TEST_F(SliceWorkspaceTest, PartialSelectionExportsFromZeroNotTableIndex) {
     EXPECT_EQ(files[0], QStringLiteral("slice_000.wav"));
 }
 
+TEST_F(SliceWorkspaceTest, DetectSlicesClearsManualPointsAndCanUndo) {
+    const auto dir = makeTempDir("undo");
+    const auto src = dir / "src.wav";
+    ASSERT_TRUE(workspace_.loadAudioFileSyncForTest(QString::fromStdString(writeSineWav(src))));
+    beatbench::slice::Slice a;
+    a.index = 0;
+    a.startSec = 0.0;
+    a.endSec = 0.1;
+    a.kind = "grid";
+    workspace_.setSlicesForTest({a}, {true});
+    ASSERT_TRUE(workspace_.toggleManualPoint(0.04));
+    const auto before = workspace_.slices();
+    ASSERT_GE(before.size(), 2);
+
+    ASSERT_TRUE(workspace_.detectSlices(QStringLiteral("grid"), 120.0, 4,
+                                        workspace_.audioDurationSec(), true));
+    EXPECT_TRUE(workspace_.canUndoSlice());
+    // 重建后手动点集合应空：再 C 不应把自动网格边界并掉
+    EXPECT_EQ(workspace_.clearManualPoints(), 0);
+
+    ASSERT_TRUE(workspace_.undoSliceEdit());
+    const auto restored = workspace_.slices();
+    ASSERT_EQ(restored.size(), before.size());
+}
+
+TEST_F(SliceWorkspaceTest, ManualSplitKeepsPitchMarksManualAndUndoes) {
+    const auto dir = makeTempDir("split");
+    const auto src = dir / "src.wav";
+    ASSERT_TRUE(workspace_.loadAudioFileSyncForTest(QString::fromStdString(writeSineWav(src))));
+    beatbench::slice::Slice a;
+    a.index = 0;
+    a.startSec = 0.0;
+    a.endSec = workspace_.audioDurationSec();
+    a.kind = "midi";
+    a.note = 60;
+    a.noteCount = 1;
+    workspace_.setSlicesForTest({a}, {true});
+    ASSERT_TRUE(workspace_.toggleManualPoint(0.03));
+    const auto after = workspace_.slices();
+    ASSERT_EQ(after.size(), 2);
+    EXPECT_EQ(after[0].toMap().value(QStringLiteral("kind")).toString(), QStringLiteral("manual"));
+    EXPECT_EQ(after[1].toMap().value(QStringLiteral("kind")).toString(), QStringLiteral("manual"));
+    EXPECT_EQ(after[0].toMap().value(QStringLiteral("note")).toInt(), 60);
+    EXPECT_EQ(after[1].toMap().value(QStringLiteral("note")).toInt(), 60);
+    ASSERT_TRUE(workspace_.canUndoSlice());
+    ASSERT_TRUE(workspace_.undoSliceEdit());
+    EXPECT_EQ(workspace_.slices().size(), 1);
+    EXPECT_FALSE(workspace_.canUndoSlice());
+    ASSERT_TRUE(workspace_.redoSliceEdit());
+    EXPECT_EQ(workspace_.slices().size(), 2);
+}
+
+TEST_F(SliceWorkspaceTest, ClearManualPointsKeepsGridBoundsAndUndoes) {
+    const auto dir = makeTempDir("clearpts");
+    const auto src = dir / "src.wav";
+    ASSERT_TRUE(workspace_.loadAudioFileSyncForTest(QString::fromStdString(writeSineWav(src))));
+    ASSERT_TRUE(workspace_.detectSlices(QStringLiteral("grid"), 120.0, 4,
+                                        workspace_.audioDurationSec(), true));
+    const int gridCount = workspace_.slices().size();
+    ASSERT_GE(gridCount, 1);
+    ASSERT_TRUE(workspace_.toggleManualPoint(0.03));
+    EXPECT_GT(workspace_.slices().size(), static_cast<qsizetype>(gridCount));
+    EXPECT_GT(workspace_.clearManualPoints(), 0);
+    EXPECT_EQ(workspace_.slices().size(), gridCount);
+    ASSERT_TRUE(workspace_.undoSliceEdit());
+    EXPECT_GT(workspace_.slices().size(), static_cast<qsizetype>(gridCount));
+}
+
+TEST_F(SliceWorkspaceTest, SliceUndoDoesNotTouchChartSession) {
+    beatbench::Chart chart;
+    addWav(chart, 1);
+    loadChart(std::move(chart));
+    const auto dir = makeTempDir("chart");
+    const auto src = dir / "src.wav";
+    ASSERT_TRUE(workspace_.loadAudioFileSyncForTest(QString::fromStdString(writeSineWav(src))));
+    beatbench::slice::Slice a;
+    a.index = 0;
+    a.startSec = 0.0;
+    a.endSec = 0.08;
+    a.kind = "grid";
+    workspace_.setSlicesForTest({a}, {true});
+    ASSERT_TRUE(workspace_.toggleManualPoint(0.03));
+    const auto undoBefore = beatbench::edit::session_registry().active().undo_depth();
+    ASSERT_TRUE(workspace_.undoSliceEdit());
+    EXPECT_EQ(beatbench::edit::session_registry().active().undo_depth(), undoBefore);
+    EXPECT_EQ(workspace_.occupiedWavIds().size(), 1);
+}
+
 }  // namespace
