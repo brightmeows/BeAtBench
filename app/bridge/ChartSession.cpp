@@ -116,17 +116,20 @@ void ChartSession::refresh() {
     }
     const std::uint64_t ch = contentHash();
     const std::uint64_t th = timingHash();
-    const bool changed = (ch != m_contentHash) || (th != m_timingHash);
+    const std::uint64_t sh = samplesHash();
+    const bool changed = (ch != m_contentHash) || (th != m_timingHash) || (sh != m_samplesHash);
     const bool timingChanged = (th != m_timingHash);
+    const bool samplesChanged = (sh != m_samplesHash);
     if (timingChanged && m_chart && m_timing) m_timing->rebuild(*m_chart);
     m_contentHash = ch;
     m_timingHash = th;
+    m_samplesHash = sh;
     if (changed) {
         // M4.3c+：内容变化 = 旧渲染过期（后台 in-flight 结果的版本校验丢弃）
         m_renderVersion.fetch_add(1, std::memory_order_relaxed);
         // M4.3c 增量：timing 变化（BPM/STOP/节拍）→ 下次渲染**全量**（正确性优先）；
-        // 否则（note 编辑/采样变更）→ 已有渲染结果时自动补增量（m_pendingIncremental）。
-        m_timingDirty = timingChanged;
+        // 同 ID 换采样文件：note 键不变，增量 diff 看不见，必须全量。
+        m_timingDirty = timingChanged || samplesChanged;
         // 2026-09 波形消失根因：timing 变化（BPM/STOP/小节长/节拍）此前只置 m_timingDirty 不触发渲染，
         // 而前端 onContentChanged 会隐藏波形 → 没有 renderFinished 恢复（直到 Ctrl+R/Space）。
         // 修：任何内容变化（含 timing）都触发后台渲染（renderAsync 内部按 m_timingDirty 定全量/增量）。
@@ -522,6 +525,18 @@ int ChartSession::decodeId(const QString& idText) const {
                                 : beatbench::bms::c36_to_u32(t, 2));
 }
 
+void ChartSession::resetRenderState() {
+    m_renderVersion.fetch_add(1, std::memory_order_relaxed);
+    m_rendered.reset();
+    m_waveform.reset();
+    m_pendingIncremental = false;
+    m_timingDirty = false;
+    {
+        std::lock_guard<std::mutex> lock(m_noteSnapMutex);
+        m_noteSnap.clear();
+    }
+}
+
 void ChartSession::attachActive(bool rebuildTiming) {
     auto& reg = beatbench::edit::session_registry();
     auto& s = reg.active();
@@ -532,8 +547,10 @@ void ChartSession::attachActive(bool rebuildTiming) {
         if (!m_timing) m_timing = std::make_unique<beatbench::TimingEngine>();
         m_timing->rebuild(*m_chart);
     }
+    resetRenderState();
     m_contentHash = contentHash();
     m_timingHash = timingHash();
+    m_samplesHash = samplesHash();
     m_initialized = true;
     const bool dirty = s.has_chart() && s.is_dirty();
     if (m_dirty != dirty) {
@@ -590,6 +607,7 @@ std::uint64_t ChartSession::contentHash() const {
         h = fnv1a(h, e.value.lane.index);
         h = fnv1a(h, e.value.sample.id);
         h = fnv1a(h, static_cast<std::uint64_t>(e.value.kind));
+        h = fnv1a(h, e.value.sub_line);
     }
     for (const auto& e : m_chart->bga_events) {
         h = fnv1a(h, e.measure);
@@ -602,9 +620,29 @@ std::uint64_t ChartSession::contentHash() const {
     return h;
 }
 
+std::uint64_t ChartSession::samplesHash() const {
+    if (!m_chart) return m_initialized ? 0x9e3779b97f4a7c17ULL : 0;
+    std::uint64_t h = 1469598103934665603ULL;
+    h = fnv1a(h, static_cast<std::uint64_t>(m_chart->id_base));
+    for (const auto& [key, def] : m_chart->samples) {
+        h = fnv1a(h, static_cast<std::uint64_t>(key.first));
+        h = fnv1a(h, key.second);
+        for (unsigned char c : def.file) h = fnv1a(h, c);
+        h = fnv1a(h, 0xff);
+        for (unsigned char c : def.value) h = fnv1a(h, c);
+        h = fnv1a(h, 0xfe);
+    }
+    return h;
+}
+
 std::uint64_t ChartSession::timingHash() const {
     if (!m_chart) return m_initialized ? 0x9e3779b97f4a7c16ULL : 0;
     std::uint64_t h = 1469598103934665603ULL;
+    if (const auto it = m_chart->meta.find("BPM"); it != m_chart->meta.end()) {
+        for (unsigned char c : it->second) h = fnv1a(h, c);
+    } else {
+        h = fnv1a(h, 0xB0);
+    }
     for (const auto& e : m_chart->bpm_events) {
         h = fnv1a(h, e.measure);
         h = fnv1a(h, static_cast<std::uint64_t>(e.pos.num));

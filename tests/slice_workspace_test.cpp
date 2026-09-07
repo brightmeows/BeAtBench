@@ -18,7 +18,10 @@
 #include "bridge/SliceWorkspace.hpp"
 #include "beatbench/core/Chart.hpp"
 #include "beatbench/core/bms/BmsUtil.hpp"
+#include "beatbench/core/command/Command.hpp"
+#include "beatbench/core/edit/EditorSession.hpp"
 #include "beatbench/core/edit/SessionRegistry.hpp"
+#include "beatbench/core/json/Json.hpp"
 #include "beatbench/core/slice/Slice.hpp"
 
 namespace {
@@ -395,6 +398,57 @@ TEST_F(SliceWorkspaceTest, ClearManualPointsKeepsGridBoundsAndUndoes) {
     EXPECT_EQ(workspace_.slices().size(), gridCount);
     ASSERT_TRUE(workspace_.undoSliceEdit());
     EXPECT_GT(workspace_.slices().size(), static_cast<qsizetype>(gridCount));
+}
+
+TEST_F(SliceWorkspaceTest, InitialBpmChangeUpdatesTimingHash) {
+    beatbench::Chart chart;
+    chart.meta["BPM"] = "130";
+    addWav(chart, 1);
+    beatbench::Event<beatbench::Note> n{0, beatbench::Rational(0, 1), {}};
+    n.value.lane = {0, beatbench::LaneKind::Key, 1};
+    n.value.sample.id = 1;
+    chart.notes = {n};
+    loadChart(std::move(chart));
+    const auto t0 = chartSession_.debugTimingHash();
+    const auto c0 = chartSession_.debugContentHash();
+    auto& session = beatbench::edit::session_registry().active();
+    ASSERT_TRUE(session.exec(std::make_unique<beatbench::edit::MetaEditCommand>("BPM", "200")));
+    chartSession_.refresh();
+    EXPECT_NE(chartSession_.debugTimingHash(), t0);
+    EXPECT_EQ(chartSession_.debugContentHash(), c0);
+}
+
+TEST_F(SliceWorkspaceTest, SameIdSampleFileChangeUpdatesSamplesHash) {
+    beatbench::Chart chart;
+    addWav(chart, 1);
+    beatbench::Event<beatbench::Note> n{0, beatbench::Rational(0, 1), {}};
+    n.value.lane = {0, beatbench::LaneKind::Key, 1};
+    n.value.sample.id = 1;
+    chart.notes = {n};
+    loadChart(std::move(chart));
+    const auto s0 = chartSession_.debugSamplesHash();
+    const auto c0 = chartSession_.debugContentHash();
+    beatbench::json::Json args = beatbench::json::Json::object();
+    args.set("id", "01");
+    args.set("file", "other.wav");
+    beatbench::json::Json req = beatbench::json::Json::object();
+    req.set("command", "sample.setFile");
+    req.set("args", std::move(args));
+    const auto resp = beatbench::cmd::global_registry().dispatch(req);
+    ASSERT_TRUE(resp.at("ok").as_bool()) << resp.dump();
+    chartSession_.refresh();
+    EXPECT_NE(chartSession_.debugSamplesHash(), s0);
+    EXPECT_EQ(chartSession_.debugContentHash(), c0);
+}
+
+TEST_F(SliceWorkspaceTest, DocumentSwitchDropsRenderedAudio) {
+    beatbench::Chart chart;
+    addWav(chart, 1);
+    loadChart(std::move(chart));
+    // 换空文档：attachActive 必须丢掉旧 PCM，避免后台任务完成后回流。
+    beatbench::edit::session_registry().active().load(beatbench::Chart{});
+    chartSession_.refresh();
+    EXPECT_FALSE(chartSession_.hasRendered());
 }
 
 TEST_F(SliceWorkspaceTest, SliceUndoDoesNotTouchChartSession) {

@@ -46,6 +46,11 @@ public:
     /// 当前活动会话相对最近一次 load/save 是否未保存。
     bool dirty() const { return m_dirty; }
 
+    /// 测试/诊断：当前缓存的内容/时序/采样指纹（refresh 后更新）。
+    Q_INVOKABLE quint64 debugContentHash() const { return m_contentHash; }
+    Q_INVOKABLE quint64 debugTimingHash() const { return m_timingHash; }
+    Q_INVOKABLE quint64 debugSamplesHash() const { return m_samplesHash; }
+
     /// 采样 id 文本（"0A"）→ 数值 id（按活动文档 id_base；未知/不存在 → -1）。
     Q_INVOKABLE int sampleValueOf(const QString& idText) const;
 
@@ -150,9 +155,11 @@ signals:
 
 private:
     void attachActive(bool rebuildTiming);
+    void resetRenderState();  ///< 换文档：丢弃 PCM/金字塔并作废 in-flight
     void syncDirty();
-    std::uint64_t contentHash() const;  ///< notes + bga 指纹
-    std::uint64_t timingHash() const;   ///< bpm/stop/measure 指纹（TimingEngine 依赖）
+    std::uint64_t contentHash() const;  ///< notes + bga + 采样定义指纹
+    std::uint64_t timingHash() const;   ///< 初始 BPM + bpm/stop/measure 指纹
+    std::uint64_t samplesHash() const;  ///< #WAV/#BMP/#BPM/#STOP 定义表
 
     std::string m_sessionId;
     const beatbench::Chart* m_chart = nullptr;  ///< 活动会话 chart（core 所有）
@@ -161,6 +168,7 @@ private:
     std::unique_ptr<beatbench::TimingEngine> m_timing;
     std::uint64_t m_contentHash = 0;
     std::uint64_t m_timingHash = 0;
+    std::uint64_t m_samplesHash = 0;
     bool m_initialized = false;  ///< 首次 attach 强制重建 timing
     bool m_dirty = false;
     // —— M4.3c+ 后台渲染 ——
