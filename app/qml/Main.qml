@@ -15,7 +15,16 @@ ApplicationWindow {
     id: window
     width: 1280
     height: 800
-    title: qsTr("BeAtBench")
+    title: {
+        var name = qsTr("BeAtBench")
+        if (chartPath && chartPath.length > 0) {
+            var slash = Math.max(chartPath.lastIndexOf("/"), chartPath.lastIndexOf("\\"))
+            name = (slash >= 0 ? chartPath.slice(slash + 1) : chartPath) + " — BeAtBench"
+        } else if (chartMeta !== null) {
+            name = qsTr("未命名") + " — BeAtBench"
+        }
+        return (chartSession && chartSession.dirty) || metaDraftDirty ? "*" + name : name
+    }
     visible: true
     color: Theme.bg  // 窗口底 = 主题 token（启动即深色；不依赖平台 palette 继承）
     font.family: Theme.fontSans
@@ -25,6 +34,8 @@ ApplicationWindow {
     property int currentPage: 0          // 0 编辑 / 1 切音 / 2 测试
     property var chartMeta: null         // dispatch(info) 的 result.meta
     property string chartPath: ""        // 当前谱面路径（info 返回的规范化路径）
+    /// 元信息面板草稿（未点面板「保存」、也未 Ctrl+S）也算未保存。
+    property bool metaDraftDirty: false
     property string statusText: qsTr("就绪")
     property string currentSampleId: ""  // 当前采样（会话状态，M3 放置落点）
     property string currentBmpId: ""     // 当前 #BMP（视口 BGA 列放置用；BGA 面板行点击设置）
@@ -210,6 +221,8 @@ ApplicationWindow {
     // 序列 + enabled 条件（含文本焦点让行等注册表不建模的细节）。
 
     // 文件动作
+    Shortcut { sequence: uiActions.shortcut("file.new")
+               onActivated: uiActions.invoke("file.new") }
     Shortcut { sequence: uiActions.shortcut("file.open")
                onActivated: uiActions.invoke("file.open") }
     Shortcut { sequence: uiActions.shortcut("file.save")
@@ -714,6 +727,7 @@ ApplicationWindow {
                 stopBpm: (chartMeta && chartMeta.BPM !== undefined) ? parseFloat(chartMeta.BPM) : 130
                 zoomToCursor: window.zoomToCursor
                 perfLog: window.debugPerfLog
+                onMetaDraftDirtyChanged: window.metaDraftDirty = metaDraftDirty
                 onSamplePicked: (id, file) => {
                     // 会话状态：当前采样（M3 放置落点；不入 undo，doc/05 §1.2）
                     window.currentSampleId = id
@@ -890,13 +904,13 @@ ApplicationWindow {
         id: fileDialog
         title: qsTr("打开 BMS 谱面")
         nameFilters: [qsTr("BMS 谱面 (*.bms *.bml *.bme *.pms)"), qsTr("所有文件 (*)")]
-        onAccepted: openChart(urlToPath(selectedFile))
+        onAccepted: doOpenChart(urlToPath(selectedFile))
         onRejected: { /* 用户取消 */ }
     }
 
     // --open 调试参数（main.cpp 注入）：走与 Ctrl+O 相同的调用路径
     property string debugOpenPath: ""
-    onDebugOpenPathChanged: if (debugOpenPath !== "") openChart(debugOpenPath)
+    onDebugOpenPathChanged: if (debugOpenPath !== "") doOpenChart(debugOpenPath)
     // M6.1 调试参数：--slice-audio / --slice-midi（切音页导入；配 --page 1 --screenshot）
     property string debugSliceAudio: ""
     property string debugSliceMidi: ""
@@ -1131,9 +1145,138 @@ ApplicationWindow {
         title: qsTr("另存为 BMS 谱面")
         fileMode: FileDialog.SaveFile
         nameFilters: [qsTr("BMS 谱面 (*.bms *.bml *.bme *.pms)"), qsTr("所有文件 (*)")]
-        onAccepted: saveChartAs(urlToPath(selectedFile))
+        onAccepted: {
+            const ok = saveChartAs(urlToPath(selectedFile))
+            if (window.pendingDocAction !== "") {
+                if (ok) finishPendingDocumentAction()
+                else {
+                    setStatus(qsTr("保存失败，未关闭/替换当前谱面"))
+                    cancelPendingDocumentAction()
+                }
+            }
+        }
+        onRejected: {
+            if (window.pendingDocAction !== "") cancelPendingDocumentAction()
+        }
     }
 
+    /// 关闭/新建/打开前的未保存确认。切音工作区是独立会话，不并入谱面脏。
+    property string pendingDocAction: ""   // "" | "close" | "new" | "open"
+    property string pendingOpenPath: ""
+    property bool allowClose: false
+
+    function documentIsDirty() {
+        if (chartSession && chartSession.dirty) return true
+        if (window.metaDraftDirty) return true
+        return false
+    }
+    function documentDirtyLabel() {
+        if (window.chartPath && window.chartPath.length > 0) {
+            var slash = Math.max(window.chartPath.lastIndexOf("/"), window.chartPath.lastIndexOf("\\"))
+            return slash >= 0 ? window.chartPath.slice(slash + 1) : window.chartPath
+        }
+        return qsTr("未命名谱面")
+    }
+    function requestDocumentAction(action, path) {
+        if (unsavedConfirmDialog.visible) return
+        window.pendingDocAction = action
+        window.pendingOpenPath = path || ""
+        if (!documentIsDirty()) {
+            finishPendingDocumentAction()
+            return
+        }
+        unsavedConfirmDialog.open()
+    }
+    function finishPendingDocumentAction() {
+        const action = window.pendingDocAction
+        const path = window.pendingOpenPath
+        window.pendingDocAction = ""
+        window.pendingOpenPath = ""
+        if (action === "close") {
+            window.allowClose = true
+            window.close()
+        } else if (action === "new") {
+            performNewChart()
+        } else if (action === "open") {
+            if (path && path.length > 0) doOpenChart(path)
+            else fileDialog.open()
+        }
+    }
+    function cancelPendingDocumentAction() {
+        window.pendingDocAction = ""
+        window.pendingOpenPath = ""
+        window.allowClose = false
+    }
+    function saveThenContinue() {
+        if (window.chartPath === "") {
+            saveAsDialog.open()
+            return
+        }
+        if (saveChart()) finishPendingDocumentAction()
+        else {
+            setStatus(qsTr("保存失败，未关闭/替换当前谱面"))
+            cancelPendingDocumentAction()
+        }
+    }
+
+    onClosing: function(close) {
+        if (window.allowClose || !documentIsDirty()) {
+            window.allowClose = false
+            return
+        }
+        close.accepted = false
+        requestDocumentAction("close")
+    }
+
+    BbDialog {
+        id: unsavedConfirmDialog
+        title: qsTr("未保存的更改")
+        width: 420
+        height: 186
+        showCancel: false
+        Label {
+            Layout.fillWidth: true
+            text: qsTr("「%1」有未保存的更改。保存后继续，放弃更改，或取消。切音工作区不随谱面保存。").arg(window.documentDirtyLabel())
+            color: Theme.text
+            wrapMode: Text.WordWrap
+            font.pixelSize: Theme.fsSmall
+        }
+        footer: Rectangle {
+            width: unsavedConfirmDialog.width
+            height: 42
+            color: Theme.surface2
+            border.color: Theme.borderStrong
+            border.width: 1
+            RowLayout {
+                anchors.fill: parent
+                anchors.margins: 5
+                anchors.rightMargin: 8
+                spacing: 8
+                Item { Layout.fillWidth: true }
+                BbToolButton {
+                    text: qsTr("保存")
+                    onClicked: {
+                        unsavedConfirmDialog.close()
+                        window.saveThenContinue()
+                    }
+                }
+                BbToolButton {
+                    text: qsTr("不保存")
+                    onClicked: {
+                        unsavedConfirmDialog.close()
+                        window.finishPendingDocumentAction()
+                    }
+                }
+                BbToolButton {
+                    text: qsTr("取消")
+                    onClicked: unsavedConfirmDialog.reject()
+                }
+            }
+        }
+        onRejected: window.cancelPendingDocumentAction()
+    }
+
+    function doOpenChart(path) { openChart(path) }
     function openChart(path) {
         var req = JSON.stringify({ command: "info", args: { path: path } })
         var resp = beatbench.dispatch(req)
@@ -1196,6 +1339,7 @@ ApplicationWindow {
             if (typeof audioEngine !== "undefined" && audioEngine) {
                 audioEngine.setChartPath(r.result.path)
             }
+            window.metaDraftDirty = false
         } else {
             window.chartMeta = null
             window.statusText = qsTr("打开失败：%1 %2").arg(r.error.code).arg(r.error.message)
@@ -1323,6 +1467,9 @@ ApplicationWindow {
     function addMeasure() { editPage.extendMeasures(); setStatus(qsTr("已加一小节（保存时未用到的空小节会被舍弃）")) }
     /// 2026-09 新建空谱面：chartSession.newChart() → 重置编辑器状态 + seed 编辑 floor=1（可放小节 0）。
     function newChart() {
+        requestDocumentAction("new")
+    }
+    function performNewChart() {
         if (!chartSession.newChart()) {
             setStatus(qsTr("新建空谱面失败：%1").arg(chartSession.errorMessage()))
             statusClearTimer.restart()
@@ -1349,6 +1496,7 @@ ApplicationWindow {
         }
         editPage.setEditableMeasures(1)  // seed：渲染/可放小节 0（放进 note 即长真实小节数）
         if (typeof audioEngine !== "undefined" && audioEngine) audioEngine.setChartPath("")
+        window.metaDraftDirty = false
         window.statusText = qsTr("已新建空谱面（Ctrl+S 另存为）")
         statusClearTimer.restart()
     }
@@ -1375,7 +1523,7 @@ ApplicationWindow {
     function refreshTiming() { return session.refreshTiming() }
     function saveChart() {
         // 新建谱面（path 空）Ctrl+S → 路由到「另存为」（否则 session.save 无 path 报错，2026-09）
-        if (window.chartPath === "") { saveAsDialog.open(); return true }
+        if (window.chartPath === "") { saveAsDialog.open(); return false }
         return session.saveChart()
     }
     function saveChartAs(path) { return session.saveChartAs(path) }
@@ -1405,7 +1553,7 @@ ApplicationWindow {
     // ---------- UI 动作注册表（doc/09）：invoke = 唯一入口；以下包装函数是 handler 落点 ----------
     // 迁移期机制：行为原点不变（原 chrome 的第 2 遍调用并入 handler）；invoke 失败 =
     // 方法不存在（C++ qWarning）或动作禁用（静默）。
-    function uiActionOpen() { fileDialog.open() }
+    function uiActionOpen() { requestDocumentAction("open") }
     function uiActionSaveAs() { saveAsDialog.open() }
     function uiActionExit() { window.close() }
     /// 运行时换肤（doc/08 §3.3）：应用皮肤 token（applySkinByName）+ 该皮肤目录 keymap.json。

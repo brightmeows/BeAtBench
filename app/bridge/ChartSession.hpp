@@ -27,6 +27,7 @@ class ChartSession : public QObject {
     Q_PROPERTY(QString path READ path NOTIFY documentChanged)
     Q_PROPERTY(bool hasChart READ hasChart NOTIFY documentChanged)
     Q_PROPERTY(int measureCount READ measureCount NOTIFY documentChanged)
+    Q_PROPERTY(bool dirty READ dirty NOTIFY dirtyChanged)
 
 public:
     explicit ChartSession(QObject* parent = nullptr);
@@ -41,6 +42,9 @@ public:
     /// 编辑命令 / 会话切换后由 QML 调用：检测「文档切换」（documentChanged，视图应重置
     /// 滚动）或「内容变化」（contentChanged，视图保持滚动），必要时重建 TimingEngine。
     Q_INVOKABLE void refresh();
+
+    /// 当前活动会话相对最近一次 load/save 是否未保存。
+    bool dirty() const { return m_dirty; }
 
     /// 采样 id 文本（"0A"）→ 数值 id（按活动文档 id_base；未知/不存在 → -1）。
     Q_INVOKABLE int sampleValueOf(const QString& idText) const;
@@ -140,11 +144,13 @@ signals:
     void chartChanged();      ///< 兼容旧接口：文档或内容任一变化
     void documentChanged();   ///< 活动会话/文档切换（QML 应重置视图滚动）
     void contentChanged();    ///< 同文档内容变化（QML 保持视图滚动）
+    void dirtyChanged();      ///< 未保存状态变化
     /// M4.3c+ 后台渲染完成（ok + 输出路径 + 时长秒；任何状态栏/波形刷新响应这里）。
     void renderFinished(bool ok, const QString& outPath, double durationSec);
 
 private:
     void attachActive(bool rebuildTiming);
+    void syncDirty();
     std::uint64_t contentHash() const;  ///< notes + bga 指纹
     std::uint64_t timingHash() const;   ///< bpm/stop/measure 指纹（TimingEngine 依赖）
 
@@ -156,6 +162,7 @@ private:
     std::uint64_t m_contentHash = 0;
     std::uint64_t m_timingHash = 0;
     bool m_initialized = false;  ///< 首次 attach 强制重建 timing
+    bool m_dirty = false;
     // —— M4.3c+ 后台渲染 ——
     std::atomic<bool> m_renderInFlight{false};   ///< 渲染中（去重）
     std::atomic<std::uint64_t> m_renderVersion{0};  ///< 版本号（过期结果丢弃）

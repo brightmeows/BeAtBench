@@ -1380,12 +1380,14 @@ public:
 
         // 另存为后更新会话路径（后续「保存」写新路径）
         if (session.path() != out_path) session.set_path(out_path);
+        session.mark_clean();
 
         Json res = Json::object();
         res.set("saved", true);
         res.set("output", out_path);
         res.set("bytes", static_cast<std::int64_t>(text.size()));
         res.set("format", std::string(codec->id()));
+        res.set("dirty", false);
         if (!session.last_backup_error().empty())
             res.set("backup_error", session.last_backup_error());
         return res;
@@ -2106,6 +2108,21 @@ public:
     }
 };
 
+class SessionDirtyCommand : public Command {
+public:
+    std::string_view name() const override { return "session.dirty"; }
+    Json run(const Json& args) const override {
+        auto& session = session_from_args(args);
+        Json out = Json::object();
+        out.set("dirty", session.is_dirty());
+        out.set("has_chart", session.has_chart());
+        out.set("path", session.path());
+        out.set("undo_depth", static_cast<std::int64_t>(session.undo_depth()));
+        out.set("redo_depth", static_cast<std::int64_t>(session.redo_depth()));
+        return out;
+    }
+};
+
 class SessionUndoCommand : public Command {
 public:
     std::string_view name() const override { return "session.undo"; }
@@ -2364,6 +2381,7 @@ void register_builtin_commands(Registry& registry) {
     registry.add(std::make_unique<SessionLoadCommand>());
     registry.add(std::make_unique<SessionNewCommand>());  // 新建空谱面（2026-09 编辑态小节数）
     registry.add(std::make_unique<SessionSaveCommand>());
+    registry.add(std::make_unique<SessionDirtyCommand>());
     registry.add(std::make_unique<NotePutCommand>());
     registry.add(std::make_unique<NoteMoveCommand>());
     registry.add(std::make_unique<NoteDeleteCommand>());

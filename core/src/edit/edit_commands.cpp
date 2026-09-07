@@ -261,6 +261,11 @@ void EditorSession::load(Chart chart) {
     m_redo.clear();
     m_selection.clear();
     m_path.clear();
+    m_generation = 0;
+    m_next_generation = 1;
+    m_clean_generation = 0;
+    m_undo_generation.clear();
+    m_redo_generation.clear();
 }
 
 void EditorSession::load(Chart chart, std::string path) {
@@ -279,36 +284,52 @@ bool EditorSession::exec(std::unique_ptr<EditCommand> cmd) {
     }
     // LN 推导（自下而上）：文档变更后统一重建 ln_pair（编辑命令不再各自维护）。
     rebuild_ln_pairs(*m_chart);
-    // 与栈顶合并（连续操作 → 一个 undo 步）
-    if (!m_undo.empty() && m_undo.back()->merge_with(*cmd)) {
-        m_redo.clear();
+    // 连续操作可并入栈顶，但：刚保存的状态、以及 undo/redo 之后的新编辑都不能合并，
+    // 否则无法撤回到保存点，且代际号会与清洁点撞车（保存→撤销→再改被误判干净）。
+    const bool can_merge = m_redo.empty() && !m_undo.empty() &&
+                           m_undo_generation.back() == m_generation &&
+                           m_generation != m_clean_generation &&
+                           m_undo.back()->merge_with(*cmd);
+    m_generation = m_next_generation++;
+    if (can_merge) {
+        m_undo_generation.back() = m_generation;
         maybe_persist();
         return true;
     }
     m_undo.push_back(std::move(cmd));
+    m_undo_generation.push_back(m_generation);
     m_redo.clear();
+    m_redo_generation.clear();
     maybe_persist();
     return true;
 }
 
 bool EditorSession::undo() {
-    if (m_undo.empty() || !m_chart) return false;
+    if (m_undo.empty() || !m_chart || m_undo.size() != m_undo_generation.size()) return false;
     auto cmd = std::move(m_undo.back());
+    const std::uint64_t gen_after = m_undo_generation.back();
     m_undo.pop_back();
+    m_undo_generation.pop_back();
     cmd->invert(*m_chart);
     rebuild_ln_pairs(*m_chart);
     m_redo.push_back(std::move(cmd));
+    m_redo_generation.push_back(gen_after);
+    m_generation = m_undo_generation.empty() ? 0 : m_undo_generation.back();
     maybe_persist();
     return true;
 }
 
 bool EditorSession::redo() {
-    if (m_redo.empty() || !m_chart) return false;
+    if (m_redo.empty() || !m_chart || m_redo.size() != m_redo_generation.size()) return false;
     auto cmd = std::move(m_redo.back());
+    const std::uint64_t gen_after = m_redo_generation.back();
     m_redo.pop_back();
+    m_redo_generation.pop_back();
     cmd->apply(*m_chart);
     rebuild_ln_pairs(*m_chart);
     m_undo.push_back(std::move(cmd));
+    m_undo_generation.push_back(gen_after);
+    m_generation = gen_after;
     maybe_persist();
     return true;
 }

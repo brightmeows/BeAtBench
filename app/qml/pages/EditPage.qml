@@ -13,6 +13,8 @@ Item {
     id: root
     property var chartMeta: null
     property string chartPath: ""
+    /// 元信息面板草稿脏（dirtyTick>0）；Main 把它并入关闭/新建/打开确认。
+    property bool metaDraftDirty: false
     /// 游玩模式显示名（Main 提供：SP7K/DP/PMS/…，随谱面实际模式）。
     property string modeLabel: "SP7K"
     /// 轨道列头显示实际 BMS 通道 id（Main 工具条勾选；Alt 临时在 ChartView 内处理）
@@ -309,6 +311,7 @@ Item {
                         onMetaMessage: (msg) => root.metaMessage(msg)
                         onSaveRequested: root.metaSaveRequested()
                         onModeEditRequested: (key, value) => root.modeEditRequested(key, value)
+                        onDirtyTickChanged: root.metaDraftDirty = dirtyTick > 0
                     }
                     SamplePanel { id: samplePanel; onSamplePicked: (id, file) => root.samplePicked(id, file);
                                   onSampleFileRequested: (id, file) => root.sampleFileRequested(id, file)

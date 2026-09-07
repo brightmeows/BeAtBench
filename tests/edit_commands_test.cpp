@@ -5,6 +5,8 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <random>
 #include <string>
@@ -335,6 +337,97 @@ TEST(EditCommands, RandomSequenceReversible) {
         ASSERT_TRUE(s.undo());
     }
     EXPECT_EQ(norm_notes(s.chart().notes), norm_notes(initial.notes));
+}
+
+TEST(EditCommands, DirtyFlagTracksEditUndoSave) {
+    EditorSession s;
+    s.load(make_chart());
+    EXPECT_FALSE(s.is_dirty());
+
+    ASSERT_TRUE(s.exec(std::make_unique<PutNoteCommand>(
+        2, Rational(0, 1), Lane{0, LaneKind::Key, 3}, 7)));
+    EXPECT_TRUE(s.is_dirty());
+
+    ASSERT_TRUE(s.undo());
+    EXPECT_FALSE(s.is_dirty());  // 撤回到 load 点
+
+    ASSERT_TRUE(s.redo());
+    EXPECT_TRUE(s.is_dirty());
+    s.mark_clean();
+    EXPECT_FALSE(s.is_dirty());
+
+    ASSERT_TRUE(s.undo());
+    EXPECT_TRUE(s.is_dirty());  // 从已保存点再 undo 仍脏
+    ASSERT_TRUE(s.redo());
+    EXPECT_FALSE(s.is_dirty());
+}
+
+TEST(EditCommands, DirtyAfterSaveUndoThenNewEdit) {
+    // 保存 → 撤销一步 → 再编辑：新内容与保存点不同，必须仍脏（代际不得复用清洁点号）。
+    EditorSession s;
+    s.load(make_chart());
+    ASSERT_TRUE(s.exec(std::make_unique<PutNoteCommand>(
+        2, Rational(0, 1), Lane{0, LaneKind::Key, 3}, 7)));
+    ASSERT_TRUE(s.exec(std::make_unique<PutNoteCommand>(
+        3, Rational(0, 1), Lane{0, LaneKind::Key, 4}, 8)));
+    EXPECT_EQ(s.undo_depth(), 2u);
+    s.mark_clean();
+    EXPECT_FALSE(s.is_dirty());
+    ASSERT_TRUE(s.undo());
+    EXPECT_TRUE(s.is_dirty());
+    ASSERT_TRUE(s.exec(std::make_unique<PutNoteCommand>(
+        4, Rational(0, 1), Lane{0, LaneKind::Key, 5}, 9)));
+    EXPECT_TRUE(s.is_dirty());
+    EXPECT_EQ(s.undo_depth(), 2u);  // 新编辑独立一步，不并入保存点前的命令
+}
+
+TEST(EditCommands, ProtocolDirtyQueryAndSaveClears) {
+    using beatbench::cmd::global_registry;
+    auto& session = beatbench::edit::global_editor_session();
+    session.load(make_chart(), "");
+    Json dreq = Json::object();
+    dreq.set("command", "session.dirty");
+    dreq.set("args", Json::object());
+    Json dresp = global_registry().dispatch(dreq);
+    ASSERT_TRUE(dresp.at("ok").as_bool()) << dresp.dump();
+    EXPECT_FALSE(dresp.at("result").at("dirty").as_bool());
+
+    Json args = Json::object();
+    args.set("measure", 2);
+    Json pos = Json::object();
+    pos.set("num", 0);
+    pos.set("den", 1);
+    args.set("pos", std::move(pos));
+    Json lane = Json::object();
+    lane.set("player", 0);
+    lane.set("kind", "key");
+    lane.set("index", 3);
+    args.set("lane", std::move(lane));
+    args.set("sample", 9);
+    Json preq = Json::object();
+    preq.set("command", "note.put");
+    preq.set("args", std::move(args));
+    ASSERT_TRUE(global_registry().dispatch(preq).at("ok").as_bool());
+    dresp = global_registry().dispatch(dreq);
+    ASSERT_TRUE(dresp.at("ok").as_bool());
+    EXPECT_TRUE(dresp.at("result").at("dirty").as_bool());
+
+    namespace fs = std::filesystem;
+    const auto dir = fs::temp_directory_path() / "bb_dirty_save";
+    fs::create_directories(dir);
+    const auto path = (dir / "dirty.bms").string();
+    Json sargs = Json::object();
+    sargs.set("path", path);
+    sargs.set("overwrite", true);
+    Json sreq = Json::object();
+    sreq.set("command", "session.save");
+    sreq.set("args", std::move(sargs));
+    Json sresp = global_registry().dispatch(sreq);
+    ASSERT_TRUE(sresp.at("ok").as_bool()) << sresp.dump();
+    EXPECT_FALSE(sresp.at("result").at("dirty").as_bool());
+    dresp = global_registry().dispatch(dreq);
+    EXPECT_FALSE(dresp.at("result").at("dirty").as_bool());
+    fs::remove_all(dir);
 }
 
 // —— 协议命令（经 dispatch 走 session） ——

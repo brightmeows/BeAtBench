@@ -57,11 +57,13 @@ bool ChartSession::openChart(const QString& path) {
         attachActive(true);
         emit documentChanged();
         emit chartChanged();
+        syncDirty();
         return false;
     }
     attachActive(true);
     emit documentChanged();
     emit chartChanged();
+    syncDirty();
     // M5：载入即后台渲染（内存 only，不写盘；多线程不卡 UI）——波形/播放就绪。
     // 空谱/无 note 也会渲染（安静 PCM；无害）。失败（无采样文件等）→ renderFinished(false)
     // 状态栏提示，波形不显示；不影响编辑。
@@ -89,11 +91,13 @@ bool ChartSession::newChart() {
         attachActive(true);
         emit documentChanged();
         emit chartChanged();
+        syncDirty();
         return false;
     }
     attachActive(true);
     emit documentChanged();
     emit chartChanged();
+    syncDirty();
     return true;
 }
 
@@ -107,6 +111,7 @@ void ChartSession::refresh() {
         attachActive(true);
         emit documentChanged();
         emit chartChanged();
+        syncDirty();
         return;
     }
     const std::uint64_t ch = contentHash();
@@ -134,6 +139,7 @@ void ChartSession::refresh() {
         emit contentChanged();
         emit chartChanged();
     }
+    syncDirty();
 }
 
 int ChartSession::sampleValueOf(const QString& idText) const {
@@ -529,6 +535,19 @@ void ChartSession::attachActive(bool rebuildTiming) {
     m_contentHash = contentHash();
     m_timingHash = timingHash();
     m_initialized = true;
+    const bool dirty = s.has_chart() && s.is_dirty();
+    if (m_dirty != dirty) {
+        m_dirty = dirty;
+        emit dirtyChanged();
+    }
+}
+
+void ChartSession::syncDirty() {
+    auto& s = beatbench::edit::session_registry().active();
+    const bool dirty = s.has_chart() && s.is_dirty();
+    if (m_dirty == dirty) return;
+    m_dirty = dirty;
+    emit dirtyChanged();
 }
 
 int ChartSession::measureCount() const {

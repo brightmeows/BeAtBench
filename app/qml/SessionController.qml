@@ -983,6 +983,7 @@ QtObject {
     }
     function saveChart() {
         // 2026-09：元信息修改交整个文件保存——先应用元信息编辑 + 扩展代码，再 session.save。
+        // 面板基线（commitMeta）只在写盘成功后提交，避免保存失败却丢掉草稿对比。
         if (typeof editPage !== "undefined" && editPage) {
             const edits = editPage.collectMetaEdits()
             if (edits && edits.length > 0) {
@@ -990,16 +991,18 @@ QtObject {
                 if (em) setStatus(qsTr("元信息已保存 %1 处").arg(edits.length))
             }
             editPage.applyRawEdits()
-            editPage.commitMeta()  // 提交基线 → 面板「保存/重置」按钮随脏清零禁用（2026-09 用户）
             refreshLint()
         }
         var r = sessionCmd("session.save", { overwrite: true })
         if (r) {
+            if (typeof editPage !== "undefined" && editPage) editPage.commitMeta()
             window.chartPath = r.output
             var msg = qsTr("已保存：%1（%2 字节）").arg(r.output).arg(r.bytes)
             if (r.backup_error) msg += qsTr(" · 崩溃备份失败：") + r.backup_error
             setStatus(msg)
+            return true
         }
+        return false
     }
     /// 元信息面板「保存」按钮：只应用元信息编辑 + 扩展代码到内存会话（不写文件）。
     /// 之后 Ctrl+S / 另存为会随整个文件一并落盘。成功后提交基线（orig=value）清脏。
@@ -1024,14 +1027,16 @@ QtObject {
             const edits = editPage.collectMetaEdits()
             if (edits && edits.length > 0) sessionCmd("meta.edit", { edits: edits })
             editPage.applyRawEdits()
-            editPage.commitMeta()  // 同 saveChart：另存为成功后面板脏清零（按钮禁用）
         }
         var r = sessionCmd("session.save", { path: path, overwrite: true })
         if (r) {
+            if (typeof editPage !== "undefined" && editPage) editPage.commitMeta()
             window.chartPath = r.output
             var msg = qsTr("已另存为：%1").arg(r.output)
             if (r.backup_error) msg += qsTr(" · 崩溃备份失败：") + r.backup_error
             setStatus(msg)
+            return true
         }
+        return false
     }
 }
