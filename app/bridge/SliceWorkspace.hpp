@@ -59,21 +59,34 @@ public:
     Q_INVOKABLE QVariantList occupiedWavIds() const;
     /// 下一个空闲 #WAV id（从 1 起跳过 occupied；无谱面 → 1）。
     Q_INVOKABLE int nextFreeWavId() const;
+    /// 写盘前预检：算出本次 layout 文件名，扫描 outDir 已有同前缀 wav。
+    /// 不解码、不写盘。返回 {ok, outDir, prefix, planned, collisions, nextContinueIndex, error}。
+    /// planned/collisions 为相对 prefix 的路径（如 slice_000.wav）。无切片也可扫盘（planned 空）。
+    Q_INVOKABLE QVariantMap previewExportFiles(const QString& outDir, const QString& prefix) const;
     /// 导出：对每个「放置开关=开」的切片 → window()+fade → 写 <outDir>/<prefix>_<NNN>.wav，
     /// 分配 #WAV id（从 startId 起，跳过 occupied），并生成可复制 BMS raw。
     /// prefix = 落盘前缀（可含 `/` 或 `\` 作子目录，如 "slices/slice" 或 "slice"）；
     /// 自动识别正反斜杠。bpm/beatsPerMeasure/subdivision 用于拍位换算；offset 用当前 m_offsetSec。
     /// startMeasure = ch01 铺放起始小节（1-based；第 N 小节 = 文件 `#(N-1)01:`）。
+    /// conflictPolicy：overwrite / continue / error（默认 error）。
+    /// 有重名时 overwrite 按原名覆盖、continue 从已有最大序号 +1 连续编号、error 零落盘。
+    /// 无重名时三种等价于按 layout 原名（首次仍从 000）写。文件序号与 #WAV id 独立。
     /// placeIntoChart（2026-09 用户「同时铺入编辑区」）：导出成功后把 raw 经 clipboard.paste
     /// （sub_line_mode="uniform"）直接写进当前谱面——子行接续（目标小节段已有最高子行 +1 起，
     /// 不挤旧行、新内容跨小节同列），单 CompositeCommand = 一个撤销步；需已加载谱面。
     /// 返回 {ok, raw, count, error, startMeasure, endMeasure, placementText, nextStartId,
-    ///       placed, placedNotes, placeError}（placed 系列仅 placeIntoChart 时有效）。
+    ///       placed, placedNotes, placeError, outDir, collisions, conflictPolicy}。
     Q_INVOKABLE QVariantMap exportSlices(qreal bpm, int subdivision,
                                          int beatsPerMeasure, int startId,
                                          int startMeasure,
                                          const QString& outDir, const QString& prefix,
-                                         qreal fadeMs, bool placeIntoChart = false);
+                                         qreal fadeMs, bool placeIntoChart = false,
+                                         const QString& conflictPolicy = QStringLiteral("error"));
+    /// 测试入口：同步装载参考音频（不经 QThreadPool / 不碰声卡）。生产路径仍用 loadAudioFile。
+    bool loadAudioFileSyncForTest(const QString& path);
+    /// 测试入口：直接注入切片表（绕过 detectSlices）。
+    void setSlicesForTest(std::vector<beatbench::slice::Slice> slices,
+                          std::vector<bool> enabled);
     /// 建议的铺放起始小节（1-based）：当前谱面已用小节数 + 1（下一空小节；
     /// 无谱面 → 1）。「起始小节」SpinBox 默认值用；夹逼 [1,999]。
     Q_INVOKABLE int suggestedStartMeasure() const;

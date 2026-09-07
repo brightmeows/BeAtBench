@@ -32,7 +32,8 @@ Item {
     /// M6.4f 键盘快捷键门控（Main 注入：页面激活 && 无文本输入焦点）；
     /// 本页自持 = 页面可见（StackLayout 激活）&& 切片编辑对话框未开。
     property bool kbdPageActive: false
-    readonly property bool kbdEnabled: root.kbdPageActive && root.visible && !sliceEditDialog.visible
+    readonly property bool kbdEnabled: root.kbdPageActive && root.visible
+                                       && !sliceEditDialog.visible && !exportConflictDialog.visible
     /// 焦点区域高亮（PR 式 2026-09；同 EditPage）：页内最后点击区域 → 边缘高亮（sliceLeft/
     /// sliceCenter/sliceRight）；切页清除。页级 propagate MouseArea 记录（accept=false 不拦截）。
     property string focusRegionId: ""
@@ -91,12 +92,29 @@ Item {
         if (v > 1295) v = 1295   // ZZ 上限（与 SpinBox to 一致）
         return v
     }
-    function doExport() {
+    function doExport(policy) {
         var dir = defaultOutDir()
         var prefix = prefixBox.text.length ? prefixBox.text : "slice"
+        if (policy === undefined || policy === null || policy === "") {
+            var preview = sliceWorkspace.previewExportFiles(dir, prefix)
+            if (!preview || !preview.ok) {
+                exportResult = preview
+                rawText = ""
+                return
+            }
+            if (preview.collisions && preview.collisions.length > 0) {
+                exportConflictDialog.outDir = preview.outDir || dir
+                exportConflictDialog.prefix = preview.prefix || prefix
+                exportConflictDialog.collisions = preview.collisions
+                exportConflictDialog.nextContinueIndex = preview.nextContinueIndex || 0
+                exportConflictDialog.open()
+                return
+            }
+            policy = "overwrite"
+        }
         var r = sliceWorkspace.exportSlices(bpmBox.value, subBox.value, 4,
                                             exportIdBox.value, startMeasureBox.value,
-                                            dir, prefix, 1.0, root.placeToChart)
+                                            dir, prefix, 1.0, root.placeToChart, policy)
         exportResult = r
         rawText = (typeof r.raw === "string") ? r.raw : ""
         if (r.ok) {
@@ -113,7 +131,8 @@ Item {
     /// 以指定起始 #WAV id 导出（与页面「导出分片」同一路径；raw 进右 dock）。
     function debugExport(startId) {
         exportIdBox.value = startId
-        doExport()
+        // 调试路径禁止弹窗，也禁止静默覆盖：有重名则 error 零落盘。
+        doExport("error")
     }
     /// 选中拍子（--slice-select-beat <秒>；手动切分选中态验收）。
     function debugSelectBeat(t) {
@@ -945,7 +964,9 @@ Item {
                                ? qsTr(" · 铺放失败：") + root.exportResult.placeError
                                : ""))
                          + (root.exportResult.placementText
-                            ? (" · " + root.exportResult.placementText) : ""))
+                            ? (" · " + root.exportResult.placementText) : "")
+                         + (root.exportResult.outDir
+                            ? (" · " + root.exportResult.outDir) : ""))
                       : (root.exportResult
                          ? (qsTr("导出失败：") + root.exportResult.error)
                          : (sliceWorkspace.hasSlices ? "" : qsTr("（先生成切片）")))
@@ -1025,6 +1046,121 @@ Item {
             if (sliceEditDialog.editIndex < 0) return
             sliceWorkspace.setSliceBounds(sliceEditDialog.editIndex,
                                           startBox.value / 1000.0, durBox.value / 1000.0)
+        }
+    }
+
+    // B2：同前缀已有 wav 时先选覆盖 / 续号 / 取消（文件序号与 #WAV id 独立）。
+    Dialog {
+        id: exportConflictDialog
+        modal: true
+        anchors.centerIn: parent
+        width: 500
+        height: 280
+        padding: 0
+        standardButtons: Dialog.NoButton
+        title: qsTr("导出文件已存在")
+        property string outDir: ""
+        property string prefix: "slice"
+        property var collisions: []
+        property int nextContinueIndex: 0
+        function collisionText() {
+            var list = collisions
+            if (!list || list.length === 0) return ""
+            var shown = []
+            var n = Math.min(list.length, 6)
+            for (var i = 0; i < n; ++i) shown.push(list[i])
+            var s = shown.join("\n")
+            if (list.length > 6)
+                s += "\n" + qsTr("…另有 %1 个").arg(list.length - 6)
+            return s
+        }
+        function pad3(v) {
+            var s = "" + v
+            while (s.length < 3) s = "0" + s
+            return s
+        }
+        background: Rectangle {
+            color: Theme.surface
+            border.color: Theme.borderStrong
+            border.width: 1
+            radius: Theme.boxRadius
+        }
+        header: Rectangle {
+            width: exportConflictDialog.width
+            height: 34
+            color: Theme.surface
+            border.color: Theme.borderStrong
+            border.width: 1
+            Label {
+                anchors.left: parent.left
+                anchors.leftMargin: 12
+                anchors.verticalCenter: parent.verticalCenter
+                text: exportConflictDialog.title
+                color: Theme.text
+                font.bold: true
+                font.pixelSize: Theme.fsBase
+            }
+        }
+        footer: Rectangle {
+            width: exportConflictDialog.width
+            height: 42
+            color: Theme.surface2
+            border.color: Theme.borderStrong
+            border.width: 1
+            RowLayout {
+                anchors.fill: parent
+                anchors.margins: 5
+                anchors.rightMargin: 8
+                spacing: 8
+                Item { Layout.fillWidth: true }
+                BbToolButton {
+                    text: qsTr("覆盖重名文件")
+                    onClicked: {
+                        exportConflictDialog.close()
+                        root.doExport("overwrite")
+                    }
+                }
+                BbToolButton {
+                    text: qsTr("接续后续编号")
+                    onClicked: {
+                        exportConflictDialog.close()
+                        root.doExport("continue")
+                    }
+                }
+                BbToolButton {
+                    text: qsTr("取消")
+                    onClicked: exportConflictDialog.reject()
+                }
+            }
+        }
+        contentItem: ColumnLayout {
+            width: exportConflictDialog.width - 24
+            spacing: 8
+            Label {
+                Layout.fillWidth: true
+                text: qsTr("目标目录已有同名前缀 wav。覆盖只替换本批计划文件；续号保留旧文件并从 %1 起编号。文件序号与 #WAV id 独立。").arg(exportConflictDialog.prefix + "_" + exportConflictDialog.pad3(exportConflictDialog.nextContinueIndex) + ".wav")
+                color: Theme.text
+                wrapMode: Text.WordWrap
+                font.pixelSize: Theme.fsSmall
+            }
+            Label {
+                Layout.fillWidth: true
+                text: qsTr("输出目录：") + exportConflictDialog.outDir
+                color: Theme.textMuted
+                wrapMode: Text.WrapAnywhere
+                font.pixelSize: Theme.fsTiny
+                font.family: Theme.fontMono
+            }
+            Label {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 72
+                text: exportConflictDialog.collisionText()
+                color: Theme.warning
+                wrapMode: Text.WordWrap
+                elide: Text.ElideRight
+                font.pixelSize: Theme.fsTiny
+                font.family: Theme.fontMono
+            }
         }
     }
 }

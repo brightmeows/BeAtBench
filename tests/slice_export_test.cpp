@@ -11,9 +11,14 @@ namespace {
 
 using beatbench::slice::SliceExportItem;
 using beatbench::slice::Slice;
+using beatbench::slice::ExportConflictPolicy;
+using beatbench::slice::allocate_continue_file_indexes;
 using beatbench::slice::allocate_wav_ids;
+using beatbench::slice::apply_export_file_policy;
 using beatbench::slice::build_export_layout;
 using beatbench::slice::build_placement_raw;
+using beatbench::slice::next_continue_file_index;
+using beatbench::slice::parse_export_file_index;
 
 std::vector<Slice> make_slices(std::vector<double> starts, std::vector<double> ends) {
     std::vector<Slice> out;
@@ -49,9 +54,13 @@ TEST(SliceExportTest, LayoutAssignsIdsAndPositions) {
     const std::vector<bool> enabled = {true, true, false, false};
     const auto items = build_export_layout(slices, enabled, {}, 1, "slice", 120.0, 4, 4, 0.0, 1);
     ASSERT_EQ(items.size(), 4u);
-    // 文件命名按切片序号补零
+    // 文件序号只给启用切片从 000 连续编号；未勾选不占号
     EXPECT_EQ(items[0].fileName, "slice_000.wav");
-    EXPECT_EQ(items[3].fileName, "slice_003.wav");
+    EXPECT_EQ(items[1].fileName, "slice_001.wav");
+    EXPECT_TRUE(items[2].fileName.empty());
+    EXPECT_TRUE(items[3].fileName.empty());
+    EXPECT_EQ(items[2].fileIndex, -1);
+    EXPECT_EQ(items[3].fileIndex, -1);
     // 启用者分得 id：start=1,2；未启用 wavId=0
     EXPECT_EQ(items[0].wavId, 1u);
     EXPECT_EQ(items[1].wavId, 2u);
@@ -97,6 +106,104 @@ TEST(SliceExportTest, PlacementRawHasWavDefAndCh01Line) {
     EXPECT_NE(raw.find("#00001:"), std::string::npos);
     EXPECT_NE(raw.find("02"), std::string::npos);
     EXPECT_NE(raw.find("03"), std::string::npos);
+}
+
+TEST(SliceExportTest, ParseExportFileIndexMatchesPrefixAndWidth) {
+    EXPECT_EQ(parse_export_file_index("slice_000.wav", "slice"), 0);
+    EXPECT_EQ(parse_export_file_index("slice_001.wav", "slice"), 1);
+    EXPECT_EQ(parse_export_file_index("slice_12.wav", "slice"), -1);  // 不足 width=3
+    EXPECT_EQ(parse_export_file_index("slice_1000.wav", "slice"), 1000);
+    EXPECT_EQ(parse_export_file_index("slices/slice_000.wav", "slices/slice"), 0);
+    EXPECT_EQ(parse_export_file_index("other_000.wav", "slice"), -1);
+    EXPECT_EQ(parse_export_file_index("slice_000.ogg", "slice"), -1);
+    EXPECT_EQ(parse_export_file_index("slice_00A.wav", "slice"), -1);
+}
+
+TEST(SliceExportTest, ContinueIndexesStartAfterMaxAndSkipHoles) {
+    EXPECT_EQ(next_continue_file_index({}), 0);
+    EXPECT_EQ(next_continue_file_index({0, 1}), 2);
+    EXPECT_EQ(next_continue_file_index({0, 2}), 3);  // 不回填 001
+    const auto ids = allocate_continue_file_indexes({0, 1}, 2);
+    ASSERT_EQ(ids.size(), 2u);
+    EXPECT_EQ(ids[0], 2);
+    EXPECT_EQ(ids[1], 3);
+    EXPECT_TRUE(allocate_continue_file_indexes({}, 0).empty());
+}
+
+TEST(SliceExportTest, ApplyContinueRenamesOnlyEnabledAndKeepsWavIds) {
+    const auto slices = make_slices({0.0, 0.5, 2.0, 2.5}, {0.125, 0.625, 2.125, 2.625});
+    const std::vector<bool> enabled = {true, false, true, false};
+    auto items = build_export_layout(slices, enabled, {1}, 1, "slice", 120.0, 4, 4, 0.0, 1);
+    ASSERT_EQ(items.size(), 4u);
+    EXPECT_EQ(items[0].fileName, "slice_000.wav");
+    EXPECT_EQ(items[2].fileName, "slice_001.wav");  // 第二个启用片，不跟表下标 2
+    EXPECT_TRUE(items[1].fileName.empty());
+    EXPECT_EQ(items[0].wavId, 2u);
+    EXPECT_EQ(items[2].wavId, 3u);
+    const std::uint32_t wav0 = items[0].wavId;
+    const std::uint32_t wav2 = items[2].wavId;
+
+    ASSERT_TRUE(apply_export_file_policy(items, "slice", {0, 1},
+                                         {"slice_000.wav"}, ExportConflictPolicy::Continue));
+    EXPECT_EQ(items[0].fileName, "slice_002.wav");
+    EXPECT_EQ(items[0].fileIndex, 2);
+    EXPECT_EQ(items[0].wavId, wav0);
+    EXPECT_TRUE(items[1].fileName.empty());
+    EXPECT_EQ(items[2].fileName, "slice_003.wav");
+    EXPECT_EQ(items[2].fileIndex, 3);
+    EXPECT_EQ(items[2].wavId, wav2);
+}
+
+TEST(SliceExportTest, DisabledSlicesDoNotOccupyFileIndexes) {
+    const auto slices = make_slices({0.0, 0.5, 1.0, 1.5, 2.0},
+                                    {0.125, 0.625, 1.125, 1.625, 2.125});
+    const std::vector<bool> enabled = {false, false, false, true, false};
+    const auto items = build_export_layout(slices, enabled, {}, 1, "slice", 120.0, 4, 4, 0.0, 1);
+    ASSERT_EQ(items.size(), 5u);
+    EXPECT_EQ(items[3].fileName, "slice_000.wav");
+    EXPECT_EQ(items[3].fileIndex, 0);
+    EXPECT_EQ(items[3].wavId, 1u);
+    EXPECT_EQ(items[3].sliceIndex, 3);
+    for (int i : {0, 1, 2, 4}) {
+        EXPECT_TRUE(items[static_cast<std::size_t>(i)].fileName.empty());
+        EXPECT_EQ(items[static_cast<std::size_t>(i)].fileIndex, -1);
+        EXPECT_EQ(items[static_cast<std::size_t>(i)].wavId, 0u);
+    }
+}
+
+TEST(SliceExportTest, ApplyErrorLeavesItemsUnchangedWhenColliding) {
+    const auto slices = make_slices({0.0, 0.5}, {0.125, 0.625});
+    const std::vector<bool> enabled = {true, true};
+    auto items = build_export_layout(slices, enabled, {}, 1, "slice", 120.0, 4, 4, 0.0, 1);
+    const auto before = items;
+    EXPECT_FALSE(apply_export_file_policy(items, "slice", {0}, {"slice_000.wav"},
+                                          ExportConflictPolicy::Error));
+    ASSERT_EQ(items.size(), before.size());
+    EXPECT_EQ(items[0].fileName, before[0].fileName);
+    EXPECT_EQ(items[1].fileName, before[1].fileName);
+}
+
+TEST(SliceExportTest, ContinueUsesSubdirectoryPrefix) {
+    const auto slices = make_slices({0.0}, {0.125});
+    auto items = build_export_layout(slices, {true}, {}, 1, "slices/slice", 120.0, 4, 4, 0.0, 1);
+    ASSERT_EQ(items.size(), 1u);
+    EXPECT_EQ(items[0].fileName, "slices/slice_000.wav");
+    ASSERT_TRUE(apply_export_file_policy(items, "slices/slice", {0},
+                                         {"slices/slice_000.wav"}, ExportConflictPolicy::Continue));
+    EXPECT_EQ(items[0].fileName, "slices/slice_001.wav");
+    EXPECT_EQ(items[0].fileIndex, 1);
+}
+
+TEST(SliceExportTest, ApplyOverwriteAndNoCollisionKeepLayoutNames) {
+    const auto slices = make_slices({0.0, 0.5}, {0.125, 0.625});
+    const std::vector<bool> enabled = {true, true};
+    auto items = build_export_layout(slices, enabled, {}, 1, "slice", 120.0, 4, 4, 0.0, 1);
+    ASSERT_TRUE(apply_export_file_policy(items, "slice", {0}, {"slice_000.wav"},
+                                         ExportConflictPolicy::Overwrite));
+    EXPECT_EQ(items[0].fileName, "slice_000.wav");
+    EXPECT_EQ(items[1].fileName, "slice_001.wav");
+    ASSERT_TRUE(apply_export_file_policy(items, "slice", {}, {}, ExportConflictPolicy::Continue));
+    EXPECT_EQ(items[0].fileName, "slice_000.wav");
 }
 
 }  // namespace

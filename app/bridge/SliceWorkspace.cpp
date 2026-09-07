@@ -10,6 +10,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QMetaObject>
+#include <QSet>
 #include <QThreadPool>
 #include <QVariantMap>
 
@@ -36,6 +37,72 @@ std::vector<std::uint32_t> occupied_wav_ids(const ChartSession* session) {
         if (key.first == SampleKind::Wav) out.push_back(key.second);
     }
     return out;
+}
+
+constexpr int kExportNameWidth = 3;
+
+QString normalize_export_prefix(const QString& prefix) {
+    QString base = prefix.isEmpty() ? QStringLiteral("slice") : prefix;
+    base.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    while (base.endsWith(QLatin1Char('/'))) base.chop(1);
+    return base.isEmpty() ? QStringLiteral("slice") : base;
+}
+
+struct ExportDiskScan {
+    std::vector<int> occupiedIndexes;
+    QStringList planned;
+    QStringList collisions;
+    int nextContinueIndex = 0;
+};
+
+ExportDiskScan scan_export_disk(const QString& outDir, const QString& baseName,
+                                const std::vector<slice::SliceExportItem>& items) {
+    ExportDiskScan scan;
+    QDir dir(outDir);
+    QSet<QString> plannedSet;
+    for (const auto& it : items) {
+        if (!it.enabled) continue;
+        const QString name = QString::fromStdString(it.fileName);
+        if (plannedSet.contains(name)) continue;
+        plannedSet.insert(name);
+        scan.planned << name;
+        if (QFileInfo::exists(dir.filePath(name))) scan.collisions << name;
+    }
+
+    const int lastSlash = std::max(baseName.lastIndexOf(QLatin1Char('/')),
+                                   baseName.lastIndexOf(QLatin1Char('\\')));
+    const QString prefixDir = (lastSlash >= 0) ? baseName.left(lastSlash) : QString();
+    const QString leaf = (lastSlash >= 0) ? baseName.mid(lastSlash + 1) : baseName;
+    QDir scanDir = dir;
+    if (!prefixDir.isEmpty()) scanDir = QDir(dir.filePath(prefixDir));
+    const QStringList names =
+        scanDir.entryList({leaf + QStringLiteral("_*.wav")}, QDir::Files, QDir::Name);
+    const std::string baseStd = baseName.toStdString();
+    for (const QString& name : names) {
+        const QString rel = prefixDir.isEmpty() ? name : (prefixDir + QLatin1Char('/') + name);
+        const int idx = slice::parse_export_file_index(rel.toStdString(), baseStd, kExportNameWidth);
+        if (idx < 0) continue;
+        scan.occupiedIndexes.push_back(idx);
+    }
+    scan.nextContinueIndex = slice::next_continue_file_index(scan.occupiedIndexes);
+    return scan;
+}
+
+std::vector<std::string> to_std_names(const QStringList& names) {
+    std::vector<std::string> out;
+    out.reserve(static_cast<std::size_t>(names.size()));
+    for (const QString& n : names) out.push_back(n.toStdString());
+    return out;
+}
+
+slice::ExportConflictPolicy parse_conflict_policy(const QString& text, QString* error) {
+    const QString t = text.trimmed().toLower();
+    if (t.isEmpty() || t == QLatin1String("error"))
+        return slice::ExportConflictPolicy::Error;
+    if (t == QLatin1String("overwrite")) return slice::ExportConflictPolicy::Overwrite;
+    if (t == QLatin1String("continue")) return slice::ExportConflictPolicy::Continue;
+    if (error) *error = QStringLiteral("未知冲突策略: %1（overwrite / continue / error）").arg(text);
+    return slice::ExportConflictPolicy::Error;
 }
 
 QVariantMap pyramid_info(const beatbench::audio::WaveformPyramid* p) {
@@ -83,11 +150,58 @@ int SliceWorkspace::suggestedStartMeasure() const {
     return std::clamp(n + 1, 1, 999);
 }
 
+QVariantMap SliceWorkspace::previewExportFiles(const QString& outDir, const QString& prefix) const {
+    QVariantMap res;
+    res.insert(QStringLiteral("ok"), false);
+    if (outDir.isEmpty()) {
+        res.insert(QStringLiteral("error"), QStringLiteral("输出目录为空"));
+        return res;
+    }
+    const QString baseName = normalize_export_prefix(prefix);
+    const auto items = slice::build_export_layout(
+        m_slices, m_sliceEnabled, occupied_wav_ids(m_chartSession), 1,
+        baseName.toStdString(), 120.0, 4, 4, m_offsetSec, 1, kExportNameWidth);
+    const auto scan = scan_export_disk(outDir, baseName, items);
+    res.insert(QStringLiteral("ok"), true);
+    res.insert(QStringLiteral("outDir"), outDir);
+    res.insert(QStringLiteral("prefix"), baseName);
+    res.insert(QStringLiteral("planned"), scan.planned);
+    res.insert(QStringLiteral("collisions"), scan.collisions);
+    res.insert(QStringLiteral("nextContinueIndex"), scan.nextContinueIndex);
+    return res;
+}
+
+bool SliceWorkspace::loadAudioFileSyncForTest(const QString& path) {
+    if (path.isEmpty()) return false;
+#ifdef _WIN32
+    const bool ok = m_track.load_w(path.toStdWString());
+#else
+    const bool ok = m_track.load(path.toStdString());
+#endif
+    if (!ok) {
+        setStatus(QStringLiteral("解码失败：%1").arg(QString::fromStdString(m_track.error())));
+        return false;
+    }
+    m_audioPath = path;
+    emit audioChanged();
+    return true;
+}
+
+void SliceWorkspace::setSlicesForTest(std::vector<beatbench::slice::Slice> slices,
+                                      std::vector<bool> enabled) {
+    m_slices = std::move(slices);
+    m_sliceEnabled = std::move(enabled);
+    if (m_sliceEnabled.size() != m_slices.size())
+        m_sliceEnabled.assign(m_slices.size(), true);
+    emit slicesChanged();
+}
+
 QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
                                          int beatsPerMeasure, int startId,
                                          int startMeasure,
                                          const QString& outDir, const QString& prefix,
-                                         qreal fadeMs, bool placeIntoChart) {
+                                         qreal fadeMs, bool placeIntoChart,
+                                         const QString& conflictPolicy) {
     QVariantMap res;
     res.insert(QStringLiteral("ok"), false);
     if (m_slices.empty()) {
@@ -102,17 +216,40 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
         res.insert(QStringLiteral("error"), QStringLiteral("输出目录为空"));
         return res;
     }
-    const QString baseName = prefix.isEmpty() ? QStringLiteral("slice") : prefix;
+    QString policyError;
+    const auto policy = parse_conflict_policy(conflictPolicy, &policyError);
+    if (!policyError.isEmpty()) {
+        res.insert(QStringLiteral("error"), policyError);
+        return res;
+    }
+    const QString baseName = normalize_export_prefix(prefix);
+    res.insert(QStringLiteral("outDir"), outDir);
+    res.insert(QStringLiteral("conflictPolicy"),
+               policy == slice::ExportConflictPolicy::Overwrite
+                   ? QStringLiteral("overwrite")
+                   : (policy == slice::ExportConflictPolicy::Continue
+                          ? QStringLiteral("continue")
+                          : QStringLiteral("error")));
     // 防御：起始 id / 起始小节 夹逼到合法域（QML 侧异常输入不得进 core）
     const int safeStartId = std::clamp(startId, 1, 1295);
     const int safeStartMeasure = std::clamp(startMeasure, 1, 999);
-    qWarning("slice export: begin id=%d measure=%d slices=%zu enabled=%zu",
-             safeStartId, safeStartMeasure, m_slices.size(), m_sliceEnabled.size());
+    qWarning("slice export: begin id=%d measure=%d slices=%zu enabled=%zu policy=%s",
+             safeStartId, safeStartMeasure, m_slices.size(), m_sliceEnabled.size(),
+             qPrintable(res.value(QStringLiteral("conflictPolicy")).toString()));
 
-    const auto items = slice::build_export_layout(
+    auto items = slice::build_export_layout(
         m_slices, m_sliceEnabled, occupied_wav_ids(m_chartSession),
         static_cast<std::uint32_t>(safeStartId), baseName.toStdString(), bpm,
-        beatsPerMeasure, subdivision, m_offsetSec, safeStartMeasure);
+        beatsPerMeasure, subdivision, m_offsetSec, safeStartMeasure, kExportNameWidth);
+    const auto scan = scan_export_disk(outDir, baseName, items);
+    res.insert(QStringLiteral("collisions"), scan.collisions);
+    if (!slice::apply_export_file_policy(items, baseName.toStdString(), scan.occupiedIndexes,
+                                         to_std_names(scan.collisions), policy, kExportNameWidth)) {
+        res.insert(QStringLiteral("error"),
+                   QStringLiteral("输出文件已存在（覆盖 / 续号 / 取消）: %1")
+                       .arg(scan.collisions.join(QStringLiteral(", "))));
+        return res;
+    }
     qWarning("slice export: layout ok (%zu items)", items.size());
 
     // 输出：<outDir>/<prefix>_<NNN>.wav；prefix 含 `/` 或 `\` 时建对应子目录
@@ -125,12 +262,14 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
     const double fade = fadeMs / 1000.0;
     int written = 0;
     QStringList errors;
+    QStringList writtenFiles;
     for (const auto& it : items) {
         if (!it.enabled || it.wavId == 0) continue;
         if (it.sliceIndex < 0 || it.sliceIndex >= static_cast<int>(m_slices.size()))
             continue;
         const auto& s = m_slices[static_cast<std::size_t>(it.sliceIndex)];
-        const QString outPath = QDir(outDir).filePath(QString::fromStdString(it.fileName));
+        const QString relName = QString::fromStdString(it.fileName);
+        const QString outPath = QDir(outDir).filePath(relName);
         auto pcm = m_track.window(s.startSec, s.endSec);
         if (pcm.empty()) {
             errors << outPath + QStringLiteral(": 空窗口");
@@ -147,12 +286,14 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
             continue;
         }
         ++written;
+        writtenFiles << relName;
     }
 
     const std::string rawStr = slice::build_placement_raw(items, bpm, beatsPerMeasure);
     qWarning("slice export: wrote=%d raw_chars=%zu", written, rawStr.size());
     res.insert(QStringLiteral("ok"), errors.isEmpty());
     res.insert(QStringLiteral("count"), written);
+    res.insert(QStringLiteral("files"), writtenFiles);
     res.insert(QStringLiteral("raw"), QString::fromStdString(rawStr));
     // 铺放起点信息（用户问「自动铺放知道从第几小节开始吗」）：启用切片的 measure 范围
     // （文件 0-based；对外显示 1-based「第 N 小节」= 文件小节号 + 1）

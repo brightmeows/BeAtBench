@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <set>
 #include <string>
 #include <vector>
@@ -50,6 +51,7 @@ std::vector<SliceExportItem> build_export_layout(
         if ((i < enabled.size()) && enabled[i]) ++need;
     const auto ids = allocate_wav_ids(occupied, start_id, need);
     int id_i = 0;
+    int file_i = 0;
 
     const int beatsPerMeas = std::max(1, beatsPerMeasure);
     const int sub = std::max(1, subdivision);
@@ -66,11 +68,15 @@ std::vector<SliceExportItem> build_export_layout(
         if (en) {
             it.wavId = (id_i < static_cast<int>(ids.size())) ? ids[static_cast<std::size_t>(id_i)] : 0;
             ++id_i;
+            it.fileIndex = file_i++;
+            char nameBuf[512];
+            std::snprintf(nameBuf, sizeof(nameBuf), "%s_%0*d.wav", baseName.c_str(),
+                          std::max(1, width), it.fileIndex);
+            it.fileName = nameBuf;
+        } else {
+            it.fileIndex = -1;
+            it.fileName.clear();
         }
-        char nameBuf[64];
-        std::snprintf(nameBuf, sizeof(nameBuf), "%s_%0*d.wav", baseName.c_str(),
-                      std::max(1, width), static_cast<int>(i));
-        it.fileName = nameBuf;
 
         // 拍位换算：beat = (startSec - offset) * bpm / 60；吸附到细分网格
         double beat = (s.startSec - offset) * bpm / 60.0;
@@ -149,6 +155,82 @@ std::string build_placement_raw(const std::vector<SliceExportItem>& items,
         }
     }
     return out;
+}
+
+int parse_export_file_index(const std::string& fileName, const std::string& baseName,
+                            int width) {
+    // `{base}_{NNN}.wav` 最短 = base + '_' + width 位 + ".wav"
+    if (baseName.empty() ||
+        fileName.size() < baseName.size() + 1 + static_cast<std::size_t>(std::max(1, width)) + 4)
+        return -1;
+    if (fileName.compare(0, baseName.size(), baseName) != 0) return -1;
+    if (fileName[baseName.size()] != '_') return -1;
+    const std::string suffix = ".wav";
+    if (fileName.size() < suffix.size() ||
+        fileName.compare(fileName.size() - suffix.size(), suffix.size(), suffix) != 0)
+        return -1;
+    const std::string digits =
+        fileName.substr(baseName.size() + 1,
+                        fileName.size() - baseName.size() - 1 - suffix.size());
+    if (digits.empty()) return -1;
+    const int minWidth = std::max(1, width);
+    if (static_cast<int>(digits.size()) < minWidth) return -1;
+    for (const char c : digits) {
+        if (c < '0' || c > '9') return -1;
+    }
+    int value = 0;
+    for (const char c : digits) {
+        if (value > (std::numeric_limits<int>::max() - (c - '0')) / 10) return -1;
+        value = value * 10 + (c - '0');
+    }
+    return value;
+}
+
+int next_continue_file_index(const std::vector<int>& occupiedIndexes) {
+    int maxIndex = -1;
+    for (const int i : occupiedIndexes)
+        if (i >= 0) maxIndex = std::max(maxIndex, i);
+    return maxIndex + 1;
+}
+
+std::vector<int> allocate_continue_file_indexes(const std::vector<int>& occupiedIndexes,
+                                                int count) {
+    std::vector<int> out;
+    if (count <= 0) return out;
+    int cand = next_continue_file_index(occupiedIndexes);
+    out.reserve(static_cast<std::size_t>(count));
+    for (int i = 0; i < count; ++i) out.push_back(cand++);
+    return out;
+}
+
+namespace {
+std::string format_export_file_name(const std::string& baseName, int index, int width) {
+    char nameBuf[512];
+    std::snprintf(nameBuf, sizeof(nameBuf), "%s_%0*d.wav", baseName.c_str(),
+                  std::max(1, width), std::max(0, index));
+    return nameBuf;
+}
+}  // namespace
+
+bool apply_export_file_policy(std::vector<SliceExportItem>& items, const std::string& baseName,
+                              const std::vector<int>& occupiedIndexes,
+                              const std::vector<std::string>& collidingNames,
+                              ExportConflictPolicy policy, int width) {
+    if (collidingNames.empty() || policy == ExportConflictPolicy::Overwrite) return true;
+    if (policy == ExportConflictPolicy::Error) return false;
+
+    int need = 0;
+    for (const auto& it : items)
+        if (it.enabled) ++need;
+    const auto indexes = allocate_continue_file_indexes(occupiedIndexes, need);
+    int id_i = 0;
+    for (auto& it : items) {
+        if (!it.enabled) continue;
+        if (id_i >= static_cast<int>(indexes.size())) break;
+        it.fileIndex = indexes[static_cast<std::size_t>(id_i++)];
+        it.fileName = format_export_file_name(baseName, it.fileIndex, width);
+    }
+    return true;
 }
 
 }  // namespace beatbench::slice
