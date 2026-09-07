@@ -12,6 +12,7 @@ add_library(beatbench_core STATIC
     src/midi/midi_parser.cpp
     src/slice/slice_plan.cpp
     src/slice/slice_export.cpp
+    src/io/atomic_write.cpp
     src/json/json.cpp
     src/command/registry.cpp
     src/command/builtins.cpp

@@ -71,10 +71,14 @@ public:
     //   - autosave（默认关）：把「修改后」chart 直接写回 path（覆盖）。
     // 持久化由 persist_hook 注入（core/edit 不依赖 codec；GUI/CLI 注入 codec 写出）。
 
-    /// 设置持久化钩子：写入 (chart, path)；返回是否成功。默认无钩子（不自动落盘）。
-    /// 由调用方（builtins/GUI）注入：用 codec->write + 文件写。
-    using PersistHook = std::function<bool(const Chart&, const std::string& path)>;
+    /// 设置持久化钩子：写入 (chart, path)；返回是否成功。error 可选，失败时填原因。
+    /// 默认无钩子（不自动落盘）。由调用方（builtins/GUI）注入：用 codec->write + 原子写。
+    using PersistHook =
+        std::function<bool(const Chart&, const std::string& path, std::string* error)>;
     void set_persist_hook(PersistHook hook) { m_persist_hook = std::move(hook); }
+
+    /// 最近一次崩溃备份失败原因（成功或未尝试则为空）。
+    const std::string& last_backup_error() const { return m_last_backup_error; }
 
     /// 崩溃备份开关（默认 true；需 persist_hook + path 才生效）。
     bool backup_enabled() const { return m_backup; }
@@ -95,6 +99,7 @@ private:
     PersistHook m_persist_hook;
     bool m_backup = true;
     bool m_autosave = false;
+    std::string m_last_backup_error;
 };
 
 // —— 具体编辑命令（edit_commands.cpp 实现） ——

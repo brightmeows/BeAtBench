@@ -274,6 +274,34 @@ TEST(SessionRegistry, SaveAsUpdatesSessionPath) {
     fs::remove_all(dir);
 }
 
+TEST(SessionRegistry, SaveWriteFailureKeepsOriginal) {
+    namespace fs = std::filesystem;
+    auto& reg = session_registry();
+    reg.activate("default");
+    const auto dir = fs::temp_directory_path() / "bb_save_keep";
+    fs::create_directories(dir);
+    const auto path = (dir / "chart.bms").string();
+    {
+        std::ofstream f(path, std::ios::binary);
+        f << "*----- HEADER\n#TITLE keep\n#BPM 130\n";
+    }
+    Json largs = Json::object();
+    largs.set("path", path);
+    ASSERT_TRUE(dispatch("session.load", std::move(largs)).at("ok").as_bool());
+
+    // 把目标改成目录：原子替换失败，原路径仍是目录，不报成功。
+    fs::remove(path);
+    fs::create_directory(path);
+    Json sargs = Json::object();
+    sargs.set("overwrite", true);
+    const Json sresp = dispatch("session.save", std::move(sargs));
+    EXPECT_FALSE(sresp.at("ok").as_bool());
+    EXPECT_EQ(sresp.at("error").at("code").as_str(), "write_failed");
+    EXPECT_TRUE(fs::is_directory(path));
+    EXPECT_FALSE(fs::exists(path + ".tmp"));
+    fs::remove_all(dir);
+}
+
 TEST(SessionRegistry, SaveNoPathFails) {
     auto& reg = session_registry();
     reg.activate("default");

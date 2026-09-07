@@ -9,7 +9,6 @@
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <iterator>
 #include <string>
@@ -25,6 +24,7 @@
 #include "beatbench/core/command/Command.hpp"
 #include "beatbench/core/json/Json.hpp"
 #include "beatbench/core/timing/TimingEngine.hpp"
+#include "beatbench/core/io/AtomicWrite.hpp"
 #include "beatbench/audio/ChartRenderer.hpp"
 #include "beatbench/audio/SampleCache.hpp"
 
@@ -249,13 +249,11 @@ int cmd_convert(const std::string& in_path, const std::string& out_path,
         return 2;
     }
     const auto text = codec->write(result.chart, opts);
-    std::ofstream out(out_path, std::ios::binary);
-    if (!out.is_open()) {
-        std::printf("[ERROR] 无法写入: %s\n", out_path.c_str());
+    const auto wr = beatbench::io::atomic_write_file(std::filesystem::u8path(out_path), text);
+    if (!wr.ok) {
+        std::printf("[ERROR] %s\n", wr.error.c_str());
         return 1;
     }
-    out << text;
-    out.close();
     std::printf("转换完成: %s -> %s (%zu B, %s)\n", in_path.c_str(), out_path.c_str(),
                 text.size(), encoding.c_str());
     return 0;

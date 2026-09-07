@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -262,6 +263,28 @@ TEST(ChartRendererTest, WriteWavFile) {
     const auto sz = std::filesystem::file_size(tmp);
     EXPECT_EQ(sz, 44u + 44100u * 4u);
     std::filesystem::remove(tmp);
+}
+
+TEST(ChartRendererTest, WriteWavFailureKeepsOriginal) {
+    beatbench::audio::RenderedAudio audio;
+    audio.sampleRate = 8000.0;
+    audio.interleavedStereo.assign(16, 0.1f);
+    const auto dir = std::filesystem::temp_directory_path() / "beatbench_wav_keep";
+    std::filesystem::create_directories(dir);
+    const auto dest = dir / "keep.wav";
+    {
+        std::ofstream out(dest, std::ios::binary);
+        out << "OLDWAV";
+    }
+    // 把目标改成目录，原子替换应失败且不把内容写成 WAV。
+    std::filesystem::remove(dest);
+    std::filesystem::create_directory(dest);
+    std::string err;
+    EXPECT_FALSE(beatbench::audio::write_wav_file(dest.string(), audio, &err));
+    EXPECT_FALSE(err.empty());
+    EXPECT_TRUE(std::filesystem::is_directory(dest));
+    EXPECT_FALSE(std::filesystem::exists(std::filesystem::path(dest.string() + ".tmp")));
+    std::filesystem::remove_all(dir);
 }
 
 // M4.3c 增量重渲染根基：**区间渲染 == 全量渲染的对应片段**（逐帧一致）。

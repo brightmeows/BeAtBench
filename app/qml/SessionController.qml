@@ -1002,7 +1002,9 @@ QtObject {
         var r = sessionCmd("session.save", { overwrite: true })
         if (r) {
             window.chartPath = r.output
-            setStatus(qsTr("已保存：%1（%2 字节）").arg(r.output).arg(r.bytes))
+            var msg = qsTr("已保存：%1（%2 字节）").arg(r.output).arg(r.bytes)
+            if (r.backup_error) msg += qsTr(" · 崩溃备份失败：") + r.backup_error
+            setStatus(msg)
         }
     }
     /// 元信息面板「保存」按钮：只应用元信息编辑 + 扩展代码到内存会话（不写文件）。
@@ -1033,7 +1035,9 @@ QtObject {
         var r = sessionCmd("session.save", { path: path, overwrite: true })
         if (r) {
             window.chartPath = r.output
-            setStatus(qsTr("已另存为：%1").arg(r.output))
+            var msg = qsTr("已另存为：%1").arg(r.output)
+            if (r.backup_error) msg += qsTr(" · 崩溃备份失败：") + r.backup_error
+            setStatus(msg)
         }
     }
 }

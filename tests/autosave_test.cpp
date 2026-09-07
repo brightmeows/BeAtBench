@@ -52,7 +52,7 @@ TEST(Autosave, BackupWrittenOnEdit) {
 
     s.load(make_chart(), path);
     // 假 hook：写路径名内容
-    s.set_persist_hook([](const Chart&, const std::string& p) -> bool {
+    s.set_persist_hook([](const Chart&, const std::string& p, std::string*) -> bool {
         std::ofstream out(p, std::ios::binary);
         if (!out.is_open()) return false;
         out << "persisted:" << p;
@@ -86,7 +86,7 @@ TEST(Autosave, AutosaveWritesOriginalPath) {
     std::filesystem::remove(path + ".bak");
 
     s.load(make_chart(), path);
-    s.set_persist_hook([](const Chart&, const std::string& p) -> bool {
+    s.set_persist_hook([](const Chart&, const std::string& p, std::string*) -> bool {
         std::ofstream out(p, std::ios::binary);
         if (!out.is_open()) return false;
         out << "persisted:" << p;
@@ -105,6 +105,22 @@ TEST(Autosave, AutosaveWritesOriginalPath) {
     // 清理
     std::filesystem::remove(path);
     std::filesystem::remove(path + ".bak");
+    std::filesystem::remove_all(dir);
+}
+
+TEST(Autosave, BackupFailureIsVisible) {
+    EditorSession s;
+    std::filesystem::path dir = std::filesystem::temp_directory_path() / "bb_autosave_fail";
+    std::filesystem::create_directories(dir);
+    const auto path = (dir / "chart.bms").string();
+    s.load(make_chart(), path);
+    s.set_persist_hook([](const Chart&, const std::string&, std::string* error) -> bool {
+        if (error) *error = "磁盘满（测试注入）";
+        return false;
+    });
+    ASSERT_TRUE(s.exec(std::make_unique<PutNoteCommand>(
+        2, Rational(0, 1), Lane{0, LaneKind::Key, 2}, 2)));
+    EXPECT_EQ(s.last_backup_error(), "磁盘满（测试注入）");
     std::filesystem::remove_all(dir);
 }
 

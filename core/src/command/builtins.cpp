@@ -6,7 +6,6 @@
 #include "beatbench/core/command/Builtins.hpp"
 
 #include <filesystem>
-#include <fstream>
 #include <cmath>
 #include <cstdlib>
 
@@ -22,6 +21,7 @@
 #include "beatbench/core/edit/EditorSession.hpp"
 #include "beatbench/core/edit/Selection.hpp"
 #include "beatbench/core/edit/SessionRegistry.hpp"
+#include "beatbench/core/io/AtomicWrite.hpp"
 
 namespace beatbench::cmd {
 
@@ -52,6 +52,11 @@ bool arg_bool(const Json& args, const char* key, bool fallback) {
     const Json* v = args.find(key);
     if (!v || !v->is_bool()) return fallback;
     return v->as_bool();
+}
+
+void write_chart_or_throw(const std::string& out_path, const std::string& text) {
+    const auto wr = beatbench::io::atomic_write_file(std::filesystem::u8path(out_path), text);
+    if (!wr.ok) throw CommandError("write_failed", wr.error);
 }
 
 // 格式参数（M3：走 CodecRegistry 动态解析；未知格式 → unsupported_format）。
@@ -438,13 +443,7 @@ public:
         }
 
         const std::string text = codec->write(result.chart, wopts);
-        // 路径为 UTF-8 → std::filesystem::path（宽字符 API），修复非 ASCII 路径
-        std::ofstream out(std::filesystem::u8path(out_path), std::ios::binary);
-        if (!out.is_open()) {
-            throw CommandError("write_failed", "无法写入: " + out_path);
-        }
-        out << text;
-        out.close();
+        write_chart_or_throw(out_path, text);
 
         Json res = Json::object();
         res.set("written", true);
@@ -676,17 +675,21 @@ Json timing_events_json(const Chart& chart, std::string_view kind) {
 // 持久化钩子工厂：用 codec 把 chart 写到 path（崩溃备份/自动保存用）。
 // core/edit 不依赖 codec，由协议层注入——session.load 成功时绑定。
 edit::EditorSession::PersistHook make_persist_hook(const Codec* codec) {
-    return [codec](const Chart& chart, const std::string& path) -> bool {
+    return [codec](const Chart& chart, const std::string& path, std::string* error) -> bool {
         try {
             const std::string text = codec->write(chart, beatbench::codec::WriteOptions{});
-            // 路径为 UTF-8 → std::filesystem::path（宽字符 API），修复非 ASCII 路径
-            std::ofstream out(std::filesystem::u8path(path), std::ios::binary);
-            if (!out.is_open()) return false;
-            out << text;
-            out.close();
+            const auto wr = beatbench::io::atomic_write_file(std::filesystem::u8path(path), text);
+            if (!wr.ok) {
+                if (error) *error = wr.error;
+                return false;
+            }
             return true;
+        } catch (const std::exception& e) {
+            if (error) *error = e.what();
+            return false;
         } catch (...) {
-            return false;  // 备份/自动保存失败静默（下次编辑再试）
+            if (error) *error = "崩溃备份/自动保存写出失败";
+            return false;
         }
     };
 }
@@ -1309,13 +1312,7 @@ public:
             }
         }
         const std::string text = codec->write(session.chart(), wopts);
-        // 路径为 UTF-8 → std::filesystem::path（宽字符 API），修复非 ASCII 路径
-        std::ofstream out(std::filesystem::u8path(out_path), std::ios::binary);
-        if (!out.is_open()) {
-            throw CommandError("write_failed", "无法写入: " + out_path);
-        }
-        out << text;
-        out.close();
+        write_chart_or_throw(out_path, text);
 
         // 另存为后更新会话路径（后续「保存」写新路径）
         if (session.path() != out_path) session.set_path(out_path);
@@ -1325,6 +1322,8 @@ public:
         res.set("output", out_path);
         res.set("bytes", static_cast<std::int64_t>(text.size()));
         res.set("format", std::string(codec->id()));
+        if (!session.last_backup_error().empty())
+            res.set("backup_error", session.last_backup_error());
         return res;
     }
 };
@@ -1350,6 +1349,8 @@ public:
         Json out = Json::object();
         out.set("autosave", session.autosave_enabled());
         out.set("backup", session.backup_enabled());
+        if (!session.last_backup_error().empty())
+            out.set("backup_error", session.last_backup_error());
         return out;
     }
 };

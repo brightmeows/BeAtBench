@@ -316,10 +316,15 @@ bool EditorSession::redo() {
 void EditorSession::maybe_persist() {
     if (!m_chart || !m_persist_hook || m_path.empty()) return;
     if (m_backup) {
-        (void)m_persist_hook(*m_chart, m_path + ".bak");  // 崩溃备份（写失败静默）
+        std::string err;
+        if (!m_persist_hook(*m_chart, m_path + ".bak", &err)) {
+            m_last_backup_error = err.empty() ? ("崩溃备份写入失败: " + m_path + ".bak") : err;
+        } else {
+            m_last_backup_error.clear();
+        }
     }
     if (m_autosave) {
-        (void)m_persist_hook(*m_chart, m_path);  // 自动保存（写失败静默——下次再试）
+        (void)m_persist_hook(*m_chart, m_path, nullptr);  // 自动保存失败下次再试；不覆盖 backup 错误
     }
 }
 

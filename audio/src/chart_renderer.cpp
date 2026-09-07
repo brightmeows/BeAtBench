@@ -15,73 +15,89 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
+#include <cstdint>
+#include <filesystem>
 #include <map>
+#include <string>
 #include <vector>
 
 #include "beatbench/audio/AudioDecoder.hpp"
 #include "beatbench/audio/AudioPath.hpp"
+#include "beatbench/core/io/AtomicWrite.hpp"
 
 namespace beatbench::audio {
 
 namespace {
 
-/// WAV 写出（16-bit PCM 立体声；RIFF/WAVE 标准头）。f = 已打开的文件（调用方负责）。
-/// 成功 = 全部写出；任何失败返回 false（调用方负责关闭）。
-bool write_wav_pcm(FILE* f, const std::vector<float>& pcm, float sampleRate) {
-    if (pcm.empty()) return false;
+/// WAV 缓冲（16-bit PCM 立体声；RIFF/WAVE 标准头）。空 PCM → 空串。
+std::string encode_wav_pcm(const std::vector<float>& pcm, float sampleRate) {
+    if (pcm.empty()) return {};
     const std::size_t frames = pcm.size() / 2;
-    auto w16 = [&](std::uint16_t v) { std::fwrite(&v, 2, 1, f); };
-    auto w32 = [&](std::uint32_t v) { std::fwrite(&v, 4, 1, f); };
     const std::uint32_t dataBytes = static_cast<std::uint32_t>(frames * 4);
-    std::fwrite("RIFF", 1, 4, f);
-    w32(36 + dataBytes);
-    std::fwrite("WAVE", 1, 4, f);
-    std::fwrite("fmt ", 1, 4, f);
-    w32(16);
-    w16(1);                    // PCM
-    w16(2);                    // 声道
-    w32(static_cast<std::uint32_t>(sampleRate));
-    w32(static_cast<std::uint32_t>(sampleRate) * 4);  // byte rate
-    w16(4);                    // block align
-    w16(16);                   // 位深
-    std::fwrite("data", 1, 4, f);
-    w32(dataBytes);
+    std::string out;
+    out.resize(44 + dataBytes);
+    auto put16 = [&](std::size_t off, std::uint16_t v) {
+        out[off] = static_cast<char>(v & 0xff);
+        out[off + 1] = static_cast<char>((v >> 8) & 0xff);
+    };
+    auto put32 = [&](std::size_t off, std::uint32_t v) {
+        out[off] = static_cast<char>(v & 0xff);
+        out[off + 1] = static_cast<char>((v >> 8) & 0xff);
+        out[off + 2] = static_cast<char>((v >> 16) & 0xff);
+        out[off + 3] = static_cast<char>((v >> 24) & 0xff);
+    };
+    out.replace(0, 4, "RIFF");
+    put32(4, 36 + dataBytes);
+    out.replace(8, 4, "WAVE");
+    out.replace(12, 4, "fmt ");
+    put32(16, 16);
+    put16(20, 1);
+    put16(22, 2);
+    put32(24, static_cast<std::uint32_t>(sampleRate));
+    put32(28, static_cast<std::uint32_t>(sampleRate) * 4);
+    put16(32, 4);
+    put16(34, 16);
+    out.replace(36, 4, "data");
+    put32(40, dataBytes);
+    std::size_t i = 44;
     for (const float v : pcm) {
         const int s = static_cast<int>(std::lround(std::clamp(v, -1.0f, 1.0f) * 32767.0f));
-        const std::int16_t i16 = static_cast<std::int16_t>(s);
-        std::fwrite(&i16, 2, 1, f);
+        const auto i16 = static_cast<std::uint16_t>(static_cast<std::int16_t>(s));
+        out[i++] = static_cast<char>(i16 & 0xff);
+        out[i++] = static_cast<char>((i16 >> 8) & 0xff);
+    }
+    return out;
+}
+
+bool write_wav16(const std::string& path, const std::vector<float>& pcm,
+                 float sampleRate, std::string* message) {
+    const std::string bytes = encode_wav_pcm(pcm, sampleRate);
+    if (bytes.empty()) {
+        if (message) *message = "PCM 数据为空";
+        return false;
+    }
+    const auto wr = beatbench::io::atomic_write_file(std::filesystem::u8path(path), bytes);
+    if (!wr.ok) {
+        if (message) *message = wr.error;
+        return false;
     }
     return true;
 }
 
-/// WAV 写出（16-bit PCM 立体声；窄路径）。存在性/可写性由 fopen 判断。
-bool write_wav16(const std::string& path, const std::vector<float>& pcm,
-                 float sampleRate, std::string* message) {
-    FILE* f = std::fopen(path.c_str(), "wb");
-    if (!f) {
-        if (message) *message = "无法创建文件（路径不可写？）";
-        return false;
-    }
-    const bool ok = write_wav_pcm(f, pcm, sampleRate);
-    std::fclose(f);
-    if (!ok && message) *message = "PCM 数据为空";
-    return ok;
-}
-
 #ifdef _WIN32
-/// WAV 写出（宽路径；Windows 日文/非 ASCII 路径必须走它）。
 bool write_wav16_w(const std::wstring& path, const std::vector<float>& pcm,
                    float sampleRate, std::string* message) {
-    FILE* f = nullptr;
-    if (_wfopen_s(&f, path.c_str(), L"wb") != 0 || !f) {
-        if (message) *message = "无法创建文件（路径不可写？）";
+    const std::string bytes = encode_wav_pcm(pcm, sampleRate);
+    if (bytes.empty()) {
+        if (message) *message = "PCM 数据为空";
         return false;
     }
-    const bool ok = write_wav_pcm(f, pcm, sampleRate);
-    std::fclose(f);
-    if (!ok && message) *message = "PCM 数据为空";
-    return ok;
+    const auto wr = beatbench::io::atomic_write_file(std::filesystem::path(path), bytes);
+    if (!wr.ok) {
+        if (message) *message = wr.error;
+        return false;
+    }
+    return true;
 }
 #endif  // _WIN32
 
