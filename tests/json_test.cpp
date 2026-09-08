@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // 最小 JSON 模块测试：解析严格性 / 转义 / 代理对 / 序列化往返 / 错误路径。
+#include <cmath>
+
 #include <gtest/gtest.h>
 
 #include "beatbench/core/json/Json.hpp"
