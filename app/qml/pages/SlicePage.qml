@@ -30,6 +30,7 @@ Item {
     /// （子行接续：目标小节段已有最高子行 +1 起；一个撤销步）。
     property bool placeToChart: false
     property bool independentExport: false
+    property bool _base62WarningConfirmed: false
     /// M6.4f 键盘快捷键门控（Main 注入：页面激活 && 无文本输入焦点）；
     /// 本页自持 = 页面可见（StackLayout 激活）&& 切片编辑对话框未开。
     property bool kbdPageActive: false
@@ -99,6 +100,12 @@ Item {
         return Math.max(1, Math.min(max, v))
     }
     function doExport(policy) {
+        if (policy === undefined && exportBaseBox.currentIndex === 2 &&
+            !root.independentExport && sliceWorkspace.effectiveWavIdBase(0) !== 62 &&
+            !root._base62WarningConfirmed) {
+            base62PlacementWarning.open()
+            return
+        }
         var dir = defaultOutDir()
         var prefix = prefixBox.text.length ? prefixBox.text : "slice"
         if (policy === undefined || policy === null || policy === "") {
@@ -1144,6 +1151,26 @@ Item {
             if (sliceEditDialog.editIndex < 0) return
             sliceWorkspace.setSliceBounds(sliceEditDialog.editIndex,
                                           startBox.value / 1000.0, durBox.value / 1000.0)
+        }
+    }
+
+    Dialog {
+        id: base62PlacementWarning
+        modal: true
+        anchors.centerIn: parent
+        width: 520
+        title: qsTr("Base62 导出提醒")
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        Label {
+            anchors.fill: parent
+            anchors.margins: 16
+            text: qsTr("当前编辑区谱面未启用 #BASE 62，但导出进制选择为 Base62。\n\n若同时铺入编辑区，Base62 的 ID 可能按 Base36 解释并覆盖已有定义，这通常不是预期行为。建议改回“自动”，或先在编辑区谱面中设置 #BASE 62。\n\n仍要继续吗？")
+            color: Theme.text
+            wrapMode: Text.WordWrap
+        }
+        onAccepted: {
+            root._base62WarningConfirmed = true
+            root.doExport()
         }
     }
 
