@@ -259,6 +259,11 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
                                : beatbench::IdBase::Base36;
     const auto idBase = idBaseMode == 2 ? beatbench::IdBase::Base62
                                         : (idBaseMode == 1 ? beatbench::IdBase::Base36 : chartBase);
+    if (placeIntoChart && m_chartSession && m_chartSession->chart() &&
+        idBase != m_chartSession->chart()->id_base) {
+        res.insert(QStringLiteral("error"), QStringLiteral("铺入编辑区时导出进制必须与当前谱面的 #BASE 一致"));
+        return res;
+    }
     const auto exportOccupied = independentExport ? std::vector<std::uint32_t>{} : occupied_wav_ids(m_chartSession);
     const int maxId = idBase == beatbench::IdBase::Base62 ? 3843 : 1295;
     // 防御：起始 id / 起始小节 夹逼到合法域（QML 侧异常输入不得进 core）
