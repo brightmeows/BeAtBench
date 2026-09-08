@@ -158,10 +158,13 @@ QVariantMap SliceWorkspace::previewExportFiles(const QString& outDir, const QStr
         return res;
     }
     const QString baseName = normalize_export_prefix(prefix);
+    const auto previewBase = m_chartSession && m_chartSession->chart()
+                                 ? m_chartSession->chart()->id_base
+                                 : beatbench::IdBase::Base36;
     const auto items = slice::build_export_layout(
         m_slices, m_sliceEnabled, occupied_wav_ids(m_chartSession), 1,
         baseName.toStdString(), 120.0, 4, 4, m_offsetSec, 1, kExportNameWidth,
-        m_chartSession && m_chartSession->chart() ? m_chartSession->chart()->id_base : beatbench::IdBase::Base36);
+        previewBase);
     const auto scan = scan_export_disk(outDir, baseName, items);
     res.insert(QStringLiteral("ok"), true);
     res.insert(QStringLiteral("outDir"), outDir);
@@ -202,7 +205,7 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
                                          int startMeasure,
                                          const QString& outDir, const QString& prefix,
                                          qreal fadeMs, bool placeIntoChart,
-                                         const QString& conflictPolicy) {
+                                         const QString& conflictPolicy, int idBaseMode, bool independentExport) {
     QVariantMap res;
     res.insert(QStringLiteral("ok"), false);
     if (m_slices.empty()) {
@@ -231,19 +234,26 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
                    : (policy == slice::ExportConflictPolicy::Continue
                           ? QStringLiteral("continue")
                           : QStringLiteral("error")));
+    const auto chartBase = m_chartSession && m_chartSession->chart()
+                               ? m_chartSession->chart()->id_base
+                               : beatbench::IdBase::Base36;
+    const auto idBase = idBaseMode == 2 ? beatbench::IdBase::Base62
+                                        : (idBaseMode == 1 ? beatbench::IdBase::Base36 : chartBase);
+    const auto exportOccupied = independentExport ? std::vector<std::uint32_t>{} : occupied_wav_ids(m_chartSession);
+    const int maxId = idBase == beatbench::IdBase::Base62 ? 3843 : 1295;
     // 防御：起始 id / 起始小节 夹逼到合法域（QML 侧异常输入不得进 core）
-    const int safeStartId = std::clamp(startId, 1, 1295);
+    const int safeStartId = std::clamp(startId, 1, maxId);
     const int safeStartMeasure = std::clamp(startMeasure, 1, 999);
     qWarning("slice export: begin id=%d measure=%d slices=%zu enabled=%zu policy=%s",
              safeStartId, safeStartMeasure, m_slices.size(), m_sliceEnabled.size(),
              qPrintable(res.value(QStringLiteral("conflictPolicy")).toString()));
 
-    const auto occupied = occupied_wav_ids(m_chartSession);
+    const auto occupied = exportOccupied;
     auto items = slice::build_export_layout(
         m_slices, m_sliceEnabled, occupied,
         static_cast<std::uint32_t>(safeStartId), baseName.toStdString(), bpm,
         beatsPerMeasure, subdivision, m_offsetSec, safeStartMeasure, kExportNameWidth,
-        m_chartSession && m_chartSession->chart() ? m_chartSession->chart()->id_base : beatbench::IdBase::Base36);
+        idBase);
     int requestedIds = 0;
     int allocatedIds = 0;
     for (const auto& it : items) {
@@ -309,7 +319,7 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
 
     const std::string rawStr = slice::build_placement_raw(
         items, bpm, beatsPerMeasure,
-        m_chartSession && m_chartSession->chart() ? m_chartSession->chart()->id_base : beatbench::IdBase::Base36);
+        idBase);
     qWarning("slice export: wrote=%d raw_chars=%zu", written, rawStr.size());
     res.insert(QStringLiteral("ok"), errors.isEmpty());
     res.insert(QStringLiteral("count"), written);
@@ -340,14 +350,14 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
         if (it.enabled && it.wavId > 0)
             maxAllocId = std::max(maxAllocId, static_cast<int>(it.wavId));
     if (maxAllocId >= 0) {
-        const auto occ = occupied_wav_ids(m_chartSession);
+        const auto occ = exportOccupied;
         int cand = maxAllocId + 1;
-        while (cand <= 1295 && std::find(occ.begin(), occ.end(),
+        while (cand <= maxId && std::find(occ.begin(), occ.end(),
                                          static_cast<std::uint32_t>(cand)) != occ.end())
             ++cand;
-        nextStartId = (cand <= 1295) ? cand : nextFreeWavId();
+        nextStartId = (cand <= maxId) ? cand : (independentExport ? 1 : nextFreeWavId());
     }
-    res.insert(QStringLiteral("nextStartId"), std::clamp(nextStartId, 1, 1295));
+    res.insert(QStringLiteral("nextStartId"), std::clamp(nextStartId, 1, maxId));
     qWarning("slice export: done ok=%d nextStartId=%d", errors.isEmpty() ? 1 : 0, nextStartId);
 
     // M6.3 铺放（placeIntoChart，2026-09 用户「同时铺入编辑区」）：raw 经 clipboard.paste

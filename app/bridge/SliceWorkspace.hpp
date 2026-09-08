@@ -83,7 +83,8 @@ public:
                                          int startMeasure,
                                          const QString& outDir, const QString& prefix,
                                          qreal fadeMs, bool placeIntoChart = false,
-                                         const QString& conflictPolicy = QStringLiteral("error"));
+                                         const QString& conflictPolicy = QStringLiteral("error"),
+                                         int idBaseMode = 0, bool independentExport = false);
     /// 测试入口：同步装载参考音频（不经 QThreadPool / 不碰声卡）。生产路径仍用 loadAudioFile。
     bool loadAudioFileSyncForTest(const QString& path);
     /// 测试入口：直接注入切片表（绕过 detectSlices）。

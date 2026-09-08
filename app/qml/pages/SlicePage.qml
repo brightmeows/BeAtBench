@@ -29,6 +29,7 @@ Item {
     /// 「同时铺入编辑区」（M6.3 2026-09）：导出成功后把 raw 直接铺进当前谱面 ch01
     /// （子行接续：目标小节段已有最高子行 +1 起；一个撤销步）。
     property bool placeToChart: false
+    property bool independentExport: false
     /// M6.4f 键盘快捷键门控（Main 注入：页面激活 && 无文本输入焦点）；
     /// 本页自持 = 页面可见（StackLayout 激活）&& 切片编辑对话框未开。
     property bool kbdPageActive: false
@@ -73,24 +74,29 @@ Item {
         var i = Math.max(base.lastIndexOf("/"), base.lastIndexOf("\\"))
         return i >= 0 ? base.substring(0, i) : ""
     }
-    // #WAV id 文本（36 进制、2 位大写）：1 → "01"，10 → "0A"，1295 → "ZZ"
+    // #WAV id 文本：自动/显式 Base36 或 Base62，均显示两位。
     function idTextOf(v) {
-        var s = parseInt(v, 10).toString(36).toUpperCase()
+        var base = exportBaseBox && exportBaseBox.currentIndex === 2 ? 62 : 36
+        var alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+        var n = Math.max(0, parseInt(v, 10) || 0)
+        var s = ""
+        do { s = alphabet.charAt(n % base) + s; n = Math.floor(n / base) } while (n > 0)
         while (s.length < 2) s = "0" + s
         return s
     }
     function idValueOf(text) {
-        var t = ("" + text).trim().toUpperCase()
+        var base = exportBaseBox && exportBaseBox.currentIndex === 2 ? 62 : 36
+        var alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+        var t = ("" + text).trim()
+        var v = 0
+        if (!t.length) return 1
         for (var i = 0; i < t.length; ++i) {
-            var c = t.charAt(i)
-            var code = c.charCodeAt(0)
-            var ok = (c >= "0" && c <= "9") || (c >= "A" && c <= "Z")
-            if (!ok) return -1
+            var d = alphabet.indexOf(t.charAt(i))
+            if (d < 0 || d >= base) return -1
+            v = v * base + d
         }
-        var v = parseInt(t, 36)
-        if (isNaN(v) || v < 1) v = 1
-        if (v > 1295) v = 1295   // ZZ 上限（与 SpinBox to 一致）
-        return v
+        var max = base === 62 ? 3843 : 1295
+        return Math.max(1, Math.min(max, v))
     }
     function doExport(policy) {
         var dir = defaultOutDir()
@@ -114,7 +120,9 @@ Item {
         }
         var r = sliceWorkspace.exportSlices(bpmBox.value, subBox.value, 4,
                                             exportIdBox.value, startMeasureBox.value,
-                                            dir, prefix, 1.0, root.placeToChart, policy)
+                                            dir, prefix, 1.0,
+                                            root.placeToChart && !root.independentExport, policy,
+                                            exportBaseBox.currentIndex, root.independentExport)
         exportResult = r
         rawText = (typeof r.raw === "string") ? r.raw : ""
         if (r.ok) {
@@ -976,7 +984,7 @@ Item {
             BbSpinBox {
                 id: exportIdBox
                 from: 1
-                to: 1295
+                to: exportBaseBox.currentIndex === 2 ? 3843 : 1295
                 value: sliceWorkspace.nextFreeWavId()
                 editable: true
                 // 36 进制 id 输入：默认 IntValidator 只放行数字 → 覆盖为字母可入（A0-ZZ/a0-zz）
@@ -997,6 +1005,14 @@ Item {
                 ToolTip.visible: hovered
                 ToolTip.text: qsTr("ch01 起始小节（第 N 小节 = 文件 #(N-1)01:\n默认 = 下一空小节）")
             }
+            Label { text: qsTr("进制"); color: Theme.textMuted }
+            BbComboBox {
+                id: exportBaseBox
+                model: [qsTr("自动"), qsTr("Base36"), qsTr("Base62")]
+                implicitWidth: 76
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("自动：跟随当前谱面；无谱面或未声明 #BASE 时使用 Base36")
+            }
             Label { text: qsTr("前缀"); color: Theme.textMuted }
             BbTextField {
                 id: prefixBox
@@ -1005,9 +1021,21 @@ Item {
                 implicitWidth: 130
             }
             BbCheckBox {
+                id: independentExportBox
+                text: qsTr("独立导出")
+                checked: root.independentExport
+                onToggled: {
+                    root.independentExport = checked
+                    if (checked) root.placeToChart = false
+                }
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("不避开当前谱面的 WAV ID；不能同时铺入编辑区")
+            }
+            BbCheckBox {
                 id: placeToChartBox
                 text: qsTr("同时铺入编辑区")
                 checked: root.placeToChart
+                enabled: !root.independentExport
                 onToggled: root.placeToChart = checked
                 ToolTip.visible: hovered
                 ToolTip.text: qsTr("导出后直接把切片铺进当前谱面 ch01（一个撤销步）\n子行接续：从目标小节段已有子行之后开始，\n同 tick 不挤旧行、新内容跨小节同列")
@@ -1019,7 +1047,10 @@ Item {
                 enabled: sliceWorkspace.hasSlices && sliceWorkspace.hasAudio
                 onClicked: root.doExport()
             }
-            Item { Layout.fillWidth: true }
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 6
             Label {
                 text: root.exportResult && root.exportResult.ok
                       ? (qsTr("已导出 %1 片").arg(root.exportResult.count)
@@ -1037,7 +1068,8 @@ Item {
                          : (sliceWorkspace.hasSlices ? "" : qsTr("（先生成切片）")))
                 color: (root.exportResult && root.exportResult.ok) ? Theme.success : Theme.warning
                 elide: Text.ElideRight
-                Layout.maximumWidth: 420
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
             }
         }
     }
