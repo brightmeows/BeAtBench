@@ -3,8 +3,13 @@
 #include "UiActionRegistry.hpp"
 
 #include <QDebug>
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QProcess>
 #include <QSettings>
+#include <QStandardPaths>
+#include <QStringConverter>
 #include <QTextStream>
 #include <Qt>
 
@@ -405,6 +410,63 @@ QString UiActionRegistry::sequenceFromKey(int key, int modifiers, const QString&
     if (modifiers & Qt::MetaModifier) parts << QStringLiteral("Meta");
     parts << name;
     return parts.join(QLatin1Char('+'));
+}
+
+QString UiActionRegistry::settingsLocationText() const {
+    QSettings s;
+#ifdef Q_OS_WIN
+    QString org = s.organizationName();
+    QString app = s.applicationName();
+    if (org.isEmpty()) org = QStringLiteral("BeAtBench");
+    if (app.isEmpty()) app = QStringLiteral("BeAtBench");
+    return QStringLiteral("HKCU\\Software\\%1\\%2  （keymap / audio）").arg(org, app);
+#else
+    return s.fileName();
+#endif
+}
+
+bool UiActionRegistry::revealSettingsLocation() const {
+    QSettings s;
+#ifdef Q_OS_WIN
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    QDir().mkpath(dir);
+    const QString path = QDir(dir).filePath(QStringLiteral("BeAtBench-keymap.reg"));
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
+        return false;
+    QTextStream ts(&f);
+    ts.setEncoding(QStringConverter::Utf8);
+    QString org = s.organizationName();
+    QString app = s.applicationName();
+    if (org.isEmpty()) org = QStringLiteral("BeAtBench");
+    if (app.isEmpty()) app = QStringLiteral("BeAtBench");
+    ts << QStringLiteral("Windows Registry Editor Version 5.00\n\n");
+    ts << QStringLiteral("[HKEY_CURRENT_USER\\Software\\%1\\%2\\keymap]\n").arg(org, app);
+    s.beginGroup(QStringLiteral("keymap"));
+    const QStringList keys = s.childKeys();
+    for (const QString& id : keys) {
+        const QString v = s.value(id).toString();
+        QString escaped = v;
+        escaped.replace(QLatin1Char('\\'), QStringLiteral("\\\\"));
+        escaped.replace(QLatin1Char('"'), QStringLiteral("\\\""));
+        ts << QStringLiteral("\"%1\"=\"%2\"\n").arg(id, escaped);
+    }
+    s.endGroup();
+    f.close();
+    const QString native = QDir::toNativeSeparators(path);
+    return QProcess::startDetached(QStringLiteral("explorer.exe"),
+                                   {QStringLiteral("/select,") + native});
+#else
+    const QString path = s.fileName();
+    if (path.isEmpty()) return false;
+    const QFileInfo info(path);
+    QDir().mkpath(info.absolutePath());
+#if defined(Q_OS_MACOS)
+    return QProcess::startDetached(QStringLiteral("open"), {info.absolutePath()});
+#else
+    return QProcess::startDetached(QStringLiteral("xdg-open"), {info.absolutePath()});
+#endif
+#endif
 }
 
 }  // namespace beatbench::app

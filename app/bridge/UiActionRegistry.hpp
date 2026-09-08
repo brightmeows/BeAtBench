@@ -132,6 +132,12 @@ public:
     /// QML Keys 事件 → Qt 序列（Ctrl+S）。修饰键单独按下返回空。
     Q_INVOKABLE QString sequenceFromKey(int key, int modifiers, const QString& text) const;
 
+    /// 用户偏好落点说明（Windows=注册表路径，其它=ini 路径）。含 keymap 与 audio。
+    Q_INVOKABLE QString settingsLocationText() const;
+    /// 打开落点：ini 在文件管理器中显示；Windows 注册表则导出 keymap.reg 并显示该文件。
+    /// 只依赖 Qt Core（explorer / xdg-open / open），不链 Gui。
+    Q_INVOKABLE bool revealSettingsLocation() const;
+
 signals:
     /// enabled/checked 状态变化 → QML 菜单/工具条刷新。
     void stateChanged();

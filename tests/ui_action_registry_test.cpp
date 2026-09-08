@@ -291,6 +291,17 @@ TEST(UiActionRegistry, RestoreUserKeymapSnapshot) {
     EXPECT_EQ(r.shortcut(QStringLiteral("file.save")), QStringLiteral("F8"));
 }
 
+TEST(UiActionRegistry, SettingsLocationText) {
+    UiActionRegistry r;
+    const QString loc = r.settingsLocationText();
+    EXPECT_FALSE(loc.isEmpty());
+#ifdef Q_OS_WIN
+    EXPECT_TRUE(loc.contains(QStringLiteral("HKCU")));
+#else
+    EXPECT_TRUE(loc.contains(QLatin1Char('/')) || loc.contains(QLatin1Char('\\')));
+#endif
+}
+
 TEST(UiActionRegistry, SequenceFromKey) {
     UiActionRegistry r;
     EXPECT_EQ(r.sequenceFromKey(Qt::Key_S, Qt::ControlModifier, QString()),

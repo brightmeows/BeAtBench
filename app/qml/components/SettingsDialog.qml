@@ -440,6 +440,14 @@ Dialog {
                         Layout.fillWidth: true
                     }
                     Label {
+                        text: qsTr("配置位置：%1").arg(uiActions.settingsLocationText())
+                        color: Theme.textFaint
+                        font.pixelSize: Theme.fsTiny
+                        font.family: Theme.fontMono
+                        wrapMode: Text.WrapAnywhere
+                        Layout.fillWidth: true
+                    }
+                    Label {
                         id: shortcutHint
                         visible: text.length > 0
                         color: Theme.danger
@@ -557,6 +565,18 @@ Dialog {
                                 uiActions.clearUserKeymap()
                                 shortcutList.captureId = ""
                                 shortcutHint.text = ""
+                            }
+                        }
+                        Item { Layout.fillWidth: true }
+                        BbToolButton {
+                            text: qsTr("复制路径")
+                            onClicked: clipboard.setText(uiActions.settingsLocationText())
+                        }
+                        BbToolButton {
+                            text: qsTr("打开配置位置")
+                            onClicked: {
+                                if (!uiActions.revealSettingsLocation())
+                                    shortcutHint.text = qsTr("无法打开配置位置")
                             }
                         }
                     }
