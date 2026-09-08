@@ -150,8 +150,8 @@ Item {
         case "playPause": audioEngine.refTogglePlay(); break
         case "beatLeft": moveSelectedBeat(-1); break
         case "beatRight": moveSelectedBeat(1); break
-        case "rowUp": root.scrollRow--; root.clampScroll(); break
-        case "rowDown": root.scrollRow++; root.clampScroll(); break
+        case "rowUp": moveSelectedRow(-1); break
+        case "rowDown": moveSelectedRow(1); break
         case "togglePoint": {
             var t = sliceWaveform.selectedBeatSec
             if (t < 0) t = Math.max(0, root.playheadSec)
@@ -180,17 +180,49 @@ Item {
             break
         }
     }
-    /// 选中拍子移动（←→）：步长 = 1 网格细分（60/BPM ÷ 细分/拍）；移出可见行 → 视口跟随。
+    /// 光标所在行（按当前行时长取整；音频末尾恰在边界时归入最后一行）。
+    function selectedRowOf(t) {
+        var total = root.totalRowCount()
+        if (total <= 1) return 0
+        return Math.max(0, Math.min(total - 1, Math.floor(Math.max(0, t) / root.rowSecOf())))
+    }
+    /// 让光标保持在可见范围内；正常视口上下各预留一行，显示不超过两行时取消预留。
+    function ensureSelectedRowVisible(row) {
+        var total = root.totalRowCount()
+        var rows = root.visibleRows
+        if (total <= rows) {
+            root.scrollRow = 0
+            return
+        }
+        var margin = rows > 2 ? 1 : 0
+        var top = root.scrollRow + margin
+        var bottom = root.scrollRow + rows - 1 - margin
+        if (row < top) root.scrollRow = row - margin
+        else if (row > bottom) root.scrollRow = row - (rows - 1 - margin)
+        root.clampScroll()
+    }
+    /// 选中拍子按网格步长移动（←→），并按行维护视口安全区。
     function moveSelectedBeat(dir) {
         var t = sliceWaveform.selectedBeatSec
         if (t < 0) t = Math.max(0, root.playheadSec)
         t = Math.max(0, Math.min(sliceWorkspace.audioDurationSec, t + dir * root.gridStepSec()))
         sliceWaveform.selectedBeatSec = t
-        var row = Math.floor(t / root.rowSecOf())
-        if (row < root.scrollRow) root.scrollRow = row
-        else if (row > root.scrollRow + root.visibleRows - 1)
-            root.scrollRow = row - root.visibleRows + 1
-        root.clampScroll()
+        ensureSelectedRowVisible(selectedRowOf(t))
+    }
+    /// 上下方向键移动光标一整行，保留行内相对位置；视口上下各留一行。
+    function moveSelectedRow(dir) {
+        var duration = sliceWorkspace.audioDurationSec
+        var rowSec = root.rowSecOf()
+        var t = sliceWaveform.selectedBeatSec
+        if (t < 0) t = Math.max(0, root.playheadSec)
+        var row = selectedRowOf(t)
+        var targetRow = Math.max(0, Math.min(root.totalRowCount() - 1, row + dir))
+        var inRow = Math.max(0, t - row * rowSec)
+        var targetStart = targetRow * rowSec
+        var targetEnd = Math.min(duration, targetStart + rowSec)
+        var target = Math.min(targetEnd, targetStart + inRow)
+        sliceWaveform.selectedBeatSec = Math.max(0, target)
+        ensureSelectedRowVisible(targetRow)
     }
     /// 网格步长（秒）：一拍 = 60/BPM，再 ÷「细分/拍」（与波形网格参考线同源参数）。
     function gridStepSec() {
