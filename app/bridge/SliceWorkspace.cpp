@@ -237,10 +237,26 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
              safeStartId, safeStartMeasure, m_slices.size(), m_sliceEnabled.size(),
              qPrintable(res.value(QStringLiteral("conflictPolicy")).toString()));
 
+    const auto occupied = occupied_wav_ids(m_chartSession);
     auto items = slice::build_export_layout(
-        m_slices, m_sliceEnabled, occupied_wav_ids(m_chartSession),
+        m_slices, m_sliceEnabled, occupied,
         static_cast<std::uint32_t>(safeStartId), baseName.toStdString(), bpm,
         beatsPerMeasure, subdivision, m_offsetSec, safeStartMeasure, kExportNameWidth);
+    int requestedIds = 0;
+    int allocatedIds = 0;
+    for (const auto& it : items) {
+        if (!it.enabled) continue;
+        ++requestedIds;
+        if (it.wavId != 0) ++allocatedIds;
+    }
+    if (allocatedIds < requestedIds) {
+        res.insert(QStringLiteral("error"),
+                   QStringLiteral("可用 WAV ID 不足：需要 %1 个，仅分配到 %2 个（起始 ID %3）")
+                       .arg(requestedIds).arg(allocatedIds).arg(safeStartId));
+        res.insert(QStringLiteral("requestedIds"), requestedIds);
+        res.insert(QStringLiteral("allocatedIds"), allocatedIds);
+        return res;
+    }
     const auto scan = scan_export_disk(outDir, baseName, items);
     res.insert(QStringLiteral("collisions"), scan.collisions);
     if (!slice::apply_export_file_policy(items, baseName.toStdString(), scan.occupiedIndexes,
