@@ -1156,16 +1156,13 @@ Item {
         }
     }
 
-    Dialog {
+    BbDialog {
         id: base62PlacementWarning
-        modal: true
-        anchors.centerIn: parent
         width: 520
+        height: 250
         title: qsTr("Base62 导出提醒")
-        standardButtons: Dialog.Ok | Dialog.Cancel
         Label {
-            anchors.fill: parent
-            anchors.margins: 16
+            Layout.fillWidth: true
             text: qsTr("当前编辑区谱面未启用 #BASE 62，但导出进制选择为 Base62。\n\n若同时铺入编辑区，Base62 的 ID 可能按 Base36 解释并覆盖已有定义，这通常不是预期行为。建议改回“自动”，或先在编辑区谱面中设置 #BASE 62。\n\n仍要继续吗？")
             color: Theme.text
             wrapMode: Text.WordWrap
