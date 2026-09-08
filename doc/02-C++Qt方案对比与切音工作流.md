@@ -14,7 +14,7 @@
 |---|---|---|
 | 许可 | GPL-3.0 | LICENSE + SPDX 头，M0 落地 |
 | 平台 | **Windows 优先**（便于测试）；架构保持跨平台 | Qt/PortAudio 天然三平台；CI 首期只开 Windows，其余平台后续按需开启 |
-| 语言/UI | C++20 + **Qt 6.8 LTS**（新版本除非出现必须功能）+ Widgets + 自绘视口 | Widgets vs QML 对比见 §5.2 |
+| 语言/UI | C++20 + **Qt 6 Quick/QML**（现行，见 doc/08）+ 自绘视口（`QQuickPaintedItem`） | 本稿 §5.2 仍是早期 Widgets 评估，**已由 doc/08 取代** |
 | 音频 | PortAudio 进入**后期阶段**；**v1 不含实时播放/试玩** | v1 音频需求≈零；解码/试听按 v1.1 可选 |
 | 采样格式 | **wav/ogg，44100/48000Hz 优先** | 解码层用 miniaudio 系（公有领域），天然支持更多格式与采样率，不为 v1 设限 |
 | 格式范围 | **v1 只做 .bms 文本**（零第三方依赖手写解析器）；bmson 仅架构预留 | bms 文本对程序设计友好，解析+写出基本只用标准库 |
@@ -120,9 +120,14 @@ codec/未来格式       └─────────────────�
 
 **结论**：`AudioBackend` 薄抽象（枚举/开关流/回调/缓冲参数）→ PortAudio 实现 + RtAudio 备胎；解码层用 miniaudio 系（dr_wav/dr_flac/stb_vorbis），44.1k/48k 原生覆盖，Phase B 重采样用 miniaudio 内置重采样器（公有领域，避免 libsamplerate 的 GPL 纠缠）。
 
-### 5.2 UI：Widgets（确认）vs QML
+### 5.2 UI：Widgets vs QML（历史评估，已定案）
 
-Widgets 胜出理由不变：高密度编辑器控件成熟、QPainter 自绘自由、BmsTWO 同构先例、HiDPI 成熟。QML 仅留给后期可选「试玩皮肤」。渲染分级：QPainter 双缓冲 + 脏区重绘起步，瓶颈后主视口升级 QOpenGLWidget，收敛在 `IChartView` 接口后。
+> **现行决策（2026-08，doc/08）**：GUI 用 Qt Quick/QML + 分层皮肤；core 零 Qt。
+> 下文是对齐稿当时的 Widgets 评估，**不要按它实现**。
+
+当时倾向 Widgets 的理由：高密度编辑器控件成熟、QPainter 自绘自由、BmsTWO 同构先例、HiDPI 成熟。
+QML 当时只被当作后期可选「试玩皮肤」。渲染分级设想是 QPainter 双缓冲起步，瓶颈后升 `QOpenGLWidget`。
+实际落地：时间轴仍是 `QQuickPaintedItem`（QPainter），外壳是 QML。
 
 ---
 
@@ -144,9 +149,8 @@ BeAtBench (GPL-3.0, C++20, CMake)
 ├─ cli/                          # beatbench-cli：无 Qt，核心命令全量暴露（§6.1）
 ├─ tests/                        # GoogleTest：codec/JSON/命令/时序/编辑/lint
 │
-│   ── Phase B+ 规划（未实现）──
-├─ audio/                        # 音频引擎（解码缓存、波形、试听）
-└─ midi/                         # MIDI 导入（录键）
+├─ audio/                        # 音频引擎（已落地：解码缓存、波形、试听、离线渲染、随时播放）
+└─ midi/                         # MIDI 导入（切音工作台已解析 tempo/拍号；变速网格尚未接入）
 ```
 
 要点：

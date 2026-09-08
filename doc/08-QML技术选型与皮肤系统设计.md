@@ -148,10 +148,9 @@ L2 布局重排的对象 = 命名插槽（surface）。默认皮肤（= 当前�
 
 - core 保持 Qt-free 静态库；app 层加 Qt 适配层把核心对象暴露给 QML：
   - `CommandDispatcher`（QObject 包装 `global_registry().dispatch()`，命令即接口不变）；
-  - `ChartModel`（QAbstractListModel：notes / bpm / stop / measures，供 ListView / 自绘消费）；
-  - `TimingEngine` 包装（QObject：time_us / position_at，供标尺/播放头）；
-  - `ThemeManager`（L1 token 只读属性，**2026-08 已落地**：默认值内置（= preview.html :root），
-    theme.json 加载待 schema 定稿，见 §6）；
+  - `ChartSession`（持有 Chart + TimingEngine + 渲染指纹；视口数据源。早期稿里的 `ChartModel` 列表模型未单独落地）；
+  - `ThemeManager`（L1 token，运行时 NOTIFY；`loadTheme` / `applySkinByName`）；
+  - 另有 `UiActionRegistry` / `AudioEngine` / `SliceWorkspace` / `ChartViewItem` / 若干 ListModel；
 - **第一条真链路（M2）**：打开谱面（文件对话框 → `dispatch(info)`）→ QML 元信息表单绑定——验证全栈。
 
 ## 5. 对既有文档的影响
@@ -168,9 +167,10 @@ L2 布局重排的对象 = 命名插槽（surface）。默认皮肤（= 当前�
 ## 6. 待办 / 待拍板
 
 - [x] `app/CMakeLists.txt`：`find_package(Qt6 COMPONENTS Quick QuickControls2)` + `QQmlApplicationEngine` 入口（M2 完成）；
-- [ ] `theme.json` / `layout.json` schema 正式定稿（含 version 字段与缺省兜底规则；候选 surface 插槽清单见 §3.6）；
+- [x] `theme.json` token 已由 ThemeManager 加载（schema 仍是实现即文档，未单独成 JSON Schema 文件）；
+      `layout.json` **设计已定稿、未实现**（surface 清单见 §3.6；细节在本机 `local/doc/11`，不进仓库）；
 - [x] **UI 动作注册表（皮肤换壳前置）**：✅ **已落地（2026-09 二批）**——C++ UiActionRegistry +
-      24 个动作 id 注册、invoke 真实化（handler=QMetaObject 调 QML 窗口函数）、`setEnabled`/
+      约 50 个动作 id（含 slice.* 与分隔线）、invoke 真实化（handler 多数仍是 QMetaObject 调 QML 窗口函数）、`setEnabled`/
       `updateActionStates`（enabled 打通）、`setChecked`/`updateCheckedStates`（勾选态打通）、
       `keymap.json` 快捷键覆写（`--keymap`/`--skin`）。**2026-09 三批再收敛**：菜单/工具条
       枚举化渲染——文件/编辑菜单按 `idsByCategory` 生成 + 分隔线建模；页面工具条变换组与
@@ -194,16 +194,17 @@ L2 布局重排的对象 = 命名插槽（surface）。默认皮肤（= 当前�
       `applyTheme` → `tokensChanged` → QML 绑定重算 + 应用级 QPalette 重建（main.cpp 连接）+
       视口重绘（`ChartViewItem.refreshTheme()`）。文档验证 `--apply-skin <name>`（同一路径）。
       皮肤术语定稿：「层 L1/L2/L3 = 能力（改什么）」「启动时/运行时 = 时机（何时生效）」，正交，无 L1.5。
-- [ ] L3 皮肤覆写的粒度约定（整壳替换 vs 按区域 `Replace:` 声明）；
-- [ ] QML 侧键盘/IME 方案（编辑态抑制 IME）；
+- [ ] L3 皮肤覆写的粒度约定（整壳替换 vs 按区域 `Replace:` 声明；本机 `local/doc/11` §9 已拍「同名 components/ 覆写」，未进仓库）；
+- [ ] QML 侧键盘/IME 方案（编辑态抑制 IME；文本框已让行 Ctrl+Z 等）；
 - [x] 时间轴视口技术路线确认：`QQuickPaintedItem`（QPainter 复用）起步（M2 已落地）；
-- [ ] `doc/05` 按 QML 重写（前端会话）；
-- [ ] 双语言纪律写进代码约定（doc/04 §5）：逻辑放 C++，QML 只管表现。
+- [x] `doc/05` 已按 QML 语汇重写（v0.2）；个别占位句（切音=Phase C）未跟 M6 同步，以 doc/04 为准；
+- [x] 双语言纪律已写入 doc/04 §5；**实现未完全跟上**（`SessionController.qml` 仍是主要业务编排）。
+- [x] 用户快捷键 QSettings 持久化 + 运行时改绑（设置页确定/取消；用户层 > 皮肤 keymap）。
 
 ## 7. 文件清单
 
 - 本稿（08）；
 - `doc/beatbench-ui-styles.html`（设计参考 + token 数据来源，随 doc/ 提交）；
-- `skins/`（将来：内置默认皮肤 + 皮肤包目录，M2 起建）；
+- `skins/`（内置 Aurora / Linear / OsuLight / Win10；L1 token + 可选 keymap.json）；
 - `local/ui-demos/`（5 套布局气质 demo，纯静态、gitignore——2026-08 布局探索产物，结论见 doc/05 §14，
   仅本地参照，勿假设协作者可见）。

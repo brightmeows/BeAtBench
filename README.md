@@ -22,27 +22,27 @@
 - **BGA/BMP**：BGA 图层事件编辑、#BMP 定义管理
 - **多文档会话**：SessionRegistry，多标签页前瞻
 - **lint**：解析诊断 + 音符检查（缺失采样/重叠 note/悬挂 LN 等），打开即显示
-- **快捷键/动作注册表**：全部动作走 UiActionRegistry（invoke 唯一入口），菜单/工具条按注册表枚举；keymap.json 快捷键覆写
+- **快捷键/动作注册表**：动作走 UiActionRegistry（`invoke` 为菜单/工具条/Shortcut 入口），菜单/工具条按注册表枚举；用户快捷键落盘到 QSettings（优先于皮肤 `keymap.json`），设置页确定后立即生效
 - **皮肤（L1）**：theme.json token 覆写（颜色/字号/字体/圆角/note 样式/键轨着色）、内置皮肤（Aurora/Linear/OsuLight 浅色/Win10 直角）、运行时切换（菜单"视图->皮肤"）、皮肤可携带 keymap
 - **音频（M4）**：采样列表点击试听 + 音频设置页 + 采样解码缓存 + 离线渲染（ChartRenderer / `cli render` / 编辑器 Space，写 `.render.wav`）+ 波形显示（右侧垂直波形条 + 秒标尺）+ 编辑增量重渲染（PortAudio WASAPI 输出 + miniaudio 解码 wav/ogg/mp3/flac）
 - **随时播放（M5）**：Space 播放/暂停、PcmEngine 零拷贝、播放时钟、编辑即停；播放头红线（视口光标）+ 视口跟随 + A-B 循环 + seek（点秒标尺/波形条拖动 scrub）；note 放置/移动鼠标预览 ghost
 - **编辑增强（小节/变拍）**：BMS 02 通道**小节长度编辑**（时间轴「小节长」页：添加/改值/删除每小节拍数）+ **变拍高渲染**（按拍数等比，4/4 基准，左标尺非 4/4 标 `×N`）+ **「加一小节」**追加编辑小节 + **File→新建谱面**（空谱面从零编辑）；播放/跟随/seek/秒标尺同步正确；编辑/撤销后右侧波形不再消失
 - **命令即接口**：GUI/CLI/脚本共用 JSON 命令协议（doc/06 §3），40+ 命令
-- **切音工作台（M6）**：参考音频/MIDI 导入（offset 微调、播控）→ 切片（网格/MIDI 源、「到下一起点」模式、手动切分点）→ 导出（fade 分片、`#WAV` id 分配、可复制 BMS raw）+ 切片编辑（双击行改边界）+ 编辑页 Ctrl+V 整段粘贴（含 `#WAV` 定义/小节长）
+- **切音工作台（M6）**：参考音频/MIDI 导入（offset 微调、播控）→ 切片（网格/MIDI 源、「到下一起点」模式、手动切分点）→ 导出（fade 分片、`#WAV` id 分配、可复制 BMS raw、撞名须选覆盖/续号/取消）+ 切片编辑（双击行改边界）+ 切音页独立撤销 + 编辑页 Ctrl+V 整段粘贴（含 `#WAV` 定义/小节长）
 
 ### 计划中
 
-- 原生自动 ch01 铺放（导出 checkbox，讨论中）、`#WAV` 占用视图 UI、CSV 时标表
-- 变速谱 BPM 自动（MIDI tempo/拍号已解析未接入）、woslicer 式键盘（←→/Z/V·B）
+- `#WAV` 占用视图 UI、CSV 时标表
+- 变速谱 BPM 自动（MIDI tempo/拍号已解析未接入）
 - 试玩 / keysound 实时调度（Phase D；M5 已建 PlaybackPlan 映射层，接口预留）
-- L2 布局皮肤（layout.json，设计已定稿，见 doc/08 §3.6）
+- L2 布局皮肤（`layout.json`，设计已定稿，见 doc/08 §3.6）
 - #RANDOM/#IF 块内容编辑（已知限制，见 doc/04 §6）
 - zip 打包 + 外部预览集成（M7）、i18n 全文（M8）
 
 ## 状态
 
 **M1-M6 已完成**（2026-09）：BMS codec + timing + CLI + QML 编辑器（编辑/时间轴/元信息/采样/BGA/lint/剪贴板/多文档/动作注册表/皮肤 L1）→ **M4 音频**（单发试听/设置页/解码缓存/离线渲染/波形/秒标尺/增量重渲染）→ **M5 随时播放**（Space 播放/暂停、PcmEngine 零拷贝、播放时钟、编辑即停）+ 播放头红线/视口跟随/A-B 循环/seek + note 编辑增强（鼠标预览 ghost、多选拖动、BGM 相对距离、`bgm_line→sub_line` 泛化）+ 编辑增强（**02 小节长度编辑 + 变拍高 + 加一小节 + 新建谱面**、编辑/撤销波形不消失）→ **M6 切音工作台**（导入/切分/导出/手动切分点/切片编辑/剪贴板整段粘贴，见 doc/04 §6）。
-测试全绿（完整回归 292 用例全过，含真实谱面时序自洽；另音频/离线渲染/播放/切片测试通过）。
+测试以源码 `TEST()` 计数为准（约 core 314 + 音频 55 + Qt 桥层 38）；真实谱面集缺失时部分 SKIP，不要把某一天的 PASS 数写死。详见 `doc/04` §6。
 
 当前里程碑任务见 `doc/04-开发手册.md`（简版现状；开发历史/踩坑细节在 `local/doc/04-开发手册-完整版.md`，gitignore）；皮肤系统后续计划见 `local/doc/10-主题与皮肤路线.md`（gitignore）。
 
@@ -137,7 +137,7 @@ build-gui/app/beatbench.exe \
   --open <bms文件>           # 启动即打开谱面
   --screenshot <png>         # 截图后退出
   --page 0|1|2               # 切换到指定页面（0=编辑 1=切音 2=测试）
-  --tool select|note|ln|mine # 设置编辑工具
+  --tool pan|select|note|ln|mine  # 设置编辑工具（pan 为默认）
   --click <x> <y>            # 模拟点击
   --probe <x> <y>            # 诊断探针
 ```

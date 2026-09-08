@@ -2,7 +2,7 @@
 // BeatBench 主窗口（M2 页面式工作区外壳，doc/05 v0.2）。
 // 结构：固定 chrome（菜单栏 + 页面工具条 + 页面条 + 状态栏）包裹页面内容区；
 // 页面内容 = EditPage / SlicePage / TestPage（切换只换视图，不换命令引擎）。
-// 颜色/字体一律走 Theme token（doc/07 §4，禁硬编码）；皮肤系统 = 内置默认皮肤骨架（doc/08 §3.4）。
+// 颜色/字体一律走 Theme token（doc/08，禁硬编码）；皮肤系统 = 内置默认皮肤骨架（doc/08 §3.4）。
 // 第一条真链路：文件 → 打开谱面 → dispatch(info) → 元信息面板（EditPage 左 Dock）。
 import QtQuick
 import QtQuick.Controls
