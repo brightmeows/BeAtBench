@@ -135,11 +135,22 @@ QVariantList SliceWorkspace::occupiedWavIds() const {
 }
 
 int SliceWorkspace::nextFreeWavId() const {
-    const auto occupied = occupied_wav_ids(m_chartSession);
+    return nextFreeWavIdForBase(0, false);
+}
+
+int SliceWorkspace::nextFreeWavIdForBase(int idBaseMode, bool independentExport) const {
+    const auto chartBase = m_chartSession && m_chartSession->chart()
+                               ? m_chartSession->chart()->id_base
+                               : beatbench::IdBase::Base36;
+    const auto idBase = idBaseMode == 2 ? beatbench::IdBase::Base62
+                                        : (idBaseMode == 1 ? beatbench::IdBase::Base36 : chartBase);
+    const auto occupied = independentExport ? std::vector<std::uint32_t>{}
+                                            : occupied_wav_ids(m_chartSession);
     const std::set<std::uint32_t> taken(occupied.begin(), occupied.end());
+    const std::uint32_t maxId = idBase == beatbench::IdBase::Base62 ? 3843u : 1295u;
     std::uint32_t cand = 1;
-    while (taken.count(cand)) ++cand;
-    return static_cast<int>(cand);
+    while (cand <= maxId && taken.count(cand)) ++cand;
+    return static_cast<int>(cand <= maxId ? cand : 0);
 }
 
 int SliceWorkspace::suggestedStartMeasure() const {

@@ -985,7 +985,7 @@ Item {
                 id: exportIdBox
                 from: 1
                 to: exportBaseBox.currentIndex === 2 ? 3843 : 1295
-                value: sliceWorkspace.nextFreeWavId()
+                value: sliceWorkspace.nextFreeWavIdForBase(exportBaseBox.currentIndex, root.independentExport)
                 editable: true
                 // 36 进制 id 输入：默认 IntValidator 只放行数字 → 覆盖为字母可入（A0-ZZ/a0-zz）
                 // ⚠️ Qt 6.11 起 RegExpValidator 已移除 → 用 RegularExpressionValidator
@@ -1010,6 +1010,7 @@ Item {
                 id: exportBaseBox
                 model: [qsTr("自动"), qsTr("Base36"), qsTr("Base62")]
                 implicitWidth: 76
+                onCurrentIndexChanged: exportIdBox.value = sliceWorkspace.nextFreeWavIdForBase(currentIndex, root.independentExport)
                 ToolTip.visible: hovered
                 ToolTip.text: qsTr("自动：跟随当前谱面；无谱面或未声明 #BASE 时使用 Base36")
             }
