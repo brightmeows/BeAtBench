@@ -23,12 +23,11 @@
 beatbench.exe --skin skins/Aurora
 ```
 
-加载优先级：`--keymap <path>` 显式 > `--skin dir/keymap.json` > 内置默认。
-`theme.json` 只在 `--skin` 时读取；不加 `--skin` 完全用内置默认皮肤（行为不变）。
+加载优先级：用户 QSettings 改绑 > `--keymap` / 皮肤 `keymap.json`（二者都进皮肤层）> 注册默认。
+`--keymap` 与 `--skin` 不再跳过用户键位。`theme.json` 只在 `--skin` 或运行时换肤时读取。
 
 ## 已知边界
 
 - L1 只覆写**颜色** token；非颜色（radius/fs/fonts）与 L2 layout/L3 QML 壳后置（doc/08 §6）；
-- `Theme.token` 是 `CONSTANT` 属性（QML 首帧按当前值求值），所以 theme.json 必须在
-  `loadFromModule` 前应用——`main.cpp` 已如此（`--skin` 在构建 QPalette 前 `loadTheme`）；
+- Theme token 已是 NOTIFY（运行时换肤会重算）；启动 `--skin` 仍在 `loadFromModule` 前 `loadTheme`；
 - 皮肤**只影响表现层**；core/命令接口不受影响（doc/08 §3.3：功能永远在引擎+默认皮肤兜底）。

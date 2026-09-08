@@ -376,23 +376,21 @@ int main(int argc, char** argv) {
         uiActions.add(UiActionDef{"slice.importMidi", QCoreApplication::tr("导入 MIDI"), "Ctrl+M", "slice", nullptr, sliceAct("importMidi")});
         qInfo("UI 动作注册完成：%d 个", static_cast<int>(uiActions.ids().size()));
 
-        // keymap.json 覆写快捷键（--keymap <path>；皮肤可携带）。须在 loadFromModule 前应用，
-        // 否则 QML `sequence:` 函数式绑定已在首帧按默认值求值（改后不生效）。
-        // 优先级：--keymap 显式指定 > --skin 目录自带 keymap.json > 内置默认。
-        QString keymapPath;
+        // 快捷键查询优先级：用户 QSettings > 皮肤层（--keymap 或皮肤 keymap.json）> 注册默认。
+        // 须在 loadFromModule 前应用（Shortcut.sequence 绑 shortcutRevision）。
+        // 用户层始终加载；--keymap 与 --skin 只写入皮肤层。
         const int kmIdx = app.arguments().indexOf(QStringLiteral("--keymap"));
         if (kmIdx >= 0 && kmIdx + 1 < app.arguments().size()) {
-            keymapPath = app.arguments().at(kmIdx + 1);
+            loadKeymap(app.arguments().at(kmIdx + 1), uiActions);
         } else {
             const int skinIdx2 = app.arguments().indexOf(QStringLiteral("--skin"));
             if (skinIdx2 >= 0 && skinIdx2 + 1 < app.arguments().size()) {
-                const QString skinDir = app.arguments().at(skinIdx2 + 1);
-                const QString p = QDir(skinDir).filePath(QStringLiteral("keymap.json"));
-                if (QFile::exists(p)) keymapPath = p;
+                const QString p = QDir(app.arguments().at(skinIdx2 + 1))
+                                      .filePath(QStringLiteral("keymap.json"));
+                if (QFile::exists(p)) loadKeymap(p, uiActions);
             }
         }
-        if (!keymapPath.isEmpty()) loadKeymap(keymapPath, uiActions);
-        else uiActions.loadUserKeymap();
+        uiActions.loadUserKeymap();
     }
 
     engine.loadFromModule(QStringLiteral("BeatBench"), QStringLiteral("Main"));
