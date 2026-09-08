@@ -21,18 +21,20 @@ namespace beatbench::slice {
 
 namespace {
 /// BMS 36 进制两位数上限（ZZ = 1295）；超此需 #BASE 62 或 3 位 id（暂不支持自动化）。
-constexpr std::uint32_t kMaxWavId = 1295;
+constexpr std::uint32_t kMaxWavId36 = 1295;
+constexpr std::uint32_t kMaxWavId62 = 3843;
 }  // namespace
 
 std::vector<std::uint32_t> allocate_wav_ids(
     const std::vector<std::uint32_t>& occupied, std::uint32_t start_id,
-    int count) {
+    int count, IdBase idBase) {
     std::vector<std::uint32_t> out;
     if (count <= 0) return out;
     std::set<std::uint32_t> taken(occupied.begin(), occupied.end());
     std::uint32_t cand = start_id;
-    if (cand == 0 || cand > kMaxWavId) cand = 1;
-    while (static_cast<int>(out.size()) < count && cand <= kMaxWavId) {
+    const std::uint32_t maxId = idBase == IdBase::Base62 ? kMaxWavId62 : kMaxWavId36;
+    if (cand == 0 || cand > maxId) cand = 1;
+    while (static_cast<int>(out.size()) < count && cand <= maxId) {
         if (taken.insert(cand).second) out.push_back(cand);
         ++cand;
     }
@@ -43,13 +45,13 @@ std::vector<SliceExportItem> build_export_layout(
     const std::vector<Slice>& slices, const std::vector<bool>& enabled,
     const std::vector<std::uint32_t>& occupied, std::uint32_t start_id,
     const std::string& baseName, double bpm, int beatsPerMeasure,
-    int subdivision, double offset, int startMeasure, int width) {
+    int subdivision, double offset, int startMeasure, int width, IdBase idBase) {
     std::vector<SliceExportItem> items;
     // 启用切片数 → 分配 #WAV id（只分配给「放置开关=开」的切片；未启用仍列出但 wavId=0）
     int need = 0;
     for (std::size_t i = 0; i < slices.size(); ++i)
         if ((i < enabled.size()) && enabled[i]) ++need;
-    const auto ids = allocate_wav_ids(occupied, start_id, need);
+    const auto ids = allocate_wav_ids(occupied, start_id, need, idBase);
     int id_i = 0;
     int file_i = 0;
 
@@ -97,9 +99,9 @@ std::vector<SliceExportItem> build_export_layout(
 }
 
 std::string build_placement_raw(const std::vector<SliceExportItem>& items,
-                                double bpm, int beatsPerMeasure) {
+                                double bpm, int beatsPerMeasure, IdBase idBase) {
     Chart c;
-    c.id_base = IdBase::Base36;
+    c.id_base = idBase;
     char bpmBuf[32];
     std::snprintf(bpmBuf, sizeof(bpmBuf), "%.6g", bpm);
     c.meta["BPM"] = bpmBuf;

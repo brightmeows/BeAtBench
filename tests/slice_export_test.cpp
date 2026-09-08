@@ -47,6 +47,24 @@ TEST(SliceExportTest, AllocateSkipsOccupiedAndStart) {
     EXPECT_EQ(ids2[0], 1u);
 }
 
+TEST(SliceExportTest, Base62AllocatesPastBase36AndWritesCaseSensitiveRaw) {
+    const auto ids = allocate_wav_ids({1295}, 1295, 3, beatbench::IdBase::Base62);
+    ASSERT_EQ(ids.size(), 3u);
+    EXPECT_EQ(ids[0], 1296u);
+    EXPECT_EQ(ids[1], 1297u);
+    EXPECT_EQ(ids[2], 1298u);
+
+    const auto slices = make_slices({0.0}, {0.125});
+    const auto items = build_export_layout(slices, {true}, {}, 3843,
+                                           "slice", 120.0, 4, 4, 0.0, 1, 3,
+                                           beatbench::IdBase::Base62);
+    ASSERT_EQ(items.size(), 1u);
+    EXPECT_EQ(items[0].wavId, 3843u);
+    const auto raw = build_placement_raw(items, 120.0, 4, beatbench::IdBase::Base62);
+    EXPECT_NE(raw.find("#BASE 62"), std::string::npos);
+    EXPECT_NE(raw.find("#WAVzz"), std::string::npos);
+}
+
 TEST(SliceExportTest, LayoutAssignsIdsAndPositions) {
     // bpm=120, 4/4, 细分4, offset0 → beat = startSec*2
     const auto slices = make_slices({0.0, 0.5, 2.0, 2.5}, {0.125, 0.625, 2.125, 2.625});

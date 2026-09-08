@@ -160,7 +160,8 @@ QVariantMap SliceWorkspace::previewExportFiles(const QString& outDir, const QStr
     const QString baseName = normalize_export_prefix(prefix);
     const auto items = slice::build_export_layout(
         m_slices, m_sliceEnabled, occupied_wav_ids(m_chartSession), 1,
-        baseName.toStdString(), 120.0, 4, 4, m_offsetSec, 1, kExportNameWidth);
+        baseName.toStdString(), 120.0, 4, 4, m_offsetSec, 1, kExportNameWidth,
+        m_chartSession && m_chartSession->chart() ? m_chartSession->chart()->id_base : beatbench::IdBase::Base36);
     const auto scan = scan_export_disk(outDir, baseName, items);
     res.insert(QStringLiteral("ok"), true);
     res.insert(QStringLiteral("outDir"), outDir);
@@ -241,7 +242,8 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
     auto items = slice::build_export_layout(
         m_slices, m_sliceEnabled, occupied,
         static_cast<std::uint32_t>(safeStartId), baseName.toStdString(), bpm,
-        beatsPerMeasure, subdivision, m_offsetSec, safeStartMeasure, kExportNameWidth);
+        beatsPerMeasure, subdivision, m_offsetSec, safeStartMeasure, kExportNameWidth,
+        m_chartSession && m_chartSession->chart() ? m_chartSession->chart()->id_base : beatbench::IdBase::Base36);
     int requestedIds = 0;
     int allocatedIds = 0;
     for (const auto& it : items) {
@@ -305,7 +307,9 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
         writtenFiles << relName;
     }
 
-    const std::string rawStr = slice::build_placement_raw(items, bpm, beatsPerMeasure);
+    const std::string rawStr = slice::build_placement_raw(
+        items, bpm, beatsPerMeasure,
+        m_chartSession && m_chartSession->chart() ? m_chartSession->chart()->id_base : beatbench::IdBase::Base36);
     qWarning("slice export: wrote=%d raw_chars=%zu", written, rawStr.size());
     res.insert(QStringLiteral("ok"), errors.isEmpty());
     res.insert(QStringLiteral("count"), written);
