@@ -946,9 +946,10 @@ ApplicationWindow {
     // M6.3 调试参数：--slice-place <0|1>（导出时同时铺入编辑区谱面；配 --slice-export）
     property int debugSlicePlace: -1
     onDebugSlicePlaceChanged: if (debugSlicePlace >= 0) slicePage.placeToChart = (debugSlicePlace !== 0)
-    // M6.4f 切音页键盘动作（uiActions slice.* → SlicePage.sliceAct；快捷/UI/调试同一入口；
-    // 置回空串防重复触发）。⚠️ 调试链 --slice-act：解码/检测异步 → 动作入队，队列头为切片
-    // 类动作且未就绪时等待（Timer 轮询），就绪后按序执行（人类按键走 Shortcut 直调，不经队列）。
+    // M6.4f 切音动作：生产注册表直接调用正式入口；--slice-act 仍使用下方调试队列。
+    function dispatchSliceAction(act) {
+        slicePage.dispatchSliceAction(act)
+    }
     property string debugSliceAct: ""
     property var _debugActQueue: []
     // M6.4f 焦点区域高亮验收：--focus-region <editLeft|editCenter|editRight|sliceLeft|sliceCenter|sliceRight>
@@ -969,7 +970,7 @@ ApplicationWindow {
                 _debugActQueue[0] !== "rowUp" && _debugActQueue[0] !== "rowDown" &&
                 _debugActQueue[0] !== "beatLeft" && _debugActQueue[0] !== "beatRight")
                 return  // 等切片就绪（解码/检测异步）
-            slicePage.sliceAct(_debugActQueue.shift())
+            slicePage.dispatchSliceAction(_debugActQueue.shift())
         }
     }
     onDebugSliceActChanged: if (debugSliceAct.length > 0) {

@@ -347,9 +347,8 @@ int main(int argc, char** argv) {
         uiActions.add(UiActionDef{"view.page.slice", QCoreApplication::tr("切音页"), "", "view", nullptr, setProp("currentPage", 1), true});
         uiActions.add(UiActionDef{"view.page.test", QCoreApplication::tr("测试页"), "", "view", nullptr, setProp("currentPage", 2), true});
         // 切音页动作（M6.4f 键盘 2026-09 用户 woslicer 系；category=slice 无菜单，仅快捷键）。
-        // handler = QML 根属性 debugSliceAct（Main.qml 转发 → SlicePage.sliceAct，与调试参数同
-        // 路径——快捷、UI 调用、调试注入三个入口收敛到一个方法）；enabled 门控在 QML Shortcut
-        // （页面可见 + 无文本输入 + 无对话框），不走 registry 谓词。
+        // 生产 handler 直接调用 QML 的正式 dispatchSliceAction 方法；debugSliceAct 只保留给
+        // --slice-act 的异步调试队列，避免生产动作借用 debug 属性和轮询管线。
         const auto sliceAct = [&engine](const char* act) {
             return ActionHandler([&engine, act](const QVariantMap&) {
                 QObject* root = engine.rootObjects().value(0);
@@ -357,7 +356,11 @@ int main(int argc, char** argv) {
                     qWarning() << "UiActionRegistry: QML 根不可用" << act;
                     return false;
                 }
-                return root->setProperty("debugSliceAct", QLatin1String(act));
+                const bool invoked = QMetaObject::invokeMethod(
+                    root, "dispatchSliceAction", Q_ARG(QString, QString::fromLatin1(act)));
+                if (!invoked)
+                    qWarning() << "UiActionRegistry: 切音动作入口不可用" << act;
+                return invoked;
             });
         };
         uiActions.add(UiActionDef{"slice.playPause", QCoreApplication::tr("播放/暂停（参考音频）"), "Space", "slice", nullptr, sliceAct("playPause")});

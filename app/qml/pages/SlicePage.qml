@@ -139,7 +139,12 @@ Item {
         sliceWaveform.selectedBeatSec = t
     }
 
-    // ---- M6.4f 键盘动作（uiActions slice.* → debugSliceAct → 本函数；快捷/UI/调试同入口） ----
+    // ---- M6.4f 切音动作正式入口（生产注册表/调试队列共用业务分派） ----
+    function dispatchSliceAction(act) {
+        sliceAct(act)
+    }
+
+    // 兼容页面内部按钮和旧调试调用；生产 UiActionRegistry 不再经过 debugSliceAct。
     function sliceAct(act) {
         switch (act) {
         case "playPause": audioEngine.refTogglePlay(); break
