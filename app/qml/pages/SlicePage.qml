@@ -76,7 +76,7 @@ Item {
     }
     // #WAV id 文本：自动/显式 Base36 或 Base62，均显示两位。
     function idTextOf(v) {
-        var base = exportBaseBox && exportBaseBox.currentIndex === 2 ? 62 : 36
+        var base = sliceWorkspace.effectiveWavIdBase(exportBaseBox ? exportBaseBox.currentIndex : 0)
         var alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
         var n = Math.max(0, parseInt(v, 10) || 0)
         var s = ""
@@ -85,7 +85,7 @@ Item {
         return s
     }
     function idValueOf(text) {
-        var base = exportBaseBox && exportBaseBox.currentIndex === 2 ? 62 : 36
+        var base = sliceWorkspace.effectiveWavIdBase(exportBaseBox ? exportBaseBox.currentIndex : 0)
         var alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
         var t = ("" + text).trim()
         var v = 0

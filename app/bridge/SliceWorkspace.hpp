@@ -62,6 +62,7 @@ public:
     /// 下一个空闲 #WAV id（从 1 起跳过 occupied；无谱面 → 1）。
     Q_INVOKABLE int nextFreeWavId() const;
     Q_INVOKABLE int nextFreeWavIdForBase(int idBaseMode = 0, bool independentExport = false) const;
+    Q_INVOKABLE int effectiveWavIdBase(int idBaseMode = 0) const;
     /// 写盘前预检：算出本次 layout 文件名，扫描 outDir 已有同前缀 wav。
     /// 不解码、不写盘。返回 {ok, outDir, prefix, planned, collisions, nextContinueIndex, error}。
     /// planned/collisions 为相对 prefix 的路径（如 slice_000.wav）。无切片也可扫盘（planned 空）。

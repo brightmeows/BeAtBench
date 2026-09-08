@@ -138,6 +138,15 @@ int SliceWorkspace::nextFreeWavId() const {
     return nextFreeWavIdForBase(0, false);
 }
 
+int SliceWorkspace::effectiveWavIdBase(int idBaseMode) const {
+    if (idBaseMode == 1) return 36;
+    if (idBaseMode == 2) return 62;
+    return m_chartSession && m_chartSession->chart() &&
+                   m_chartSession->chart()->id_base == beatbench::IdBase::Base62
+               ? 62
+               : 36;
+}
+
 int SliceWorkspace::nextFreeWavIdForBase(int idBaseMode, bool independentExport) const {
     const auto chartBase = m_chartSession && m_chartSession->chart()
                                ? m_chartSession->chart()->id_base
@@ -150,7 +159,7 @@ int SliceWorkspace::nextFreeWavIdForBase(int idBaseMode, bool independentExport)
     const std::uint32_t maxId = idBase == beatbench::IdBase::Base62 ? 3843u : 1295u;
     std::uint32_t cand = 1;
     while (cand <= maxId && taken.count(cand)) ++cand;
-    return static_cast<int>(cand <= maxId ? cand : 0);
+    return static_cast<int>(cand <= maxId ? cand : maxId + 1);
 }
 
 int SliceWorkspace::suggestedStartMeasure() const {
