@@ -101,7 +101,9 @@ Item {
     }
     function doExport(policy) {
         if (policy === undefined && exportBaseBox.currentIndex === 2 &&
-            !root.independentExport && sliceWorkspace.effectiveWavIdBase(0) !== 62 &&
+            !root.independentExport && root.placeToChart &&
+            (typeof chartSession !== "undefined" && chartSession && chartSession.hasChart) &&
+            sliceWorkspace.effectiveWavIdBase(0) !== 62 &&
             !root._base62WarningConfirmed) {
             base62PlacementWarning.open()
             return
