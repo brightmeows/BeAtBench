@@ -81,7 +81,9 @@ std::vector<SliceExportItem> build_export_layout(
     IdBase idBase = IdBase::Base36);
 
 /// 生成「可复制 BMS raw」：把 items 铺进一个临时 Chart（WAV 定义 + ch01 note），
-/// 经 bms::write_bms 写出再筛掉杂线，返回 `#WAVxx <file>` 定义 + ch01 数据行。
+/// 经 bms::write_bms 写出再筛掉杂线，返回 `#WAVxx <file>` 定义 + ch01/ch02 数据行。
+/// Base62 导出额外保留 `#BASE 62` 声明行作为来源进制标记（clipboard.paste 忽略 #BASE，
+/// 不改变目标谱面进制；GUI 据此在粘贴进 Base36 谱面前提示数值歧义）。
 /// beatsPerMeasure 决定 ch02 小节长度（=4 时按默认 4/4，不输出）。
 std::string build_placement_raw(const std::vector<SliceExportItem>& items,
                                 double bpm, int beatsPerMeasure, IdBase idBase = IdBase::Base36);

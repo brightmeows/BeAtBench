@@ -148,10 +148,15 @@ std::string build_placement_raw(const std::vector<SliceExportItem>& items,
         pos = (nl == std::string::npos) ? full.size() : nl + 1;
         if (line.size() < 8 || line[0] != '#') continue;
         const bool is_wav_def = line.rfind("#WAV", 0) == 0;
+        // `#BASE 62` 声明行：随 Base62 片段携带，作为「来源进制」标记。
+        // clipboard.paste 忽略 #BASE（不改目标谱面进制）；GUI 粘贴进 Base36 谱面前据此提示
+        // 两位 id 数值歧义（2026-09 数据安全）。Base36 不输出（36 是默认；#BASE 36 会被
+        // parser 告警为不支持的值）。
+        const bool is_base_decl = line.rfind("#BASE 62", 0) == 0;
         // ch01 数据行：`#NNN01:`；ch02 小节长：`#NNN02:`
         const bool is_data = line[4] == '0' && (line[5] == '1' || line[5] == '2') &&
                              line[6] == ':';
-        if (is_wav_def || is_data) {
+        if (is_wav_def || is_data || is_base_decl) {
             out += line;
             out.push_back('\n');
         }

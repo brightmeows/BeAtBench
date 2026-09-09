@@ -1306,6 +1306,53 @@ ApplicationWindow {
         onRejected: window.cancelPendingDocumentAction()
     }
 
+    // Base62 粘贴确认（2026-09 数据安全）：目标谱面 Base36 + 粘贴文本含 Base62 id（#BASE 62
+    // 声明或小写 id）→ 先确认。两位 id 在两种进制下数值不同（如 10：Base62=62 / Base36=36），
+    // 可能按错误 id 覆盖 #WAV 定义。取消可先去元信息设置 #BASE 62 或重新导出。
+    BbDialog {
+        id: base62PasteDialog
+        title: qsTr("Base62 粘贴提醒")
+        width: 470
+        height: 224
+        showCancel: false
+        property string pendingText: ""
+        property int pendingTarget: 0
+        Label {
+            Layout.fillWidth: true
+            text: qsTr("粘贴内容看起来是 Base62（含 #BASE 62 声明或小写 id），但当前谱面未声明 #BASE 62。\n\nBase36 会把两位 id 解释成不同数值（如 10：Base62=62，Base36=36），可能覆盖已有 #WAV 定义。\n\n建议取消，先在元信息里设置 #BASE 62，或用 Base36 重新导出。仍要继续吗？")
+            color: Theme.text
+            wrapMode: Text.WordWrap
+            font.pixelSize: Theme.fsSmall
+        }
+        footer: Rectangle {
+            width: base62PasteDialog.width
+            height: 42
+            color: Theme.surface2
+            border.color: Theme.borderStrong
+            border.width: 1
+            RowLayout {
+                anchors.fill: parent
+                anchors.margins: 5
+                anchors.rightMargin: 8
+                spacing: 8
+                Item { Layout.fillWidth: true }
+                BbToolButton {
+                    text: qsTr("仍要粘贴")
+                    onClicked: {
+                        const t = base62PasteDialog.pendingText
+                        const m = base62PasteDialog.pendingTarget
+                        base62PasteDialog.close()
+                        session.pasteRawText(t, m)
+                    }
+                }
+                BbToolButton {
+                    text: qsTr("取消")
+                    onClicked: base62PasteDialog.reject()
+                }
+            }
+        }
+    }
+
     function doOpenChart(path) { openChart(path) }
     function openChart(path) {
         var req = JSON.stringify({ command: "info", args: { path: path } })
@@ -1546,6 +1593,13 @@ ApplicationWindow {
     function onNoteClicked(ref, ctrl) { return session.onNoteClicked(ref, ctrl) }
     function onSelectionMade(refs) { return session.onSelectionMade(refs) }
     function pasteClipboard() { return session.pasteClipboard() }
+    /// Base62 粘贴确认（2026-09 数据安全）：SessionController.pasteClipboard 判定「目标谱面
+    /// Base36 + 文本含 Base62 id」时调用；确认后走同一 pasteRawText 落点（一个 undo 步）。
+    function requestBase62PasteConfirm(text, targetMeasure) {
+        base62PasteDialog.pendingText = text
+        base62PasteDialog.pendingTarget = targetMeasure
+        base62PasteDialog.open()
+    }
     function placeBgaAt(hit) { return session.placeBgaAt(hit) }
     function placeLnType2(hit) { return session.placeLnType2(hit) }
     function placeNote(hit) { return session.placeNote(hit) }

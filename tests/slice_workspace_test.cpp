@@ -332,6 +332,38 @@ TEST_F(SliceWorkspaceTest, PartialSelectionExportsFromZeroNotTableIndex) {
     EXPECT_EQ(files[0], QStringLiteral("slice_000.wav"));
 }
 
+TEST_F(SliceWorkspaceTest, PlaceIntoChartAppliesAndReportsNotes) {
+    // 2026-09 审查修复回归（astra 审查发现）：铺入必须「顶层 ok + result.ok」都真才置 placed。
+    // 本用例守成功路径：真正入谱（#WAV 定义 + ch01 note，一个撤销步）+ 返回 placed/placedNotes。
+    // 失败路径（session.exec 失败 → result.ok=false）难以在真实命令中构造，修复见
+    // SliceWorkspace.cpp 的两层 ok 注释。
+    const auto dir = makeTempDir("place");
+    const auto src = dir / "src.wav";
+    ASSERT_TRUE(workspace_.loadAudioFileSyncForTest(QString::fromStdString(writeSineWav(src))));
+    loadChart({});  // 空谱面（Base36）→ 导出进制 auto 匹配，允许铺入
+    beatbench::slice::Slice a;
+    a.index = 0;
+    a.startSec = 0.0;
+    a.endSec = 0.04;
+    a.kind = "grid";
+    workspace_.setSlicesForTest({a}, {true});
+    const QString outDir = QString::fromStdString(dir.string());
+    const auto r = workspace_.exportSlices(120, 4, 4, 1, 1, outDir, QStringLiteral("slice"),
+                                           0.0, true, QStringLiteral("overwrite"));
+    ASSERT_TRUE(r.value(QStringLiteral("ok")).toBool())
+        << r.value(QStringLiteral("error")).toString().toStdString();
+    EXPECT_TRUE(r.value(QStringLiteral("placed")).toBool())
+        << r.value(QStringLiteral("placeError")).toString().toStdString();
+    EXPECT_EQ(r.value(QStringLiteral("placedNotes")).toInt(), 1);
+    EXPECT_TRUE(r.value(QStringLiteral("placeError")).toString().isEmpty());
+    EXPECT_EQ(beatbench::edit::session_registry().active().undo_depth(), 1u);
+    const beatbench::Chart* chart = chartSession_.chart();
+    ASSERT_TRUE(chart != nullptr);
+    EXPECT_NE(chart->samples.find({beatbench::SampleKind::Wav, 1u}), chart->samples.end());
+    ASSERT_EQ(chart->notes.size(), 1u);
+    EXPECT_EQ(chart->notes[0].value.lane.kind, beatbench::LaneKind::Bgm);
+}
+
 TEST_F(SliceWorkspaceTest, DetectSlicesClearsManualPointsAndCanUndo) {
     const auto dir = makeTempDir("undo");
     const auto src = dir / "src.wav";

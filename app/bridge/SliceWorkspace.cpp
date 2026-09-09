@@ -401,10 +401,17 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
         args.set("sub_line_mode", "uniform");
         req.set("args", std::move(args));
         const Json resp = beatbench::cmd::global_registry().dispatch(req);
+        // 两层都要 ok（2026-09 审查修复）：顶层 ok = 协议/解析成功；result.ok = session.exec
+        // 真正应用成功（失败时 core 仍返回顶层成功 + result.ok=false）。只查顶层会把 exec
+        // 失败误报为 placed=true、无 placeError，违反「失败不误报成功」契约。
         const Json* okp = resp.find("ok");
-        if (okp && okp->is_bool() && okp->as_bool()) {
-            if (const Json* r = resp.find("result"))
-                if (const Json* n = r->find("notes"))
+        const bool cmdOk = okp && okp->is_bool() && okp->as_bool();
+        const Json* result = resp.find("result");
+        const Json* innerOk = result ? result->find("ok") : nullptr;
+        const bool execOk = innerOk && innerOk->is_bool() && innerOk->as_bool();
+        if (cmdOk && execOk) {
+            if (result)
+                if (const Json* n = result->find("notes"))
                     placedNotes = static_cast<int>(n->as_i64());
             placed = true;
             m_chartSession->refresh();  // 内容变化 → 视图刷新（fingerprint 判定）
@@ -414,6 +421,9 @@ QVariantMap SliceWorkspace::exportSlices(qreal bpm, int subdivision,
                 placeError = QString::fromStdString(code->as_str());
             if (const Json* msg = e->find("message"))
                 placeError += QStringLiteral(": ") + QString::fromStdString(msg->as_str());
+        } else if (cmdOk) {
+            // 顶层成功但 exec 未应用：合成可见错误（无 error 对象可读）。
+            placeError = QStringLiteral("paste_failed: clipboard.paste 未应用（result.ok=false）");
         }
     }
     qWarning("slice export: place=%d notes=%d placeErr=%s", placed ? 1 : 0, placedNotes,

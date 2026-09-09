@@ -61,12 +61,13 @@ TEST(SliceExportTest, Base62AllocatesPastBase36AndWritesCaseSensitiveRaw) {
     ASSERT_EQ(items.size(), 1u);
     EXPECT_EQ(items[0].wavId, 3843u);
     const auto raw = build_placement_raw(items, 120.0, 4, beatbench::IdBase::Base62);
-    // raw 是「片段」：只含 #WAV 定义 + ch01/ch02 数据行（SliceExport.hpp 契约）。
-    // #BASE 是谱面级状态、不随片段携带——铺入前 SliceWorkspace 校验导出进制与目标谱面
-    // 一致（「铺入编辑区时导出进制必须与当前谱面的 #BASE 一致」），GUI 另对
-    // Base36 谱面 + Base62 导出弹警告。断言 #BASE 存在会与「不能更改目标全局 #BASE」矛盾。
-    EXPECT_EQ(raw.find("#BASE"), std::string::npos);
+    // Base62 raw 保留 `#BASE 62` 声明行作为「来源进制」标记：clipboard.paste 忽略 #BASE
+    //（不改目标谱面进制），GUI 据此在粘贴进 Base36 谱面前提示两位 id 数值歧义。
+    EXPECT_NE(raw.find("#BASE 62"), std::string::npos);
     EXPECT_NE(raw.find("#WAVzz"), std::string::npos);
+    // Base36 raw 不带声明行（36 是默认；#BASE 36 会被 parser 告警为不支持的值）。
+    const auto raw36 = build_placement_raw(items, 120.0, 4);
+    EXPECT_EQ(raw36.find("#BASE"), std::string::npos);
 }
 
 TEST(SliceExportTest, LayoutAssignsIdsAndPositions) {

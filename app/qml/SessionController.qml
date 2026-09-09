@@ -672,13 +672,15 @@ QtObject {
     }
     /// 系统剪贴板文本是否含 BMS 原始行（2026-09：实现迁 C++ EditUtils.looksLikeBmsText）。
     function looksLikeBmsText(t) { return editUtils.looksLikeBmsText(t) }
-    /// 系统剪贴板 BMS 文本 → 谱面（Ctrl+V 落点；2026-09 从 pasteClipboard 抽出）。
+    /// 系统剪贴板 BMS 文本 → 谱面（Ctrl+V 与 Base62 确认对话框共用落点；2026-09）。
     function pasteRawText(sysText, target) {
         var r = sessionCmd("clipboard.paste", {
             text: sysText,
             target_measure: target
         })
         if (r) {
+            // 2026-09 审查修复：result.ok=false = session.exec 未应用（协议顶层仍成功）→ 不能报成功。
+            if (r.ok === false) { setStatus(qsTr("粘贴失败：谱面未修改")); return }
             if (r.selection && r.selection.length > 0)
                 window.selectionRefs = r.selection
             var parts = []
@@ -700,6 +702,16 @@ QtObject {
         if (typeof clipboard !== "undefined" && clipboard)
             sysText = clipboard.text()
         if (sysText && looksLikeBmsText(sysText)) {
+            // Base62 数据安全（2026-09）：目标谱面 Base36 时，Base62 片段的两位 id 数值不同
+            //（如 10：Base62=62 / Base36=36），可能按错误 id 覆盖 #WAV 定义 → 先确认。
+            if (typeof chartSession !== "undefined" && chartSession && chartSession.hasChart &&
+                chartSession.idBase() === 36 && editUtils.textUsesBase62Ids(sysText)) {
+                if (typeof window !== "undefined" && window && window.requestBase62PasteConfirm)
+                    window.requestBase62PasteConfirm(sysText, target)
+                else
+                    pasteRawText(sysText, target)   // 无宿主（测试）→ 直接粘贴
+                return
+            }
             pasteRawText(sysText, target)
             return
         }
@@ -712,6 +724,7 @@ QtObject {
             target_measure: target
         })
         if (r2) {
+            if (r2.ok === false) { setStatus(qsTr("粘贴失败：谱面未修改")); return }
             if (r2.selection && r2.selection.length > 0)
                 window.selectionRefs = r2.selection
             setStatus(qsTr("已粘贴 %1 个 note 到小节 %2").arg(r2.notes).arg(r2.target_measure))

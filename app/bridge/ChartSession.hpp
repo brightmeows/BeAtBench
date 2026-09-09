@@ -57,6 +57,12 @@ public:
     /// 数值 id → 采样 id 文本（按活动文档 id_base；无文档 → 空串）。
     Q_INVOKABLE QString idTextOf(int id) const;
 
+    /// 当前谱面 id 进制（62 = 声明 #BASE 62；36 = 默认/无文档）。
+    /// QML 用于 Base62 粘贴警告（目标 Base36 时两位 id 数值与来源不同）。
+    Q_INVOKABLE int idBase() const {
+        return (m_chart && m_chart->id_base == beatbench::IdBase::Base62) ? 62 : 36;
+    }
+
     /// 轨道 → 实际 BMS 通道号文本（"11"=键1、"16"=皿…；属性检查器显示用；
     /// 无法表示 / 无文档 → 空串）。kind：key/scratch/pedal/bgm。
     Q_INVOKABLE QString laneChannel(int player, const QString& kind, int index) const;
