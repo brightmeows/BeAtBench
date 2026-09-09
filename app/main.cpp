@@ -322,6 +322,33 @@ int main(int argc, char** argv) {
         uiActions.add(UiActionDef{"edit.copy", QCoreApplication::tr("复制"), "Ctrl+C", "edit", nullptr, qml("copySelection")});
         uiActions.add(UiActionDef{"edit.paste", QCoreApplication::tr("粘贴"), "Ctrl+V", "edit", nullptr, qml("pasteClipboard")});
         uiActions.add(UiActionDef{"edit.delete", QCoreApplication::tr("删除"), "Del", "edit", nullptr, qml("uiActionDelete")});
+        uiActions.addSeparator(QStringLiteral("edit"));  // 分隔线：编辑操作 ↔ 播放/渲染/取消
+        // 编辑页播放/渲染/取消（2026-09 快捷键收尾）：进注册表 → 设置页可改绑。
+        // scope="edit" 与切音页 slice.playPause 的 Space 作用域隔离（doc/09 §13.5）。
+        uiActions.add(UiActionDef{.id = "edit.playPause",
+                                  .label = QCoreApplication::tr("播放/暂停（谱面）"),
+                                  .shortcut = "Space",
+                                  .category = "edit",
+                                  .handler = qml("togglePlayback"),
+                                  .scope = "edit"});
+        uiActions.add(UiActionDef{.id = "edit.render",
+                                  .label = QCoreApplication::tr("渲染音频到文件…"),
+                                  .shortcut = "Ctrl+R",
+                                  .category = "edit",
+                                  .handler = qml("renderChartToFile"),
+                                  .scope = "edit"});
+        uiActions.add(UiActionDef{.id = "edit.cancel",
+                                  .label = QCoreApplication::tr("取消当前操作"),
+                                  .shortcut = "Esc",
+                                  .category = "edit",
+                                  .handler = qml("cancelPendingLn"),
+                                  .scope = "edit"});
+        // 全局（scope 空）：首选项。设置菜单与 Ctrl+, 同源；category="app" 不进 file/edit 菜单枚举。
+        uiActions.add(UiActionDef{.id = "app.settings",
+                                  .label = QCoreApplication::tr("首选项…"),
+                                  .shortcut = "Ctrl+,",
+                                  .category = "app",
+                                  .handler = qml("openSettings")});
         // 视图动作（checkable：勾选态 QML 自持，注册表仅声明；见 doc/09 §12）
         uiActions.add(UiActionDef{"view.toggleGrid", QCoreApplication::tr("网格"), "", "view", nullptr, qml("toggleGrid"), true});
         uiActions.add(UiActionDef{"view.toggleChannelIds", QCoreApplication::tr("通道 ID"), "", "view", nullptr, qml("uiActionToggleChannelIds"), true});
@@ -363,7 +390,13 @@ int main(int argc, char** argv) {
                 return invoked;
             });
         };
-        uiActions.add(UiActionDef{"slice.playPause", QCoreApplication::tr("播放/暂停（参考音频）"), "Space", "slice", nullptr, sliceAct("playPause")});
+        // scope="slice"：与编辑页 edit.playPause 的 Space 作用域隔离（同键位互不判冲突）。
+        uiActions.add(UiActionDef{.id = "slice.playPause",
+                                  .label = QCoreApplication::tr("播放/暂停（参考音频）"),
+                                  .shortcut = "Space",
+                                  .category = "slice",
+                                  .handler = sliceAct("playPause"),
+                                  .scope = "slice"});
         uiActions.add(UiActionDef{"slice.beatLeft", QCoreApplication::tr("选中拍子左移"), "Left", "slice", nullptr, sliceAct("beatLeft")});
         uiActions.add(UiActionDef{"slice.beatRight", QCoreApplication::tr("选中拍子右移"), "Right", "slice", nullptr, sliceAct("beatRight")});
         uiActions.add(UiActionDef{"slice.rowUp", QCoreApplication::tr("视口上行"), "Up", "slice", nullptr, sliceAct("rowUp")});
@@ -664,6 +697,13 @@ int main(int argc, char** argv) {
     if (args.contains(QStringLiteral("--settings"))) {
         if (QObject* root = engine.rootObjects().value(0))
             root->setProperty("debugOpenSettings", true);
+    }
+    // --settings-section <display|audio|editor|shortcut>：打开首选项并切到该分节
+    //（快捷键页验收用；配 --settings --screenshot）
+    const int ssIdx = args.indexOf(QStringLiteral("--settings-section"));
+    if (ssIdx >= 0 && ssIdx + 1 < args.size()) {
+        if (QObject* root = engine.rootObjects().value(0))
+            root->setProperty("debugSettingsSection", args.at(ssIdx + 1));
     }
 
     // --rtab N：右 Dock 标签（0 属性 1 时间轴；配合 --screenshot 验收面板）

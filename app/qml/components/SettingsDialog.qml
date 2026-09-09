@@ -455,6 +455,15 @@ Dialog {
                         wrapMode: Text.WordWrap
                         Layout.fillWidth: true
                     }
+                    // 作用域说明（2026-09 快捷键收尾）：编辑页/切音页各自的空间键不冲突；
+                    // 全局动作与任何页面动作互斥（否则同一按键会双触发）。
+                    Label {
+                        text: qsTr("同一按键可在不同页面作用域各绑一次（如编辑页/切音页各自的空间键）；全局动作与页面动作互斥。")
+                        color: Theme.textFaint
+                        font.pixelSize: Theme.fsTiny
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
                     ListView {
                         id: shortcutList
                         Layout.fillWidth: true

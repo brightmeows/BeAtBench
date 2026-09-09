@@ -36,6 +36,9 @@ struct UiActionDef {
     QString tooltip;         // 工具条 hover 提示（默认空）
     QString value;           // 工具选择值（tool.pan→"pan"；互斥 active 判定；非选择工具留空）
     QString prefix;          // 工具条按钮前缀文本（如 "1 "；默认空）
+    QString scope;           // 快捷键作用域（""=全局；"edit"/"slice"=页面）。
+                             // 冲突判定只在作用域重叠时生效：全局 ↔ 一切；同作用域互斥；
+                             // edit ↔ slice 不冲突（编辑页/切音页 Space 各绑一次，doc/09 §13.5）。
 };
 
 class UiActionRegistry : public QObject {
@@ -86,6 +89,9 @@ public:
 
     /// 动作类别（域）。
     Q_INVOKABLE QString category(const QString& id) const;
+
+    /// 动作快捷键作用域（""=全局；"edit"/"slice"=页面作用域）。
+    Q_INVOKABLE QString scope(const QString& id) const;
 
     /// 是否为 checkable 动作。
     Q_INVOKABLE bool checkable(const QString& id) const;

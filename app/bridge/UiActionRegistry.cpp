@@ -38,13 +38,9 @@ void UiActionRegistry::add(UiActionDef def) {
                            [&](const UiActionDef& a) { return a.id == def.id; });
     if (it != m_actions.end()) {
         qWarning() << "UiActionRegistry::add: duplicate id" << def.id << ", overwriting";
-        it->handler = std::move(def.handler);
-        it->label = std::move(def.label);
-        it->shortcut = std::move(def.shortcut);
-        it->category = std::move(def.category);
-        it->enabled = std::move(def.enabled);
-        it->checkable = def.checkable;
-        it->checked = def.checked;
+        // 整条替换：旧实现只拷 7 个字段，toolbar/control/tooltip/value/prefix/scope 会丢
+        //（重复注册后工具条元数据消失）。
+        *it = std::move(def);
     } else {
         m_actions.push_back(std::move(def));
     }
@@ -136,6 +132,11 @@ QString UiActionRegistry::shortcut(const QString& id) const {
 QString UiActionRegistry::category(const QString& id) const {
     auto* def = findConst(id);
     return def ? def->category : QString();
+}
+
+QString UiActionRegistry::scope(const QString& id) const {
+    auto* def = findConst(id);
+    return def ? def->scope : QString();
 }
 
 bool UiActionRegistry::checkable(const QString& id) const {
@@ -358,8 +359,16 @@ void UiActionRegistry::bumpShortcutRevision() {
 
 QString UiActionRegistry::conflictId(const QString& id, const QString& seq) const {
     if (seq.isEmpty()) return {};
+    auto* self = findConst(id);
+    const QString selfScope = self ? self->scope : QString();
+    // 作用域隔离（doc/09 §13.5）：空 = 全局，与一切重叠；不同页面作用域互不冲突
+    //（编辑页 Space 与切音页 Space 各绑一次，不算冲突）。
+    const auto overlaps = [](const QString& a, const QString& b) {
+        return a.isEmpty() || b.isEmpty() || a == b;
+    };
     for (const auto& a : m_actions) {
         if (a.separator || a.id == id) continue;
+        if (!overlaps(selfScope, a.scope)) continue;
         if (shortcut(a.id) == seq) return a.id;
     }
     return {};
@@ -389,6 +398,16 @@ QString UiActionRegistry::sequenceFromKey(int key, int modifiers, const QString&
         case Qt::Key_Plus: name = QLatin1String("+"); break;
         case Qt::Key_Minus: name = QLatin1String("-"); break;
         case Qt::Key_Equal: name = QLatin1String("="); break;
+        // 标点：设置页录键（如 Ctrl+, 首选项）与 keymap 文本互转（2026-09 快捷键收尾）。
+        case Qt::Key_Comma: name = QLatin1String(","); break;
+        case Qt::Key_Period: name = QLatin1String("."); break;
+        case Qt::Key_Slash: name = QLatin1String("/"); break;
+        case Qt::Key_Semicolon: name = QLatin1String(";"); break;
+        case Qt::Key_Apostrophe: name = QLatin1String("'"); break;
+        case Qt::Key_BracketLeft: name = QLatin1String("["); break;
+        case Qt::Key_BracketRight: name = QLatin1String("]"); break;
+        case Qt::Key_Backslash: name = QLatin1String("\\"); break;
+        case Qt::Key_QuoteLeft: name = QLatin1String("`"); break;
         default:
             if (key >= Qt::Key_F1 && key <= Qt::Key_F12)
                 name = QStringLiteral("F%1").arg(key - Qt::Key_F1 + 1);

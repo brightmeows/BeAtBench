@@ -76,6 +76,27 @@ TEST(UiActionRegistry, DuplicateIdGuardOverwrites) {
     EXPECT_EQ(calls, 1);  // 生效的是新 handler
 }
 
+TEST(UiActionRegistry, DuplicateIdGuardReplacesWholeDef) {
+    // 2026-09 修复：重复注册整条替换。旧实现只拷 handler/label/shortcut/category/
+    // enabled/checkable/checked → 重注册后 toolbar/control/tooltip/value/prefix/scope 丢失。
+    UiActionRegistry r;
+    UiActionDef first = make_def(QStringLiteral("tool.pan"));
+    first.toolbar = QStringLiteral("tool");
+    first.tooltip = QStringLiteral("旧提示");
+    first.scope = QStringLiteral("edit");
+    r.add(first);
+    UiActionDef second = make_def(QStringLiteral("tool.pan"));
+    second.toolbar = QStringLiteral("tool");
+    second.tooltip = QStringLiteral("新提示");
+    second.value = QStringLiteral("pan");
+    second.scope = QStringLiteral("slice");
+    r.add(second);
+    EXPECT_EQ(r.toolbar(QStringLiteral("tool.pan")), QStringLiteral("tool"));
+    EXPECT_EQ(r.tooltip(QStringLiteral("tool.pan")), QStringLiteral("新提示"));
+    EXPECT_EQ(r.value(QStringLiteral("tool.pan")), QStringLiteral("pan"));
+    EXPECT_EQ(r.scope(QStringLiteral("tool.pan")), QStringLiteral("slice"));
+}
+
 TEST(UiActionRegistry, SeparatorEnumeration) {
     // 分隔线建模（doc/09 §7 验收 2 前置）：addSeparator + isSeparator + idsByCategory 含分隔线、
     // 且分隔线不可触发/不可启用（菜单 Repeater 据此渲染 MenuSeparator）。
@@ -261,6 +282,45 @@ TEST(UiActionRegistry, DefaultShortcutAndConflictId) {
     EXPECT_TRUE(r.conflictId(QStringLiteral("file.save"), QString()).isEmpty());
 }
 
+TEST(UiActionRegistry, ScopeIsolatesConflicts) {
+    // 快捷键作用域（doc/09 §13.5，2026-09 收尾）：编辑页与切音页可各占同一键位；
+    // 全局动作（scope 空）与一切作用域重叠 → 仍判冲突。
+    UiActionRegistry r;
+    UiActionDef editPlay = make_def(QStringLiteral("edit.playPause"));
+    editPlay.shortcut = QStringLiteral("Space");
+    editPlay.scope = QStringLiteral("edit");
+    r.add(editPlay);
+    UiActionDef slicePlay = make_def(QStringLiteral("slice.playPause"));
+    slicePlay.shortcut = QStringLiteral("Space");
+    slicePlay.scope = QStringLiteral("slice");
+    r.add(slicePlay);
+    UiActionDef globalAct = make_def(QStringLiteral("app.settings"));
+    globalAct.shortcut = QStringLiteral("Ctrl+,");
+    r.add(globalAct);  // scope 空 = 全局
+
+    EXPECT_EQ(r.scope(QStringLiteral("edit.playPause")), QStringLiteral("edit"));
+    EXPECT_EQ(r.scope(QStringLiteral("slice.playPause")), QStringLiteral("slice"));
+    EXPECT_TRUE(r.scope(QStringLiteral("app.settings")).isEmpty());
+
+    // 同键位、不同页面作用域 → 不冲突（两向）
+    EXPECT_TRUE(r.conflictId(QStringLiteral("edit.playPause"), QStringLiteral("Space")).isEmpty());
+    EXPECT_TRUE(r.conflictId(QStringLiteral("slice.playPause"), QStringLiteral("Space")).isEmpty());
+    // 全局 ↔ 作用域 → 冲突（两向）
+    EXPECT_EQ(r.conflictId(QStringLiteral("edit.playPause"), QStringLiteral("Ctrl+,")),
+              QStringLiteral("app.settings"));
+    EXPECT_EQ(r.conflictId(QStringLiteral("app.settings"), QStringLiteral("Space")),
+              QStringLiteral("edit.playPause"));
+    // 同作用域内仍冲突
+    UiActionDef editRender = make_def(QStringLiteral("edit.render"));
+    editRender.shortcut = QStringLiteral("Ctrl+R");
+    editRender.scope = QStringLiteral("edit");
+    r.add(editRender);
+    EXPECT_EQ(r.conflictId(QStringLiteral("edit.playPause"), QStringLiteral("Ctrl+R")),
+              QStringLiteral("edit.render"));
+    // 空序列恒不冲突
+    EXPECT_TRUE(r.conflictId(QStringLiteral("edit.playPause"), QString()).isEmpty());
+}
+
 TEST(UiActionRegistry, UserKeymapOverridesSkin) {
     UiActionRegistry r;
     UiActionDef d = make_def(QStringLiteral("file.save"));
@@ -306,6 +366,11 @@ TEST(UiActionRegistry, SequenceFromKey) {
     UiActionRegistry r;
     EXPECT_EQ(r.sequenceFromKey(Qt::Key_S, Qt::ControlModifier, QString()),
               QStringLiteral("Ctrl+S"));
+    // 标点（Ctrl+, 首选项改绑；text 为空/为 "," 都要能录）
+    EXPECT_EQ(r.sequenceFromKey(Qt::Key_Comma, Qt::ControlModifier, QString()),
+              QStringLiteral("Ctrl+,"));
+    EXPECT_EQ(r.sequenceFromKey(Qt::Key_Comma, Qt::ControlModifier, QStringLiteral(",")),
+              QStringLiteral("Ctrl+,"));
     EXPECT_TRUE(r.sequenceFromKey(Qt::Key_Control, Qt::ControlModifier, QString()).isEmpty());
 }
 

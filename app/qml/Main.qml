@@ -284,25 +284,34 @@ ApplicationWindow {
                onActivated: uiActions.invoke("view.zoomOut") }
 
     // Esc：取消未完成的 LN 头（LNTYPE 2 放置；文本输入焦点时让行）
-    // 注意：Esc 不在注册表中（非全局动作），保留硬编码
-    Shortcut { sequence: "Esc"; enabled: currentPage === 0 && editorTool === "ln" &&
-                !window.textInputFocused && chartMeta !== null
-                onActivated: cancelPendingLn() }
+    // 2026-09 快捷键收尾：进注册表（edit.cancel，scope=edit）→ 设置页可改绑。
+    Shortcut {
+        sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("edit.cancel") : ""
+        enabled: currentPage === 0 && editorTool === "ln" && !window.textInputFocused
+                 && chartMeta !== null
+        onActivated: uiActions.invoke("edit.cancel")
+    }
 
     // 首选项（M4.2 设置页；菜单「设置→首选项…」同源）
-    Shortcut { sequence: "Ctrl+,"; onActivated: settingsDialog.open() }
+    // 2026-09：进注册表（app.settings，全局）→ 设置页可改绑（Ctrl+, 现可录键）。
+    Shortcut {
+        sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("app.settings") : ""
+        onActivated: uiActions.invoke("app.settings")
+    }
 
     // M5：Space = 播放/暂停（渲染代理 PCM；无渲染时提示/等待渲染）。Ctrl+R = 手动渲染。
-    // 文本输入焦点时让行；只在编辑页 + 已打开谱面时可用
+    // 文本输入焦点时让行；只在编辑页 + 已打开谱面时可用。
+    // 2026-09 快捷键收尾：进注册表（edit.playPause / edit.render，scope=edit）；
+    // 与切音页 slice.playPause 的 Space 作用域隔离（各自页面门控，互不抢键）。
     Shortcut {
-        sequence: "Space"
+        sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("edit.playPause") : ""
         enabled: currentPage === 0 && chartMeta !== null && !window.textInputFocused
-        onActivated: togglePlayback()
+        onActivated: uiActions.invoke("edit.playPause")
     }
     Shortcut {
-        sequence: "Ctrl+R"
+        sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("edit.render") : ""
         enabled: currentPage === 0 && chartMeta !== null && !window.textInputFocused
-        onActivated: renderChartToFile()
+        onActivated: uiActions.invoke("edit.render")
     }
 
     // ---------- 菜单栏（固定全局；doc/09：从 uiActions 注册表查表） ----------
@@ -423,8 +432,10 @@ ApplicationWindow {
         Menu {
             title: qsTr("设置")
             MenuItem {
-                text: qsTr("首选项…") + "    Ctrl+,"
-                onTriggered: settingsDialog.open()
+                // 2026-09：走注册表（app.settings）——改绑后菜单提示同步（与 Ctrl+, 同源）。
+                text: qsTr("首选项…") + (uiActions.shortcutRevision >= 0 && uiActions.shortcut("app.settings")
+                                         ? "    " + uiActions.shortcut("app.settings") : "")
+                onTriggered: uiActions.invoke("app.settings")
             }
         }
         Menu {
@@ -1055,6 +1066,12 @@ ApplicationWindow {
     // --settings 调试参数：启动即打开首选项（M4.2 设置页验收）
     property bool debugOpenSettings: false
     onDebugOpenSettingsChanged: if (debugOpenSettings) settingsDialog.open()
+    // --settings-section <id>：打开首选项并切到指定分节（display/audio/editor/shortcut）
+    property string debugSettingsSection: ""
+    onDebugSettingsSectionChanged: if (debugSettingsSection.length > 0) {
+        settingsDialog.currentSection = debugSettingsSection
+        settingsDialog.open()
+    }
     // --tool / --click / --probe 调试参数（配 --screenshot 验收点击链）：工具 + 一次模拟点击
     property string debugTool: ""
     property double debugClickX: -1
@@ -1374,6 +1391,9 @@ ApplicationWindow {
     function currentPosSec() {
         return editPage.playheadSec >= 0 ? editPage.playheadSec : editPage.cursorSec
     }
+
+    // 首选项入口（app.settings 注册表 handler；菜单/快捷键同源）
+    function openSettings() { settingsDialog.open() }
 
     // ---------- M5：Space = 播放/暂停（渲染代理 PCM）；Ctrl+R = 手动渲染 ----------
     // ⚠️ 播放起点 = 循环 A（若设）否则当前播放位置（红线=播放头）——红线是当前编辑/播放位置（用户 2026-09：
