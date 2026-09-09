@@ -246,13 +246,8 @@ QtObject {
         window.selectionRefs = refs
         setStatus(qsTr("已选中 %1 个 note（Ctrl+C 复制）").arg(refs.length))
     }
-    function refEquals(a, b) {
-        return a && b && a.measure === b.measure && a.sample === b.sample &&
-               a.lane.kind === b.lane.kind && a.lane.index === b.lane.index &&
-               a.lane.player === b.lane.player &&
-               a.pos.num === b.pos.num && a.pos.den === b.pos.den &&
-               (a.sub_line === undefined || b.sub_line === undefined || a.sub_line === b.sub_line)
-    }
+    /// 纯函数回抽（2026-09）：实现迁 C++ EditUtils（可单测）；保留薄委托，调用点不变。
+    function refEquals(a, b) { return editUtils.refEquals(a, b) }
     function onNoteClicked(ref, ctrl) {
         // LN 选取模式（默认关）：点 LN 任一段 → 自动纳入配对段。ref 由 noteAt 返回，
         // 命中 LN 时带 lnPartner（配对段的 NoteRef）。选中集可整体移动/删除。
@@ -360,14 +355,9 @@ QtObject {
         }
         if (done > 0) setStatus(qsTr("已删除 %1 个对象（Undo 可恢复）").arg(done))
     }
-    /// 位移增量 → 目标 (measure, pos)（带小节进位；分数约分）。
+    /// 位移增量 → 目标 (measure, pos)（2026-09：复用 C++ addPosDelta，去掉重复分数运算）。
     function metaTargetPos(measure, p, delta) {
-        const rn = p.num, rd = p.den, dn = delta.pos.num, dd = delta.pos.den
-        const newNum = rn * dd + dn * rd, newDen = rd * dd
-        const carry = Math.floor(newNum / newDen)
-        const g = gcd(newNum - carry * newDen, newDen)
-        return { measure: measure + delta.measure + carry,
-                 pos: { num: (newNum - carry * newDen) / g, den: newDen / g } }
+        return addPosDelta({ measure: measure, pos: p }, delta)
     }
     /// 拖动移动 BGA/BPM/STOP 对象（时间 + 图层[仅 bga]；单 undo 步）。deltaF = 拍位位移。
     /// 拖回游玩轨（key/scratch/pedal）→ note.convertBack（反转换：元事件 → note）。
@@ -582,22 +572,10 @@ QtObject {
                            : qsTr("已移动 %1 个 note（+%2 拍）").arg(r.moved).arg(deltaF.toFixed(3)))
         }
     }
-    /// 源位置 + 位移增量 → 绝对目标位置（带小节进位；分数约分，保证与 core Rational 一致）。
-    function addPosDelta(ref, delta) {
-        const rn = ref.pos.num, rd = ref.pos.den
-        const dn = delta.pos.num, dd = delta.pos.den
-        const newNum = rn * dd + dn * rd
-        const newDen = rd * dd
-        const carry = Math.floor(newNum / newDen)
-        const g = gcd(newNum - carry * newDen, newDen)
-        return { measure: ref.measure + delta.measure + carry,
-                 pos: { num: (newNum - carry * newDen) / g, den: newDen / g } }
-    }
-    function gcd(a, b) {
-        a = Math.abs(a); b = Math.abs(b)
-        while (b) { const t = b; b = a % b; a = t }
-        return a || 1
-    }
+    /// 源位置 + 位移增量 → 绝对目标位置（2026-09：实现迁 C++ EditUtils.addPosDelta）。
+    function addPosDelta(ref, delta) { return editUtils.addPosDelta(ref, delta) }
+    /// 最大公约数（2026-09：实现迁 C++ EditUtils.gcd）。
+    function gcd(a, b) { return editUtils.gcd(a, b) }
     function laneEquals(lane, kind, index, player) {
         return lane && lane.kind === kind && lane.index === index && lane.player === player
     }
@@ -692,17 +670,24 @@ QtObject {
             setStatus(qsTr("已复制 %1 个 note（%2 行）").arg(r.count).arg(r.lines.length))
         }
     }
-    /// 系统剪贴板文本是否含 BMS 原始行（数据行 #mmmcc: / 定义行 #WAVxx/#BPMxx/…）。
-    /// 判定宽松：只要首行命中即尝试，解析失败由 clipboard.paste 报错（信息已足够）。
-    function looksLikeBmsText(t) {
-        var lines = t.split(/\r?\n/)
-        for (var i = 0; i < lines.length; i++) {
-            var s = lines[i].trim()
-            if (s.length === 0 || s.charAt(0) !== "#") continue
-            if (/^#[0-9]{3}[0-9A-Za-z]{2,}:/.test(s)) return true        // #mmmcc: 数据行
-            if (/^#(WAV|BMP|BPM|STOP)[0-9A-Za-z]{1,2}[ \t]/.test(s)) return true  // 定义行
+    /// 系统剪贴板文本是否含 BMS 原始行（2026-09：实现迁 C++ EditUtils.looksLikeBmsText）。
+    function looksLikeBmsText(t) { return editUtils.looksLikeBmsText(t) }
+    /// 系统剪贴板 BMS 文本 → 谱面（Ctrl+V 落点；2026-09 从 pasteClipboard 抽出）。
+    function pasteRawText(sysText, target) {
+        var r = sessionCmd("clipboard.paste", {
+            text: sysText,
+            target_measure: target
+        })
+        if (r) {
+            if (r.selection && r.selection.length > 0)
+                window.selectionRefs = r.selection
+            var parts = []
+            if (r.notes > 0) parts.push(qsTr("%1 个 note").arg(r.notes))
+            if (r.wavs > 0) parts.push(qsTr("%1 个采样").arg(r.wavs))
+            if (r.measures > 0) parts.push(qsTr("%1 个小节长").arg(r.measures))
+            setStatus(qsTr("已粘贴到小节 %1%2").arg(r.target_measure)
+                      .arg(parts.length > 0 ? qsTr("（%1）").arg(parts.join("、")) : ""))
         }
-        return false
     }
     function pasteClipboard() {
         // 2026-09 修复：编辑页 Ctrl+V 先读系统剪贴板（切音页「复制 raw」/手写/外部工具复制的
@@ -715,20 +700,7 @@ QtObject {
         if (typeof clipboard !== "undefined" && clipboard)
             sysText = clipboard.text()
         if (sysText && looksLikeBmsText(sysText)) {
-            var r = sessionCmd("clipboard.paste", {
-                text: sysText,
-                target_measure: target
-            })
-            if (r) {
-                if (r.selection && r.selection.length > 0)
-                    window.selectionRefs = r.selection
-                var parts = []
-                if (r.notes > 0) parts.push(qsTr("%1 个 note").arg(r.notes))
-                if (r.wavs > 0) parts.push(qsTr("%1 个采样").arg(r.wavs))
-                if (r.measures > 0) parts.push(qsTr("%1 个小节长").arg(r.measures))
-                setStatus(qsTr("已粘贴到小节 %1%2").arg(r.target_measure)
-                          .arg(parts.length > 0 ? qsTr("（%1）").arg(parts.join("、")) : ""))
-            }
+            pasteRawText(sysText, target)
             return
         }
         if (!window.clipboardLines || window.clipboardLines.length === 0) {

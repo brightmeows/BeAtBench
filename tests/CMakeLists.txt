@@ -140,6 +140,17 @@ if (Qt6Core_FOUND)
     beatbench_set_warnings(ui_action_registry_test)
     add_test(NAME ui_action_registry_tests COMMAND ui_action_registry_test)
 
+    # EditUtils 单测（2026-09 SessionController 纯函数回抽）：只链 Qt6::Core。
+    add_executable(edit_utils_test edit_utils_test.cpp
+        ${CMAKE_SOURCE_DIR}/app/bridge/EditUtils.cpp
+        ${CMAKE_SOURCE_DIR}/app/bridge/EditUtils.hpp)  # Q_OBJECT 头须显式列入（AUTOMOC 扫描不可靠）
+    target_include_directories(edit_utils_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/app ${CMAKE_SOURCE_DIR}/core/include)
+    target_link_libraries(edit_utils_test PRIVATE Qt6::Core GTest::gtest_main)
+    set_target_properties(edit_utils_test PROPERTIES AUTOMOC ON)
+    beatbench_set_warnings(edit_utils_test)
+    add_test(NAME edit_utils_tests COMMAND edit_utils_test)
+
     # ThemeManager 单测（doc/08 §3.5）：链 Qt6::Gui（QColor）+ core 的 Json。
     # 验证 theme.json 颜色 + 非颜色 token 覆写（L2 皮肤布局改动幅度的根基）。
     find_package(Qt6 COMPONENTS Gui QUIET)

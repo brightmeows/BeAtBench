@@ -32,6 +32,7 @@
 #include "bridge/ChartSession.hpp"
 #include "bridge/ClipboardBridge.hpp"
 #include "bridge/CommandDispatcher.hpp"
+#include "bridge/EditUtils.hpp"
 #include "bridge/KeyMonitor.hpp"
 #include "bridge/LintListModel.hpp"
 #include "bridge/SampleListModel.hpp"
@@ -258,6 +259,9 @@ int main(int argc, char** argv) {
     app.installEventFilter(&keyMonitor);
     // 系统剪贴板桥（2026-09 编辑页 Ctrl+V 读系统剪贴板 BMS 原始行；Ctrl+C 镜像回写）
     beatbench::app::ClipboardBridge clipboardBridge;
+    // 纯函数回抽（2026-09；SessionController.qml 减肥第一刀）：gcd/refEquals/addPosDelta +
+    // 剪贴板文本判定（Base62 粘贴警告前置）。QML 经 editUtils 访问。
+    beatbench::app::EditUtils editUtils;
 
     QQmlApplicationEngine engine;
     QObject::connect(&engine, &QQmlEngine::warnings, &dumpQmlWarnings);
@@ -271,6 +275,7 @@ int main(int argc, char** argv) {
     engine.rootContext()->setContextProperty(QStringLiteral("sliceWorkspace"), &sliceWorkspace);
     engine.rootContext()->setContextProperty(QStringLiteral("keyMonitor"), &keyMonitor);
     engine.rootContext()->setContextProperty(QStringLiteral("clipboard"), &clipboardBridge);
+    engine.rootContext()->setContextProperty(QStringLiteral("editUtils"), &editUtils);
     // M5 播放：AudioEngine 连 ChartSession（渲染完成装载 PCM；编辑即停；waitRender 续播）
     audioEngine.setChartSession(&chartSession);
 
