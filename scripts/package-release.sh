@@ -12,20 +12,25 @@
 # 用法:
 #   scripts/package-release.sh [--skip-smoke]
 #
+# 环境变量（必填，脚本不再内置本机路径默认值）:
+#   QT_ROOT       Qt 安装目录
+#   CXX_BIN       MinGW 编译器 g++.exe 路径
+#   NINJA_BIN     Ninja 可执行文件路径
 # 可选环境变量:
-#   QT_ROOT       Qt 安装目录（默认 /g/Qt/6.11.1/mingw_64）
-#   CXX_BIN       MinGW 编译器（默认 /g/Qt/Tools/mingw1310_64/bin/g++.exe）
-#   NINJA_BIN     Ninja（默认 /g/Qt/Tools/Ninja/ninja.exe）
-#   BB_SMOKE_OPEN 冒烟时打开的谱面路径（可选，例如 /h/.../sample.bms）
+#   BB_SMOKE_OPEN 冒烟时打开的谱面路径（例如 <你的谱面>.bms）
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 
 # ---- 可配置项 ----
-QT_ROOT="${QT_ROOT:-/g/Qt/6.11.1/mingw_64}"
-CXX_BIN="${CXX_BIN:-/g/Qt/Tools/mingw1310_64/bin/g++.exe}"
-NINJA_BIN="${NINJA_BIN:-/g/Qt/Tools/Ninja/ninja.exe}"
+QT_ROOT="${QT_ROOT:-}"
+CXX_BIN="${CXX_BIN:-}"
+NINJA_BIN="${NINJA_BIN:-}"
+
+[ -n "$QT_ROOT" ] || { echo "错误: 请设置 QT_ROOT（Qt 安装目录）" >&2; exit 1; }
+[ -n "$CXX_BIN" ] || { echo "错误: 请设置 CXX_BIN（MinGW g++.exe 路径）" >&2; exit 1; }
+[ -n "$NINJA_BIN" ] || { echo "错误: 请设置 NINJA_BIN（Ninja 路径）" >&2; exit 1; }
 BUILD="$ROOT/build-release"
 OUT="$ROOT/out"
 
@@ -112,7 +117,7 @@ rm -rf "$STAGE/qmltooling"
 
 echo "==> README.txt / LICENSE"
 cat > "$STAGE/README.txt" <<EOF
-BeAtBench v$VER (M1-M5)
+BeAtBench v$VER (M1-M6)
 ========================
 
 一个基于 Qt 6 / QML 的 BMS 谱面编辑器（Windows 64 位，免安装）。
@@ -145,9 +150,10 @@ BeAtBench v$VER (M1-M5)
 已知限制（详见项目 doc/04）
 --------------------------
   - 音频波形需先渲染（Space / 载入自动渲染）一次才显示；编辑 note 会增量自动更新。
-  - 切音工作台（M6）尚未实现；实时 keysound 调度（试玩）为后续 Phase D。
+  - 切音工作台（M6）已可用；已知边界：#WAV 占用视图 UI、CSV 时标表、变速谱 BPM 自动待做。
+  - 实时 keysound 调度（试玩）为后续 Phase D，尚未实现。
   - #RANDOM/#IF 块内容保存后不保证数据一致（已知限制，按需立项）。
-  - 暂不支持打开音频打包格式（bmson 等）。
+  - 暂不支持 bmson 等其它谱面格式（v1 仅支持 .bms/.bme/.pms 文本）。
 
 许可
 ----

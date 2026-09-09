@@ -1,8 +1,6 @@
 # BeAtBench
 
-提前须知: 本项目依赖vibecoding运行 代码审查几乎全靠ai和git diff
-
-面向BMS的新一代开源跨平台谱面编辑器
+面向 BMS 的开源跨平台谱面编辑器
 
 技术栈: C++20 + Qt 6 Quick/QML + PortAudio + CMake
 
@@ -12,7 +10,7 @@
 
 ## 功能特性
 
-### 已完成（M1-M6，2026-09；M6 与 2026-09 收尾未发布）
+### 已完成（M1-M6，2026-09；0.3.0 发布准备）
 
 - **BMS 读写**：完整解析/写出 .bms/.bme/.pms，支持 UTF-8/SJIS 编码、base62 id、#BASE 62 大小写敏感、iBMSC 式输出（定义表顺序/分割线注释）
 - **谱面编辑**：note 放置/移动/删除、拖拽/框选/点选、LN（长音，LNTYPE 1/2）/地雷、单点<->LN 转换、量化/镜像/旋转变换、undo/redo、剪贴板（BMS 原始行，外部工具兼容）
@@ -32,17 +30,25 @@
 
 ### 计划中
 
-- `#WAV` 占用视图 UI、CSV 时标表
-- 变速谱 BPM 自动（MIDI tempo/拍号已解析未接入）
-- 试玩 / keysound 实时调度（Phase D；M5 已建 PlaybackPlan 映射层，接口预留）
-- L2 布局皮肤（`layout.json`，设计已定稿，见 doc/08 §3.6）
-- #RANDOM/#IF 块内容编辑（已知限制，见 doc/04 §6）
-- zip 打包 + 外部预览集成（M7）、i18n 全文（M8）
+> 状态：⏳ 计划中（方向已定）/ 🚧 进行中（已有可用部分）/ — 仅记录（未排期）。里程碑与前置见 `doc/04` §7「未来功能状态」。
+
+| 功能 | 里程碑 | 状态 |
+|---|---|---|
+| `#WAV` 占用视图 UI、CSV 时标表 | M7 | ⏳ |
+| 变速谱 BPM 自动（MIDI tempo/拍号已解析未接入） | M7 | ⏳ |
+| zip / 项目打包 + 外部预览适配器 | M7 | ⏳ |
+| codec capabilities/lossiness、命令协议版本化与 capabilities | M8 | 🚧 |
+| SliceWorkspace/bridge 拆分、QML 业务逻辑继续下沉 | M8 | ⏳ |
+| bmson codec、项目/工作区持久化、`#RANDOM/#IF` AST | M9 | ⏳ |
+| 试玩 / keysound 实时调度（Phase D；M5 已建 PlaybackPlan 映射层） | M10+ | ⏳ |
+| L2 布局皮肤（`layout.json`，设计已定稿，见 doc/08 §3.6） | M10+ | ⏳ |
+| i18n 全文、跨平台 CI/验证、性能基准、Lua 接口 | M10+ | ⏳ |
 
 ## 状态
 
 **M1-M6 已完成**（2026-09）：BMS codec + timing + CLI + QML 编辑器（编辑/时间轴/元信息/采样/BGA/lint/剪贴板/多文档/动作注册表/皮肤 L1）→ **M4 音频**（单发试听/设置页/解码缓存/离线渲染/波形/秒标尺/增量重渲染）→ **M5 随时播放**（Space 播放/暂停、PcmEngine 零拷贝、播放时钟、编辑即停）+ 播放头红线/视口跟随/A-B 循环/seek + note 编辑增强（鼠标预览 ghost、多选拖动、BGM 相对距离、`bgm_line→sub_line` 泛化）+ 编辑增强（**02 小节长度编辑 + 变拍高 + 加一小节 + 新建谱面**、编辑/撤销波形不消失）→ **M6 切音工作台**（导入/切分/导出/手动切分点/切片编辑/剪贴板整段粘贴，见 doc/04 §6）。
-测试以源码 `TEST()` 计数为准（core 315 + 音频 55 + Qt 桥层 47）；真实谱面集缺失时部分 SKIP，不要把某一天的 PASS 数写死。详见 `doc/04` §6。
+**0.3.0 发布准备已完成**：发布包 M6/bmson 文案与过期本机路径注释修正、未来功能状态表、`command/` 与 `commands/` 职责核实、JSON 命令契约测试（含 GUI 入口）、版本推进与干净构建验证；实际打 tag/上传不在本次范围。
+测试以源码 `TEST()` 计数为准（core 317 + 音频 55 + Qt 桥层 52）；真实谱面集缺失时部分 SKIP，不要把某一天的 PASS 数写死。详见 `doc/04` §6。
 
 当前里程碑任务见 `doc/04-开发手册.md`（简版现状；开发历史/踩坑细节在 `local/doc/04-开发手册-完整版.md`，gitignore）；皮肤系统后续计划见 `local/doc/10-主题与皮肤路线.md`（gitignore）。
 

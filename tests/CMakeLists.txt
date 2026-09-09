@@ -151,6 +151,19 @@ if (Qt6Core_FOUND)
     beatbench_set_warnings(edit_utils_test)
     add_test(NAME edit_utils_tests COMMAND edit_utils_test)
 
+    # CommandDispatcher 单测（doc/06 §3）：QML 实际入口的 JSON 协议契约，
+    # 覆盖 GUI 独有的「请求 JSON 非法 → bad_request」解析路径（与 CLI 入口一致性）。
+    add_executable(command_dispatcher_test command_dispatcher_test.cpp
+        ${CMAKE_SOURCE_DIR}/app/bridge/CommandDispatcher.cpp
+        ${CMAKE_SOURCE_DIR}/app/bridge/CommandDispatcher.hpp)  # Q_OBJECT 头须显式列入
+    target_include_directories(command_dispatcher_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/app ${CMAKE_SOURCE_DIR}/core/include)
+    target_link_libraries(command_dispatcher_test PRIVATE
+        beatbench_core Qt6::Core GTest::gtest_main)
+    set_target_properties(command_dispatcher_test PROPERTIES AUTOMOC ON)
+    beatbench_set_warnings(command_dispatcher_test)
+    add_test(NAME command_dispatcher_tests COMMAND command_dispatcher_test)
+
     # ThemeManager 单测（doc/08 §3.5）：链 Qt6::Gui（QColor）+ core 的 Json。
     # 验证 theme.json 颜色 + 非颜色 token 覆写（L2 皮肤布局改动幅度的根基）。
     find_package(Qt6 COMPONENTS Gui QUIET)

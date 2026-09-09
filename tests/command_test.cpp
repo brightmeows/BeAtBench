@@ -8,6 +8,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <string>
 
 #include "beatbench/core/bms/BmsCodec.hpp"
 #include "beatbench/core/command/Builtins.hpp"
@@ -101,8 +102,55 @@ TEST(Command, DispatchOkAndIdEcho) {
     EXPECT_TRUE(resp.is_object());
     EXPECT_TRUE(resp.at("ok").as_bool());
     EXPECT_EQ(resp.at("id").as_i64(), 7);
-    EXPECT_EQ(resp.at("result").at("version").as_str(), "0.2.0");
-    EXPECT_EQ(resp.at("result").at("api").as_i64(), 1);
+    // version 契约：name / version / api / license 四字段齐全（doc/06 §3.5）。
+    const auto& result = resp.at("result");
+    EXPECT_EQ(result.at("name").as_str(), "beatbench");
+    EXPECT_EQ(result.at("version").as_str(), "0.3.0");
+    EXPECT_EQ(result.at("api").as_i64(), 1);
+    EXPECT_EQ(result.at("license").as_str(), "GPL-3.0-only");
+    // 成功响应不带 error 键。
+    EXPECT_EQ(resp.find("error"), nullptr);
+}
+
+TEST(Command, DispatchEnvelopeIdAndDefaultArgs) {
+    Registry reg;
+    register_builtin_commands(reg);
+
+    // id 为字符串 → 原样回显（doc/06 §3.2）。
+    const Json resp = reg.dispatch(request("version", Json::object(), Json("req-1")));
+    ASSERT_TRUE(resp.at("ok").as_bool());
+    EXPECT_EQ(resp.at("id").as_str(), "req-1");
+
+    // 无 id → 响应不带 id 键。
+    Json no_id = Json::object();
+    no_id.set("command", "version");
+    const Json resp2 = reg.dispatch(no_id);
+    ASSERT_TRUE(resp2.at("ok").as_bool());
+    EXPECT_EQ(resp2.find("id"), nullptr);
+
+    // args 缺省 = 空对象（doc/06 §3.2）：info 无参 → 参数语义错误 bad_args，
+    // 而不是信封错误 bad_request。
+    Json only_cmd = Json::object();
+    only_cmd.set("command", "info");
+    const Json resp3 = reg.dispatch(only_cmd);
+    EXPECT_FALSE(resp3.at("ok").as_bool());
+    EXPECT_EQ(resp3.at("error").at("code").as_str(), "bad_args");
+}
+
+TEST(Command, ErrorEnvelopeShape) {
+    Registry reg;
+    register_builtin_commands(reg);
+
+    const Json resp = reg.dispatch(request("frobnicate", Json::object(), Json(42)));
+    EXPECT_FALSE(resp.at("ok").as_bool());
+    EXPECT_EQ(resp.at("id").as_i64(), 42);  // 错误响应也回显 id
+    const auto& err = resp.at("error");
+    ASSERT_TRUE(err.is_object());
+    EXPECT_EQ(err.at("code").as_str(), "unknown_command");
+    EXPECT_FALSE(err.at("message").as_str().empty());
+    // 错误响应不含 result；message 含命令名便于定位。
+    EXPECT_EQ(resp.find("result"), nullptr);
+    EXPECT_NE(err.at("message").as_str().find("frobnicate"), std::string::npos);
 }
 
 TEST(Command, DispatchErrors) {
@@ -143,11 +191,23 @@ TEST(Command, CapabilitiesListsCommandsAndFormats) {
     register_builtin_commands(reg);
     const Json resp = reg.dispatch(request("capabilities", Json::object()));
     EXPECT_TRUE(resp.at("ok").as_bool());
-    const auto& commands = resp.at("result").at("commands").as_array();
+    const auto& result = resp.at("result");
+    const auto& commands = result.at("commands").as_array();
     EXPECT_GE(commands.size(), 5);
-    const auto& formats = resp.at("result").at("formats").as_array();
+    // 代表性命令覆盖三类入口：基础查询 / 会话编辑 / M6 导入与切分。
+    for (const char* name : {"version", "capabilities", "info", "check", "convert",
+                             "session.load", "note.put", "midi.parse", "slice.detect"}) {
+        const bool found = std::find_if(commands.begin(), commands.end(),
+                                        [&](const Json& v) { return v.as_str() == name; }) !=
+                           commands.end();
+        EXPECT_TRUE(found) << "capabilities 缺少命令: " << name;
+    }
+    const auto& formats = result.at("formats").as_array();
     ASSERT_EQ(formats.size(), 1);
     EXPECT_EQ(formats[0].as_str(), "bms");
+    // modes 按格式给出（doc/06 §3.5）；bms 至少有一种模式。
+    const auto& modes = result.at("modes").at("bms").as_array();
+    EXPECT_FALSE(modes.empty());
 }
 
 TEST(Command, InfoOnSyntheticChart) {
