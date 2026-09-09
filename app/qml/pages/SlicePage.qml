@@ -367,6 +367,18 @@ Item {
                + " · " + zoomLevels[zoomIndex].label
     }
 
+    /// ---- 全局状态栏摘要（2026-09；Main 底部状态栏在切音页显示；只读、不含业务） ----
+    /// 选中拍子（秒；<0 = 无）。←→ 移动光标用；状态栏「光标」。
+    readonly property real selectedBeatSec: sliceWaveform.selectedBeatSec
+    /// 切片总数 / 启用（放置开关）数（SliceWorkspace.slices 每次访问构造列表，只在此处消费）。
+    readonly property int sliceCount: sliceWorkspace.slices.length
+    readonly property int enabledSliceCount: {
+        var n = 0
+        var list = sliceWorkspace.slices
+        for (var i = 0; i < list.length; ++i) if (list[i].enabled) ++n
+        return n
+    }
+
     Component.onCompleted: {
         // 起始小节默认 = 下一空小节（当前谱面已用小节数 + 1；无谱面 = 1）
         startMeasureBox.value = sliceWorkspace.suggestedStartMeasure()

@@ -810,11 +810,13 @@ ApplicationWindow {
             Layout.preferredHeight: 28
             color: Theme.surface2
             border.color: Theme.border
+            // 编辑页/其它页状态（现状）；切音页改下方专用摘要（currentPage === 1 互斥）。
             RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: 10
                 anchors.rightMargin: 10
                 spacing: 8
+                visible: window.currentPage !== 1
                 // 主消息（可变长，占满剩余空间，右截断）：悬停信息 > 状态消息。
                 Label {
                     text: editPage.hoverText !== "" ? editPage.hoverText : window.statusText
@@ -878,6 +880,14 @@ ApplicationWindow {
                     color: Theme.textFaint; font.family: Theme.fontMono; font.pixelSize: Theme.fsSmall
                     visible: window.chartEncoding !== ""
                 }
+            }
+            // 切音页专用摘要（视口/光标/参考音频/播放/切片/MIDI；与上方编辑页状态互斥）
+            SliceStatusBar {
+                anchors.fill: parent
+                anchors.leftMargin: 10
+                anchors.rightMargin: 10
+                visible: window.currentPage === 1
+                page: slicePage
             }
         }
     }
