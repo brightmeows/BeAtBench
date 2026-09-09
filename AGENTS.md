@@ -59,8 +59,8 @@
 - **截图一律 `local/screenshot/`**，命名 `<阶段>-<页面>.png`。
 - **新 QML 文件必须加入 `app/CMakeLists.txt` 的 `QML_FILES` 显式列表**，否则运行时「类型不可用」。
 - 源文件一律 UTF-8；不要移除 MSVC 的 `/utf-8`。
-- 命令目录单复数：`core/include/beatbench/core/command/`（单数）是现行框架；
-  `core/.../commands/`（复数）是 M0 遗留旧头，**无引用，勿据它写代码**。
+- 命令目录只有单数 `core/include/beatbench/core/command/`（命名空间 `beatbench::cmd`）；
+  M0 遗留的复数 `core/.../commands/` 已删除，不要照旧笔记去找。
 - 提交信息用 conventional commits（`feat` / `fix` / `docs` / `refactor` / `test` / `chore`）。
 
 ## 5. 构建 / 测试速查
@@ -84,7 +84,7 @@ cmake --build build-gui --target beatbench
 
 - ⚠️ **「无 Qt」≠「可离线」**：`audio/CMakeLists.txt` 无条件 FetchContent 拉 PortAudio；
   离线干净构建需 `-DFETCHCONTENT_SOURCE_DIR_PORTAUDIO=<已有源码>`（googletest 同理）。
-- 测试基线（源码 `TEST()` 计数，0.3.0）：core **317**（快速 315 过 / 2 SKIP）+ Qt 桥层 **52**。
+- 测试基线（源码 `TEST()` 计数，0.3.0）：core **317**（快速 315 过 / 2 SKIP）+ Qt 桥层 **54**。
   真实谱面集缺失时部分用例 SKIP，**不要把某一天的 PASS 数写死**。
 
 ## 6. 找不到文件时

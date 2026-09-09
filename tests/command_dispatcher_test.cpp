@@ -7,10 +7,14 @@
 #include <string>
 
 #include "beatbench/core/Version.hpp"
+#include "beatbench/core/command/Builtins.hpp"
+#include "beatbench/core/command/Command.hpp"
 #include "beatbench/core/json/Json.hpp"
 #include "bridge/CommandDispatcher.hpp"
 
 using beatbench::app::CommandDispatcher;
+using beatbench::cmd::Registry;
+using beatbench::cmd::register_builtin_commands;
 using beatbench::json::Json;
 
 namespace {
@@ -71,4 +75,42 @@ TEST(CommandDispatcher, VersionStringSingleSource) {
     const Json resp = parse_response(dispatcher.version());
     EXPECT_TRUE(resp.at("ok").as_bool());
     EXPECT_EQ(resp.at("result").at("version").as_str(), std::string(beatbench::kVersion));
+}
+
+// CLI↔GUI 一致性（doc/06 §3；发布前 review 契约项）：同一请求分别走 GUI 的
+// CommandDispatcher（QString → parse → global_registry）与 CLI 的进程内路径
+// （parse → registry.dispatch），响应信封必须逐字节一致。
+TEST(CommandDispatcher, CliAndGuiEnvelopesMatch) {
+    Registry reg;
+    register_builtin_commands(reg);
+    CommandDispatcher gui;
+
+    const char* requests[] = {
+        R"({"command":"version"})",
+        R"({"command":"version","id":7})",
+        R"({"command":"version","id":"req-1"})",
+        R"({"command":"capabilities"})",
+        R"({"command":"frobnicate"})",   // unknown_command
+        R"({})",                         // 缺 command → bad_request
+        R"({"command":42})",             // command 类型错误 → bad_request
+        R"({"command":"info"})",         // args 缺省 → bad_args
+        R"({"command":"info","args":{}})"  // 缺 path → bad_args
+    };
+    for (const char* text : requests) {
+        const Json cli = reg.dispatch(Json::parse(std::string(text)));
+        const Json guiResp = parse_response(gui.dispatch(QString::fromUtf8(text)));
+        EXPECT_EQ(guiResp.dump(), cli.dump()) << "request: " << text;
+    }
+}
+
+// 非法 JSON：GUI 与 CLI 各自在 parse 层收编，信封形状与文案前缀须一致
+// （cli/main.cpp 的 run_json 与 CommandDispatcher.cpp 同契约）。
+TEST(CommandDispatcher, MalformedJsonEnvelopeMatchesCliContract) {
+    CommandDispatcher gui;
+    const Json resp = parse_response(gui.dispatch(QStringLiteral("{not json")));
+    ASSERT_TRUE(resp.is_object());
+    EXPECT_FALSE(resp.at("ok").as_bool());
+    EXPECT_EQ(resp.at("error").at("code").as_str(), "bad_request");
+    const std::string msg = resp.at("error").at("message").as_str();
+    EXPECT_EQ(msg.rfind("请求 JSON 非法: ", 0), 0u) << msg;
 }
