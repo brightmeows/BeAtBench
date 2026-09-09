@@ -329,7 +329,7 @@ int main(int argc, char** argv) {
         uiActions.add(UiActionDef{"edit.delete", QCoreApplication::tr("删除"), "Del", "edit", nullptr, qml("uiActionDelete")});
         uiActions.addSeparator(QStringLiteral("edit"));  // 分隔线：编辑操作 ↔ 播放/渲染/取消
         // 编辑页播放/渲染/取消（2026-09 快捷键收尾）：进注册表 → 设置页可改绑。
-        // scope="edit" 与切音页 slice.playPause 的 Space 作用域隔离（doc/09 §13.5）。
+        // scope="edit" 与切音页 slice.playPause 的 Space 作用域隔离（doc/09 §11）。
         uiActions.add(UiActionDef{.id = "edit.playPause",
                                   .label = QCoreApplication::tr("播放/暂停（谱面）"),
                                   .shortcut = "Space",

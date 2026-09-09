@@ -13,57 +13,27 @@
 3. **我们开发的默认界面 = 内置默认皮肤**（同时也是皮肤 API 的参考实现，dogfooding）；
 4. 驱动因素：**moddability（第三方皮肤/模组）是产品目标**——QML 是「beatoraja 级皮肤」在 Qt 生态里的天然载体。
 
-## 1. 决策依据：从实证到结论
+## 1. 决策依据（摘要）
 
-### 1.1 beatoraja ModernChic 皮肤系统拆解（实证）
+- **实证**：beatoraja 的 Lua 皮肤 ≈ 一个 UI 框架暴露成脚本 API（类型化对象槽 + 布局即代码 + 绑定引擎状态），
+  侵入程度 = 前端编辑器级；osu! 皮肤 = 固定同名贴图替换，门槛≈0、上限低。
+- **结论**：皮肤是一条**能力光谱**，单层二选一都错——**分层覆写**（L1/L2/L3）让作者按能力选深度，
+  未提供的层回落内置默认；QML 是「beatoraja 级皮肤」在 Qt 生态里的天然载体。
+- **QML vs Widgets**：编辑器硬骨头（表格/富文本）Widgets 省力，但本项目硬骨头是自绘时间轴（两栈都要自写）；
+  GPU 渲染收益被高估（时间轴用 `QQuickPaintedItem` 即可）；最大收益是**设计迭代**（声明式设计 → QML 近乎无损）。
+  代价：双语言纪律（逻辑放 C++，QML 只管表现）。
+- 完整评估（beatoraja 拆解 / Widgets-QML 逐项对比）→ `local/doc/08-QML与Widgets评估.md`（gitignore）。
 
-样本：`D:\Beatoraja\beatoraja\skin\ModernChic`（beatoraja 默认原生皮肤，583 个文件；**本机实证样本路径**）。
+> 原 §2（QML vs Widgets 逐项评估）与原 §5（对既有文档的影响）已移入
+> `local/doc/08-QML与Widgets评估.md`；以下保留现行设计。
 
-| 观察 | 含义 |
-|---|---|
-| 每个屏幕一个 `.lua`（musicselect / decide / play5/7/10/14 / result / skinselect / keyconfig / config）+ `.luaskin` 引导 | 按界面分模块，皮肤作者按屏幕组织代码 |
-| `skin.image / text / note / value / slider / graph / gauge / judge / bga` 类型化对象槽 + `ADD_ALL` 合并子模块 | **脚本化对象图**：声明界面有哪些对象，引擎负责渲染 |
-| `KEY_POSITION = {114,177,228,…}`、`KEY_X/KEY_Y` 字面量数组 | 布局即代码：坐标/尺寸在脚本里硬编码 |
-| `flashTimer = {MAIN.TIMER.KEYON_1P_KEY1,…}` | **绑定引擎状态**：皮肤驱动的动画数据来自引擎运行时 |
-| `dofile(background.lua / info.lua / progress.lua)` + `pcall` 容错 | **运行时装配**：皮肤文件内再动态装载子部件 |
-| `Root/customoption/number/graph/slider/function/time/text/sound/timer` | 皮肤作者可定义自定义控件类型 |
+## 2. 双语言纪律（桥接原则）
 
-**结论：beatoraja 的 Lua 皮肤 ≈ 一个 UI 框架暴露成脚本 API，侵入程度 = 前端编辑器级。**
-
-### 1.2 osu! 皮肤模型（对照）
-
-- 无描述文件/无脚本：固定**同名文件**贴图替换（hitcircle.png 等）+ 少量固定配置；
-- 门槛≈0（会解压改图即可），能力上限低（配色/贴图/少量尺寸）。
-
-### 1.3 结论
-
-- 「皮肤」不是单一能力，而是一条**能力光谱**：L1 贴图/风格 → L2 布局调整 → L3 完全自定义；
-- 单层二选一（osu 或 beatoraja）都是错的：**分层覆写**让皮肤作者按自己的能力选深度，未提供的层回落内置默认；
-- 在 Qt 里，**QML 就是「beatoraja 皮肤系统」这个物种的天然载体**（声明式组件树 + 属性绑定 + 可加载模块）；在 Widgets 里做到同等级 = 重造一个劣化版 QML（对象图 + 绑定层 + 脚本宿主 + 控件注册表）。
-
-## 2. QML vs Widgets：除扩展性外的差异（2026-08 评估）
-
-两条根差异，其余皆为派生：
-1. **渲染管线**：Widgets = CPU 光栅（QPainter → backing store）；QML = GPU 场景图（RHI：Vulkan/D3D/Metal/GL，节点批处理）；
-2. **开发范式**：Widgets = 命令式 C++（new 控件 / setLayout / connect）；QML = 声明式文本（组件树 + 属性绑定 + JS 行为）。
-
-| 维度 | Widgets | QML | 对 BeAtBench 的影响 |
-|---|---|---|---|
-| 动画/过渡 | QPropertyAnimation，CPU，易卡 | 一等公民（State/Transition/Behavior），GPU | 播放头跟随/面板滑入更顺，但非硬需求 |
-| 控件成熟度 | QTableView/富文本编辑极成熟 | TableView/TextArea 较年轻 | **编辑器硬骨头（表格/富文本）Widgets 省力**；本项目硬骨头是自绘时间轴，两栈都要自写 |
-| 输入法/IME | 原生级成熟 | 可用但绕（`Qt.inputMethod`） | 谱师输中文标题/备注，两栈均可，Widgets 更省心 |
-| 启动/内存/体积 | 快、小、部署简单 | QML+JS 引擎+场景图，略慢略大（可 qmlsc 预编译缓解） | 工具类应用，可接受 |
-| 跨平台一致 | 默认随平台风格（可强 Fusion） | 自绘渲染，像素级一致 | 项目已定深色自绘主题 → QML 更贴合 |
-| 数据绑定 | 手动 model→widget 同步 | 属性绑定 + 模型视图声明式自动传播 | chart 数据→时间轴视图，QML 更自然 |
-| 开发迭代 | 改 C++ 重编译 | 改 QML 即所见（有热重载工具） | UI 打磨阶段 QML 快得多 |
-| 维护面 | 单一语言（C++） | 双语言（C++ 桥接 + QML 表现）；JS 易写散 → **纪律：逻辑放 C++，QML 只管表现** | 文档/小模型协作下，QML 声明式文本更易生成修改，但类型安全弱 |
-| 测试 | Qt Test 模拟事件，成熟 | QTest 可测 QQuickItem，更绕 | 两者 UI 都不好测；**core 不受影响**（纯 C++ 可单测） |
-| 生态/方向 | 稳定成熟，Qt 6 里基本只修 bug | **Qt 6 发展重心**（编译器/材质/性能） | 押 QML = 押活跃方向，API 会变 |
-| 原生集成 | 直接映射原生窗口/控件 | 嵌原生内容走 QQuickWidget（输入/透明限制） | 本项目无此需求 |
-
-两点判断：
-- **GPU 渲染的收益对本项目被高估**：2D 编辑器一屏几百物件，QPainter 60fps 无压力；时间轴视口可用 `QQuickPaintedItem`（QML 内继续 QPainter）桥接，性能不够再迁 QSG；
-- **最大隐性收益是设计迭代**：HTML 预览（声明式）→ QML（声明式）映射几乎无损；HTML → Widgets 是「声明式设计 → 命令式代码」的翻译，有损耗。
+- **逻辑放 C++（`app/bridge`），QML 只管表现与 `invoke`**；JS 不写散业务
+  （`SessionController.qml` 是迁移期例外，按 `local/doc/13-大文件拆分规划.md` 逐步回抽 C++）。
+- 新增业务不要往 `Main.qml` / `SessionController.qml` 堆 JS；handler 用字符串方法名只是迁移期兼容，
+  新动作优先在 C++ 注册真实处理器。
+- 渲染路线：时间轴用 `QQuickPaintedItem`（QPainter 起步），瓶颈后迁 QSG。
 
 ## 3. 分层皮肤系统设计
 
@@ -136,7 +106,7 @@ L2 布局重排的对象 = 命名插槽（surface）。默认皮肤（= 当前�
 | `pageSwitcher` | 底部页面条 | 位置可配置（doc/05 待拍板 2） |
 | `statusBar` | 状态栏 | 固定全局 |
 
-**2026-08 布局探索（doc/05 §14）新增候选插槽**——理想皮肤若要免整壳支持，需纳入 schema：
+**2026-08 布局探索新增候选插槽**（结论 → `local/doc/05-布局探索与皮肤可行性.md`）——理想皮肤若要免整壳支持，需纳入 schema：
 
 - `documentTabs`：顶部多文档标签条（① IDE 式）；
 - `activityRail`：左图标栏（① IDE 式 / ④ Material 式）；
@@ -153,58 +123,20 @@ L2 布局重排的对象 = 命名插槽（surface）。默认皮肤（= 当前�
   - 另有 `UiActionRegistry` / `AudioEngine` / `SliceWorkspace` / `ChartViewItem` / 若干 ListModel；
 - **第一条真链路（M2）**：打开谱面（文件对话框 → `dispatch(info)`）→ QML 元信息表单绑定——验证全栈。
 
-## 5. 对既有文档的影响
+## 6. 未做 / 待拍板
 
-| 文档 | 变更 |
-|---|---|
-| `doc/04-开发手册.md` | §1/§2 技术栈改 Qt Quick；§6 M2 指向 08；里程碑 M2 行更新（已执行） |
-| `doc/05-前端界面设计构思.md` | UI 细节按 QML 重写——**交给前端设计会话**（术语/布局抽象 05 的 §10/§11 需换语汇） |
-| `doc/06-插件体系与时间单位设计.md` | 不变（命令协议/三层漏斗/时间单位均仍成立） |
-| ~~`doc/07-M2开发准备计划.md`~~ | **已移入 `local/doc/07`**（老里程碑计划/进度流水账）；构建命令已折叠进 doc/04 §4（已执行） |
-| `doc/README.md` | 文档地图加 08、任务表更新（已执行） |
-| ~~`06-换肤与扩展设计.md`~~ | **已删除**（未提交草稿，内容并入本稿；原稿 L0-L4 分级/Theme token/schema 校验思想已吸收） |
+- [ ] **L2 `layout.json`**（面板集/顺序/dock/工具条组成；surface 清单见 §3.6）——设计已定稿、未实现，
+      细节在本机 `local/doc/11`（gitignore）；
+- [ ] **L3 QML 壳覆写**：整壳替换 vs 按区域 `Replace:` 声明（本机 `local/doc/11` §9 已拍「同名 components/ 覆写」，未进仓库）；
+- [ ] QML 侧键盘/IME 方案（编辑态抑制 IME；文本框已让行 Ctrl+Z 等）。
 
-## 6. 待办 / 待拍板
-
-- [x] `app/CMakeLists.txt`：`find_package(Qt6 COMPONENTS Quick QuickControls2)` + `QQmlApplicationEngine` 入口（M2 完成）；
-- [x] `theme.json` token 已由 ThemeManager 加载（schema 仍是实现即文档，未单独成 JSON Schema 文件）；
-      `layout.json` **设计已定稿、未实现**（surface 清单见 §3.6；细节在本机 `local/doc/11`，不进仓库）；
-- [x] **UI 动作注册表（皮肤换壳前置）**：✅ **已落地（2026-09 二批）**——C++ UiActionRegistry +
-      约 50 个动作 id（含 slice.* 与分隔线）、invoke 真实化（handler 多数仍是 QMetaObject 调 QML 窗口函数）、`setEnabled`/
-      `updateActionStates`（enabled 打通）、`setChecked`/`updateCheckedStates`（勾选态打通）、
-      `keymap.json` 快捷键覆写（`--keymap`/`--skin`）。**2026-09 三批再收敛**：菜单/工具条
-      枚举化渲染——文件/编辑菜单按 `idsByCategory` 生成 + 分隔线建模；页面工具条变换组与
-      编辑工具条工具选择条按 `idsByToolbar` 枚举（`toolbar`/`value`/`prefix`/`tooltip` 元数据）。
-      **item 3/5/7 未完**：L3 皮肤整壳样例、layout.json schema。详见 doc/09 §13；
-- [x] **theme.json token 与 ThemeManager 对齐（2026-09 二批，L1 样例）**：`ThemeManager` 已实现
-      全部 `n1..n4`/`scratch`/`mine`/`ln`/`wave`/`accent2`/`noteRadius` 等 token（doc/05 §7 完整表），
-      并新增 `loadTheme(path)`（`--skin <dir>` 加载 `theme.json` 覆写颜色 token，QML 加载前应用）。
-      样例皮肤 `skins/Aurora/`（L1 颜色 + keymap）；
-- [x] **theme.json 非颜色 token 覆写（2026-09 三批，L2 样例）**：`ThemeManager` 的
-      `radiusSm/radius/noteRadius/fsBase/fsSmall/fsTiny/fontSans/fontMono` 改为可覆写成员，
-      `loadTheme` 解析数字 + 字体（`noteRadius` 允许 0 = 方形 note；`_` 前缀 key 跳过不进未知汇总）。
-      样例皮肤 `skins/Linear/`（L1+L2）演示密度/圆角/字体/note 造型幅度——皮肤可达
-      doc/beatbench-ui-styles.html 主题①③⑤⑥ 的**布局改动幅度**，无需 QML 结构改动。
-      **仍未做**：真正的**布局结构改动**（工具条行增删/面板排列/整壳重排，即 L2 `layout.json`
-      结构层 / L3 QML 壳覆写），属深水区；
-- [x] **运行时换肤（2026-09 四批，L1 运行时）**：`ThemeManager` token 从 `CONSTANT` 改
-      NOTIFY（聚合 `tokensChanged`）；新增 `applyTheme(path)`/`resetDefault()`/`activeSkin`/
-      内置皮肤目录（`skinNames`/`skinDir`/`applySkinByName`，含 `Aurora`/`Linear`）。`--skin`
-      仍为启动时单次路径；菜单「视图→皮肤」列出「默认」+ 内置皮肤，点击即运行时切换——
-      `applyTheme` → `tokensChanged` → QML 绑定重算 + 应用级 QPalette 重建（main.cpp 连接）+
-      视口重绘（`ChartViewItem.refreshTheme()`）。文档验证 `--apply-skin <name>`（同一路径）。
-      皮肤术语定稿：「层 L1/L2/L3 = 能力（改什么）」「启动时/运行时 = 时机（何时生效）」，正交，无 L1.5。
-- [ ] L3 皮肤覆写的粒度约定（整壳替换 vs 按区域 `Replace:` 声明；本机 `local/doc/11` §9 已拍「同名 components/ 覆写」，未进仓库）；
-- [ ] QML 侧键盘/IME 方案（编辑态抑制 IME；文本框已让行 Ctrl+Z 等）；
-- [x] 时间轴视口技术路线确认：`QQuickPaintedItem`（QPainter 复用）起步（M2 已落地）；
-- [x] `doc/05` 已按 QML 语汇重写（v0.2）；个别占位句（切音=Phase C）未跟 M6 同步，以 doc/04 为准；
-- [x] 双语言纪律已写入 doc/04 §5；**实现未完全跟上**（`SessionController.qml` 仍是主要业务编排）。
-- [x] 用户快捷键 QSettings 持久化 + 运行时改绑（设置页确定/取消；用户层 > 皮肤 keymap）。
+> 已落地项（L1 运行时换肤、`theme.json` 颜色/非颜色 token、UI 动作注册表、工具条枚举、快捷键三层）
+> 见 `doc/04` §5–§6 与 `doc/09` §11；逐批实现快照 → `local/doc/09-操作注册设计-实现快照.md`（gitignore）。
 
 ## 7. 文件清单
 
 - 本稿（08）；
 - `doc/beatbench-ui-styles.html`（设计参考 + token 数据来源，随 doc/ 提交）；
 - `skins/`（内置 Aurora / Linear / OsuLight / Win10；L1 token + 可选 keymap.json）；
-- `local/ui-demos/`（5 套布局气质 demo，纯静态、gitignore——2026-08 布局探索产物，结论见 doc/05 §14，
-  仅本地参照，勿假设协作者可见）。
+- `local/ui-demos/`（5 套布局气质 demo，纯静态、gitignore——2026-08 布局探索产物，
+  结论见 `local/doc/05-布局探索与皮肤可行性.md`，仅本地参照）。

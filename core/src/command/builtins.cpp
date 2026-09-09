@@ -1072,7 +1072,7 @@ public:
         } else {
             throw CommandError("bad_args", "缺少 text 或 lines");
         }
-        // M6.3 铺放（2026-09 用户，doc/02 §7.1）：sub_line_mode = "fifo"（默认，历史行为）|
+        // M6.3 铺放（2026-09 用户，doc/02 §3）：sub_line_mode = "fifo"（默认，历史行为）|
         // "uniform"（子行接续——FIFO 照旧从 0 起解析，随后统一抬升：起点 = 目标小节段内已有
         // BGM 最高子行 + 1，无 → 0）。保证：同 tick 不与旧行冲突；旧行结构不动；新内容跨小节
         // 同列（统一 base，而非每小节独立接续）。

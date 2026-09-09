@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // 切音工作台数据桥（M6.1）：参考音频（外部 stem.wav）+ MIDI（notes.mid）的装载与持有。
 //
-// 定位（doc/02 §7.1 M6.1）：与编辑页平级的切音工作台的数据侧——「导入工作台」：
+// 定位（doc/02 §3 M6.1）：与编辑页平级的切音工作台的数据侧——「导入工作台」：
 // 外部音频解码（→ 波形金字塔 + 时长/采样率）+ MIDI 解析（→ note 表）+ offset 微调
 // （全局；逻辑在此桥换算出「+offset」后的秒）。播放/seek 委托 AudioEngine
 // （参考音频专用 PcmPlayback，与谱面播放独立）。MIDI 解析走 core `midi` 模块

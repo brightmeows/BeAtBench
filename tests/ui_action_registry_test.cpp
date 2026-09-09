@@ -283,7 +283,7 @@ TEST(UiActionRegistry, DefaultShortcutAndConflictId) {
 }
 
 TEST(UiActionRegistry, ScopeIsolatesConflicts) {
-    // 快捷键作用域（doc/09 §13.5，2026-09 收尾）：编辑页与切音页可各占同一键位；
+    // 快捷键作用域（doc/09 §11，2026-09 收尾）：编辑页与切音页可各占同一键位；
     // 全局动作（scope 空）与一切作用域重叠 → 仍判冲突。
     UiActionRegistry r;
     UiActionDef editPlay = make_def(QStringLiteral("edit.playPause"));
@@ -375,7 +375,7 @@ TEST(UiActionRegistry, SequenceFromKey) {
 }
 
 TEST(UiActionRegistry, ToolbarGroupMetadata) {
-    // 工具条注册化（doc/09 §13）：toolbar/control/tooltip/value/prefix 元数据 + idsByToolbar 枚举。
+    // 工具条注册化（doc/09 §11）：toolbar/control/tooltip/value/prefix 元数据 + idsByToolbar 枚举。
     // 目标是新变换/工具动作只需注册进组，工具条 Repeater 自动渲染（无需改 QML）。
     UiActionRegistry r;
     // 工具选择（toolbar="tool"；prefix=快捷键前缀，value=互斥 active 判定）

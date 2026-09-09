@@ -504,7 +504,7 @@ ApplicationWindow {
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("开/关槽位弱线（网格显示开关；吸附不依赖此开关）")
                 }
-                // 变换动作（doc/09 §13.1 工具条注册化）：按注册表 transform 组枚举渲染，
+                // 变换动作（doc/09 §11 工具条注册化）：按注册表 transform 组枚举渲染，
                 // 皮肤/注册表新增变换动作即自动出现在页面工具条（无需改 QML）。
                 Repeater {
                     model: uiActions.idsByToolbar("transform")
@@ -596,7 +596,7 @@ ApplicationWindow {
                 Label { text: qsTr("工具"); color: Theme.textFaint
                         font.pixelSize: Theme.fsTiny; padding: 4 }
                 // 互斥单选：active = 外部状态（editorTool），无 checkable 断绑残留问题。
-                // 工具选择条按注册表 tool 组枚举渲染（doc/09 §13.1）：prefix=快捷键前缀，
+                // 工具选择条按注册表 tool 组枚举渲染（doc/09 §11）：prefix=快捷键前缀，
                 // value=当前工具值（互斥 active 判定）；新增工具只需注册进组。
                 Repeater {
                     model: uiActions.idsByToolbar("tool")
