@@ -15,6 +15,9 @@ name: CI
 
 on:
   push:
+    # 仅 master：同仓库 PR 会 push + PR 双跑（每遍携 ~32 分钟的 macOS job），
+    # 分支上的验证靠 PR 事件 / 手动 dispatch。
+    branches: [master]
   pull_request:
     branches: [master]
   workflow_dispatch:
@@ -89,22 +92,28 @@ jobs:
           # 失败诊断先于断言：QML 错误都在这个日志里
           echo "=== beatbench-qml-errors.log ==="; cat beatbench-qml-errors.log 2>/dev/null || echo "(无日志)"
           test -f smoke-linux.png
-          grep -q "皮肤已运行时切换：skins/Aurora" beatbench-qml-errors.log
+          # 断言拆两条：事件存在 + 皮肤名（路径不写死——解析结果随环境可能是相对/绝对路径）
+          grep -q "皮肤已运行时切换：" beatbench-qml-errors.log
+          grep -q "已运行时切换：.*Aurora" beatbench-qml-errors.log
           rm -f beatbench-qml-errors.log
       - name: Upload smoke screenshot
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: smoke-linux
-          path: smoke-linux.png
+          # 失败时日志是唯一现场线索（成功路径已被 rm，不会重复上传）
+          path: |
+            smoke-linux.png
+            beatbench-qml-errors.log
           if-no-files-found: ignore
 
   macos-full:
     name: macos-full
-    # macOS 侧从未人工验证过，首跑风险隔离（修复量可控后收紧为阻塞）
+    # macOS 侧从未人工验证过，风险隔离；其实际结论由 summary job 经 API 翻出
     continue-on-error: true
     runs-on: macos-15
-    timeout-minutes: 45
+    # 实测 Qt 缓存 miss 时 Build 独占 ~31 分钟（Linux 同款 2 分钟），45 分钟贴近撞限
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
       - name: Install Qt
@@ -131,14 +140,19 @@ jobs:
           # 失败诊断先于断言：QML 错误都在这个日志里
           echo "=== beatbench-qml-errors.log ==="; cat beatbench-qml-errors.log 2>/dev/null || echo "(无日志)"
           test -f smoke-macos.png
-          grep -q "皮肤已运行时切换：skins/Aurora" beatbench-qml-errors.log
+          # 断言拆两条：事件存在 + 皮肤名（路径不写死，同 linux-full 注释）
+          grep -q "皮肤已运行时切换：" beatbench-qml-errors.log
+          grep -q "已运行时切换：.*Aurora" beatbench-qml-errors.log
           rm -f beatbench-qml-errors.log
       - name: Upload smoke screenshot
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: smoke-macos
-          path: smoke-macos.png
+          # 失败时日志是唯一现场线索（成功路径已被 rm，不会重复上传）
+          path: |
+            smoke-macos.png
+            beatbench-qml-errors.log
           if-no-files-found: ignore
 
   windows-mingw-full:
@@ -180,12 +194,45 @@ jobs:
           # 失败诊断先于断言：QML 错误都在这个日志里
           echo "=== beatbench-qml-errors.log ==="; cat beatbench-qml-errors.log 2>/dev/null || echo "(无日志)"
           test -f smoke-windows.png
-          grep -q "皮肤已运行时切换：skins/Aurora" beatbench-qml-errors.log
+          # 断言拆两条：事件存在 + 皮肤名（路径不写死，同 linux-full 注释）
+          grep -q "皮肤已运行时切换：" beatbench-qml-errors.log
+          grep -q "已运行时切换：.*Aurora" beatbench-qml-errors.log
           rm -f beatbench-qml-errors.log
       - name: Upload smoke screenshot
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: smoke-windows
-          path: smoke-windows.png
+          # 失败时日志是唯一现场线索（成功路径已被 rm，不会重复上传）
+          path: |
+            smoke-windows.png
+            beatbench-qml-errors.log
           if-no-files-found: ignore
+
+  # ---------- 汇总：把被 continue-on-error 洗掉的 macOS 真实结论翻出来 ----------
+  # needs.<job>.result 在 continue-on-error 下恒为 success，故经 API 取实际 conclusion：
+  # 阻塞四 job 任一失败 → 本 job 红；macOS 失败 → warning 标注（run 绿灯不含 macOS）。
+  summary:
+    name: ci-summary
+    needs: [linux-core, linux-full, macos-full, windows-msvc-core, windows-mingw-full]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: 汇总各 job 实际结论
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" \
+            --jq 'map({(.name): .conclusion}) | add' > jobs.json
+          cat jobs.json
+          fail=""
+          for j in linux-core linux-full windows-msvc-core windows-mingw-full; do
+            c=$(jq -r --arg j "$j" '.[$j]' jobs.json)
+            if [ "$c" != "success" ]; then echo "::error::阻塞 job 失败：$j = $c"; fail=1; fi
+          done
+          m=$(jq -r '.["macos-full"]' jobs.json)
+          if [ "$m" != "success" ]; then
+            echo "::warning::macos-full 实际结论：$m（非阻塞门禁——本 run 绿灯不含 macOS）"
+          fi
+          [ -z "$fail" ]
