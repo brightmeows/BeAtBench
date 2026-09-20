@@ -145,6 +145,10 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: win64_mingw
+          # Qt 6.11 改了 Windows 仓库布局：砍掉基础包目录 qt6_6112/qt6_6112/，架构目录去
+          # win64_ 前缀。aqt 3.3.0（PyPI 最新，2025-06）不认 → "Failed to locate XML data"。
+          # 暂用上游 master（已适配；钉死 commit 保确定性），aqt 3.4.0 发布后收回为版本钉。
+          aqtsource: 'aqtinstall @ git+https://github.com/miurahr/aqtinstall@076e1659'
           tools: 'tools_mingw1310 tools_ninja'
           add-tools-to-path: true
           cache: true
