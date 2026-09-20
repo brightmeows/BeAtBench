@@ -85,7 +85,9 @@ jobs:
       - name: GUI smoke
         run: |
           export QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software
-          ./build/app/beatbench --screenshot smoke-linux.png --apply-skin Aurora
+          ./build/app/beatbench --screenshot smoke-linux.png --apply-skin Aurora || true
+          # 失败诊断先于断言：QML 错误都在这个日志里
+          echo "=== beatbench-qml-errors.log ==="; cat beatbench-qml-errors.log 2>/dev/null || echo "(无日志)"
           test -f smoke-linux.png
           grep -q "皮肤已运行时切换：skins/Aurora" beatbench-qml-errors.log
           rm -f beatbench-qml-errors.log
@@ -121,7 +123,9 @@ jobs:
       - name: GUI smoke
         run: |
           export QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software
-          ./build/app/beatbench.app/Contents/MacOS/beatbench --screenshot smoke-macos.png --apply-skin Aurora
+          ./build/app/beatbench.app/Contents/MacOS/beatbench --screenshot smoke-macos.png --apply-skin Aurora || true
+          # 失败诊断先于断言：QML 错误都在这个日志里
+          echo "=== beatbench-qml-errors.log ==="; cat beatbench-qml-errors.log 2>/dev/null || echo "(无日志)"
           test -f smoke-macos.png
           grep -q "皮肤已运行时切换：skins/Aurora" beatbench-qml-errors.log
           rm -f beatbench-qml-errors.log
@@ -168,7 +172,9 @@ jobs:
         run: |
           export PATH="$QT_ROOT_DIR/bin:$PATH"
           export QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software
-          ./build/app/beatbench.exe --screenshot smoke-windows.png --apply-skin Aurora
+          ./build/app/beatbench.exe --screenshot smoke-windows.png --apply-skin Aurora || true
+          # 失败诊断先于断言：QML 错误都在这个日志里
+          echo "=== beatbench-qml-errors.log ==="; cat beatbench-qml-errors.log 2>/dev/null || echo "(无日志)"
           test -f smoke-windows.png
           grep -q "皮肤已运行时切换：skins/Aurora" beatbench-qml-errors.log
           rm -f beatbench-qml-errors.log
