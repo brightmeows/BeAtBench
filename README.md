@@ -51,6 +51,11 @@
 （`.github/workflows/ci.yml`，详见 `doc/04` §4）；但**当前只发布 Windows 预编译包**，
 Linux/macOS 发布产物与实时音频输出的人工验证未排期。
 
+当前边界（两句）：① macOS 产物的 `.app` 内不含 `BeatBench/` QML 模块目录，双击
+`.app` 无法启动——需 `QML2_IMPORT_PATH` 指向构建树（见上方冒烟命令），模块入包属
+macOS 打包范畴；② GUI 的悬停 / 拖拽等交互行为在 Linux/macOS **未人工验证**
+（CI 只做无头冒烟）。
+
 ## 文档导航
 
 | 文档 | 内容 |
@@ -70,7 +75,9 @@ Linux/macOS 发布产物与实时音频输出的人工验证未排期。
 
 > GUI 需要 Qt **6.11+**（CI 验证版本 6.11.2；发布包内嵌 6.11.1）。
 
-### CLI + 测试（Linux / macOS / Windows 通用）
+### CLI + 测试
+
+Linux / macOS（GCC / Clang，单配置）：
 
 ```bash
 # 配置 + 构建（需联网拉 GoogleTest/PortAudio）
@@ -84,9 +91,18 @@ ctest --test-dir build --output-on-failure
 BB_SKIP_REAL=1 ./build/tests/beatbench_tests
 ```
 
-Windows/MSVC 用默认 Visual Studio 生成器时为多配置构建：
-`cmake --build build --config Debug --parallel`、`ctest -C Debug`，
-测试二进制在 `build\tests\Debug\`。
+Windows（MSVC，默认多配置生成器）——`ctest` 不带 `-C` 会全部
+`***Not Run: Test not available without configuration`，务必带 `-C Debug`：
+
+```powershell
+cmake -S . -B build -DBEATBENCH_BUILD_TESTS=ON
+cmake --build build --config Debug --parallel
+ctest --test-dir build -C Debug --output-on-failure
+
+# 快速回归（跳过真实谱面测试，<1s）
+$env:BB_SKIP_REAL=1
+build\tests\Debug\beatbench_tests.exe
+```
 
 ### GUI（Linux / macOS，Qt 6.11+）
 
