@@ -168,7 +168,9 @@ static int loadKeymap(const QString& path, beatbench::app::UiActionRegistry& uiA
 }
 
 // 调试/迭代用：未处理异常 → 写 beatbench-crash.txt（GUID 现场：异常码 + 地址 + 栈顶模块；
-// 配 exportSlices 步骤日志可定位崩溃阶段；GUI 无控制台时唯一途径）
+// 配 exportSlices 步骤日志可定位崩溃阶段；GUI 无控制台时唯一途径）。
+// Windows 专属（SEH）；其它平台无此机制，异常走各自运行时默认行为。
+#ifdef _WIN32
 static LONG WINAPI recordUnhandledCrash(EXCEPTION_POINTERS* ex) {
     if (ex && ex->ExceptionRecord) {
         const auto* er = ex->ExceptionRecord;
@@ -188,9 +190,12 @@ static LONG WINAPI recordUnhandledCrash(EXCEPTION_POINTERS* ex) {
     }
     return EXCEPTION_CONTINUE_SEARCH;
 }
+#endif  // _WIN32
 
 int main(int argc, char** argv) {
+#ifdef _WIN32
     SetUnhandledExceptionFilter(recordUnhandledCrash);
+#endif
     QGuiApplication app(argc, argv);
     app.setOrganizationName(QStringLiteral("BeAtBench"));
     app.setApplicationName(QStringLiteral("BeAtBench"));

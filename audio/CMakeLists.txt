@@ -10,11 +10,9 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/PortAudio/portaudio.git
   GIT_TAG v19.7.0
   GIT_SHALLOW TRUE
-  # 子项目嵌入补丁：upstream 跳过 PROJECT() 导致无 linker language → 强制 ENABLE_LANGUAGE(C)。
-  # 补丁脚本在 audio/patch_portaudio.ps1（幂等）；PATCH_COMMAND 工作目录 = portaudio-src，
-  # 脚本靠 Get-Location 取目标文件，不传参。
-  PATCH_COMMAND powershell -ExecutionPolicy Bypass -File
-    "${CMAKE_CURRENT_SOURCE_DIR}/patch_portaudio.ps1"
+  # 不再需要嵌入补丁：子项目模式下 upstream 跳过 PROJECT() → 无 linker language 的问题，
+  # 已由根项目 `project(... LANGUAGES C CXX)` 全局启用 C 解决（跨平台，见根 CMakeLists）。
+  # 原 PATCH_COMMAND 调用的 patch_portaudio.ps1 已删除（依赖 PowerShell，非 Windows 无法执行）。
 )
 # 嵌入式构建（本仓库）：跳过 install/export（否则子项目模式导出失败）；
 # 只构建静态库；MinGW 下默认按平台挑 WASAPI/WMME。

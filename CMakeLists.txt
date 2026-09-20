@@ -1,6 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-only
 cmake_minimum_required(VERSION 3.24)
-project(beatbench VERSION 0.3.1 LANGUAGES CXX)
+# LANGUAGES 含 C：audio 内嵌 PortAudio（FetchContent）在**子项目模式**下 upstream 会跳过
+# 自己的 PROJECT()（见 portaudio CMakeLists 的 IF(CMAKE_SOURCE_DIR STREQUAL ...) 分支），
+# 于是没有语言被启用 → C 目标报 "cannot determine linker language"。在父项目启用 C 即可
+# 全局覆盖，且**跨平台通用**（原先靠 audio/patch_portaudio.ps1 往 upstream 首行插
+# ENABLE_LANGUAGE(C)，那既依赖 PowerShell，也与平台无关地必要——2026-09 改为本方案）。
+project(beatbench VERSION 0.3.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
