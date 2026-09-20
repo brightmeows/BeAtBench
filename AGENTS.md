@@ -66,21 +66,24 @@
 ## 5. 构建 / 测试速查
 
 ```bash
-# 主仓库 core + CLI（MSVC，需联网拉 GoogleTest）
+# core + CLI + 测试（Linux/macOS GCC/Clang 单配置；MSVC 加 --config Debug / -C Debug）
 cmake -S . -B build -DBEATBENCH_BUILD_TESTS=ON
-cmake --build build --config Debug --parallel
-ctest --test-dir build -C Debug --output-on-failure
-# 快速回归（跳过真实谱面，<1s）：BB_SKIP_REAL=1 build/tests/Debug/beatbench_tests.exe
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+# 快速回归（跳过真实谱面，<1s）：BB_SKIP_REAL=1 ./build/tests/beatbench_tests
 
-# GUI（MinGW + Qt 6；路径换成你自己的）
+# GUI（Qt 6.11+；Windows MinGW 加 -DCMAKE_CXX_COMPILER/-DCMAKE_MAKE_PROGRAM 参数）
 cmake -S . -B build-gui -G Ninja -DCMAKE_BUILD_TYPE=Debug \
-  -DCMAKE_PREFIX_PATH="$QT_PREFIX" -DCMAKE_CXX_COMPILER="$MINGW_BIN/g++.exe" \
-  -DCMAKE_MAKE_PROGRAM="$MINGW_BIN/ninja.exe" -DBEATBENCH_BUILD_TESTS=OFF
-cmake --build build-gui --target beatbench
+  -DCMAKE_PREFIX_PATH="$QT_PREFIX" -DBEATBENCH_BUILD_TESTS=OFF
+cmake --build build-gui --parallel
 
-# Qt 桥层单测（build-uitest）：edit_utils / ui_action_registry / slice_workspace /
-# theme_manager / command_dispatcher
+# Qt 桥层单测：带 Qt 的配置自动启用（edit_utils / ui_action_registry /
+# slice_workspace / theme_manager / command_dispatcher）
 ```
+
+- **CI**（`.github/workflows/ci.yml`）：push（全分支）/ PR（目标 master）/ 手动触发；
+  五 job = linux-core、windows-msvc-core（无 Qt）、linux-full、macos-full（非阻塞）、
+  windows-mingw-full（发布链路）。改跨平台相关代码先在本地用 GCC/Clang 过一遍。
 
 - ⚠️ **「无 Qt」≠「可离线」**：`audio/CMakeLists.txt` 无条件 FetchContent 拉 PortAudio；
   离线干净构建需 `-DFETCHCONTENT_SOURCE_DIR_PORTAUDIO=<已有源码>`（googletest 同理）。
