@@ -98,6 +98,24 @@ echo "==> 拷贝应用 QML 模块（BeatBench/）
 rm -rf "$STAGE/BeatBench"
 cp -r "$BUILD/app/BeatBench" "$STAGE/BeatBench"
 
+echo "==> 拷贝内置皮肤（skins/）
+   皮肤（theme.json / keymap.json）不在 Qt 资源里，运行时由 ThemeManager 按工作目录
+   相对路径 'skins/<Name>' 解析（skinDirResolved）；windeployqt 只部署 Qt 运行时，
+   不会碰它。必须与 beatbench.exe 同级随包分发，否则「视图→皮肤」四项全部报
+   \"缺 theme.json（皮肤目录未找到）\"（v0.1.0–v0.3.0 三版均漏，2026-09 修复）。"
+[ -d "$ROOT/skins" ] || { echo "错误: $ROOT/skins 不存在（内置皮肤源目录缺失）" >&2; exit 1; }
+rm -rf "$STAGE/skins"
+cp -r "$ROOT/skins" "$STAGE/skins"
+# 校验每个内置皮肤都有 theme.json（ThemeManager 的加载入口），防止空目录/半拷贝混进发布包。
+skin_count=0
+for d in "$STAGE"/skins/*/; do
+  [ -d "$d" ] || continue
+  [ -f "$d/theme.json" ] || { echo "错误: 内置皮肤缺少 theme.json: ${d#$STAGE/}" >&2; exit 1; }
+  skin_count=$((skin_count + 1))
+done
+[ "$skin_count" -gt 0 ] || { echo "错误: skins/ 下没有任何皮肤目录" >&2; exit 1; }
+echo "    已随包 $skin_count 个皮肤: $(cd "$STAGE/skins" && ls -d */ | tr -d '/' | tr '\n' ' ')"
+
 echo "==> MinGW 运行库（libgcc/libstdc++/libwinpthread）"
 for dll in libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll; do
   cp "$QT_ROOT/bin/$dll" "$STAGE/"
@@ -126,6 +144,7 @@ BeAtBench v$VER (M1-M6)
 --------
   beatbench.exe       图形界面编辑器（主程序，双击运行）
   beatbench-cli.exe   命令行工具（info / check / convert / version）
+  skins/              内置皮肤（Aurora / Linear / OsuLight / Win10），菜单"视图 -> 皮肤"切换
   README.txt          本说明
   其余 DLL / qml /    运行所需的 Qt 运行时与插件，请勿删除
 
@@ -170,9 +189,16 @@ if [ "$SMOKE" = 1 ]; then
   cp -f "$BUILD/app/beatbench.exe" "$STAGE/beatbench.exe"
   [ -x "$STAGE/beatbench.exe" ] || { echo "错误: staging 缺少可执行 beatbench.exe" >&2; exit 1; }
   ( cd "$STAGE" && ./beatbench.exe --screenshot "$OUT/.bb-smoke.png" \
+      --apply-skin Aurora \
       ${BB_SMOKE_OPEN:+--open "$BB_SMOKE_OPEN"} ) || {
     echo "错误: GUI 启动失败，查看 $STAGE/beatbench-qml-errors.log" >&2; exit 1; }
   [ -f "$OUT/.bb-smoke.png" ] || { echo "错误: 冒烟截图未生成" >&2; exit 1; }
+  # 皮肤冒烟：--apply-skin 走 ThemeManager::applySkinByName（与菜单「视图→皮肤」同路径）。
+  # 皮肤未随包 / 工作目录解析不到时日志为「缺 theme.json（皮肤目录未找到）」+「应用失败」——
+  # 此处硬失败，把「皮肤没打包进发布包」钉死在打包阶段（v0.3.0 漏打包即因缺此检查）。
+  grep -q "皮肤已运行时切换：skins/Aurora" "$STAGE/beatbench-qml-errors.log" 2>/dev/null || {
+    echo "错误: 内置皮肤未生效（skins/ 未随包或路径解析失败）；日志尾部：" >&2
+    tail -5 "$STAGE/beatbench-qml-errors.log" 2>/dev/null >&2; exit 1; }
   ( cd "$STAGE" && ./beatbench-cli.exe version ) || { echo "错误: CLI 冒烟失败" >&2; exit 1; }
   rm -f "$OUT/.bb-smoke.png" "$STAGE/beatbench-qml-errors.log"
 else

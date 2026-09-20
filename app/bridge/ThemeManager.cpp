@@ -5,6 +5,7 @@
 // 不引入运行时 NOTIFY 复杂化——L1 皮肤启动即生效，无需动态换肤。
 #include "bridge/ThemeManager.hpp"
 
+#include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
 #include <QFile>
@@ -227,7 +228,8 @@ void ThemeManager::resetDefault() {
 }
 
 // ---- 内置皮肤目录（运行时换肤菜单枚举） ----
-// 目录相对 app 工作目录；每项 {name, dir}。name 唯一；"默认"在 skinNames 之外（resetDefault 语义）。
+// 每项 {name, dir}，dir 是**相对目录**（相对皮肤搜索基准，见 skinSearchBases）；name 唯一；
+// "默认"在 skinNames 之外（resetDefault 语义）。
 namespace {
 struct SkinEntry { const char* name; const char* dir; };
 const SkinEntry kBuiltinSkins[] = {
@@ -251,20 +253,40 @@ QString ThemeManager::skinDir(const QString& name) const {
     return QString();
 }
 
-// 解析到真实存在的皮肤目录（含 ../、../../ 回退）；找不到返回空串。
+// 解析到真实存在的皮肤目录；找不到返回空串。
 QString ThemeManager::skinDirResolved(const QString& name) const {
-    const QString dirPath = skinDir(name);
-    if (dirPath.isEmpty()) return QString();
-    QString theme = QDir(dirPath).filePath(QStringLiteral("theme.json"));
-    if (!QFile::exists(theme)) {
-        const QStringList bases = { QStringLiteral("."), QStringLiteral(".."),
-                                    QStringLiteral("../.."), QStringLiteral("../../..") };
-        for (const QString& b : bases) {
-            const QString cand = QDir(b).filePath(theme);
-            if (QFile::exists(cand)) { theme = cand; break; }
+    return skinDirResolvedIn(name, skinSearchBases());
+}
+
+// 皮肤目录搜索基准。顺序即优先级：
+//   1. "."       —— 常规启动/开发（cwd = 仓库根或 exe 目录）
+//   2. exe 目录  —— 发布包中 skins/ 与 beatbench.exe 同级；快捷方式/其他启动器不保证 cwd
+//   3. exe 上级  —— 开发期 exe 在 build-*/app/，皮肤在仓库根
+//   4. "..", "../..", "../../.." —— 开发期相对回退（cwd 在 build-*/app/ 等子目录）
+QStringList ThemeManager::skinSearchBases() {
+    QStringList bases;
+    bases << QStringLiteral(".");
+    if (QCoreApplication::instance()) {
+        // 无 QCoreApplication（纯逻辑上下文）时不引入空串基准；applicationDirPath 无实例会告警。
+        const QString appDir = QCoreApplication::applicationDirPath();
+        if (!appDir.isEmpty()) {
+            bases << appDir;
+            bases << QDir(appDir).filePath(QStringLiteral(".."));
         }
     }
-    return QFile::exists(theme) ? QFileInfo(theme).absolutePath() : QString();
+    bases << QStringLiteral("..") << QStringLiteral("../..") << QStringLiteral("../../..");
+    return bases;
+}
+
+QString ThemeManager::skinDirResolvedIn(const QString& name, const QStringList& bases) const {
+    const QString dirPath = skinDir(name);   // "skins/<Name>"；未知皮肤名为空
+    if (dirPath.isEmpty()) return QString();
+    const QString rel = QDir(dirPath).filePath(QStringLiteral("theme.json"));  // skins/<Name>/theme.json
+    for (const QString& b : bases) {
+        const QString cand = QDir(b).filePath(rel);
+        if (QFile::exists(cand)) return QFileInfo(cand).absolutePath();
+    }
+    return QString();
 }
 
 int ThemeManager::applySkinByName(const QString& name) {

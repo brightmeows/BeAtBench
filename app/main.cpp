@@ -201,13 +201,22 @@ int main(int argc, char** argv) {
     QQuickStyle::setStyle(QStringLiteral("Fusion"));
 
     beatbench::app::ThemeManager theme;
+    // --skin <dir>：先按工作目录解释，找不到再按 exe 目录解释。发布包/快捷方式启动不保证
+    // cwd = exe 目录，而 README 里的用法是 `beatbench.exe --skin skins/Aurora`（相对路径）。
+    auto resolveCliDir = [](const QString& p) -> QString {
+        if (QDir(p).exists()) return p;
+        if (QDir(p).isAbsolute()) return QString();
+        const QString viaApp = QDir(QCoreApplication::applicationDirPath()).filePath(p);
+        return QDir(viaApp).exists() ? viaApp : QString();
+    };
+    QString cliSkinDir;  // 解析后的 --skin 目录（供下方 keymap.json 复用，避免主题/keymap 各解析一次）
     // L1 皮肤：--skin <dir> 加载 dir/theme.json 覆盖 token（须在下面用 theme.* 建 QPalette
     // 与 loadFromModule 之前，否则 CONSTANT 属性已被首帧绑定按默认值求值）。
     const int skinIdx = app.arguments().indexOf(QStringLiteral("--skin"));
     if (skinIdx >= 0 && skinIdx + 1 < app.arguments().size()) {
-        const QString skinDir = app.arguments().at(skinIdx + 1);
-        QDir d(skinDir);
-        if (d.exists()) {
+        cliSkinDir = resolveCliDir(app.arguments().at(skinIdx + 1));
+        if (!cliSkinDir.isEmpty()) {
+            QDir d(cliSkinDir);
             const QString themePath = d.filePath(QStringLiteral("theme.json"));
             if (QFile::exists(themePath)) {
                 QString err;
@@ -217,7 +226,7 @@ int main(int argc, char** argv) {
             }
             // skin.json 清单（name/version/api）本步不强校验——L1 只消费 theme.json。
         } else {
-            qWarning() << "--skin 目录不存在:" << skinDir;
+            qWarning() << "--skin 目录不存在:" << app.arguments().at(skinIdx + 1);
         }
     }
 
@@ -426,8 +435,10 @@ int main(int argc, char** argv) {
         } else {
             const int skinIdx2 = app.arguments().indexOf(QStringLiteral("--skin"));
             if (skinIdx2 >= 0 && skinIdx2 + 1 < app.arguments().size()) {
-                const QString p = QDir(app.arguments().at(skinIdx2 + 1))
-                                      .filePath(QStringLiteral("keymap.json"));
+                // 复用上面 --skin 的解析结果（含 exe 目录回退）；未解析出目录时退回原始参数。
+                const QString skinPath = cliSkinDir.isEmpty()
+                                             ? app.arguments().at(skinIdx2 + 1) : cliSkinDir;
+                const QString p = QDir(skinPath).filePath(QStringLiteral("keymap.json"));
                 if (QFile::exists(p)) loadKeymap(p, uiActions);
             }
         }

@@ -109,8 +109,13 @@ public:
     Q_INVOKABLE QStringList skinNames() const;
     /// 皮肤名 → 目录（"" = 未知名字）；默认皮肤名 = "默认"（空目录，走 resetDefault）。
     Q_INVOKABLE QString skinDir(const QString& name) const;
-    /// 解析到真实存在的皮肤目录（含 relative ../ 回退；找不到返回空串）。供 keymap 等伴生文件定位。
+    /// 解析到真实存在的皮肤目录（cwd → exe 目录 → 逐级上溯；找不到返回空串）。供 keymap 等伴生文件定位。
     Q_INVOKABLE QString skinDirResolved(const QString& name) const;
+    /// 同上，但在**显式给定的基准目录列表**中查找 name/theme.json（纯函数，供单测/诊断）。
+    QString skinDirResolvedIn(const QString& name, const QStringList& bases) const;
+    /// 皮肤目录搜索基准（诊断/单测可见）："." → 可执行文件目录(+上级) → "..", "../..", "../../.."。
+    /// exe 目录排在前：双击/快捷方式启动不保证工作目录 = exe 目录；发布包中 skins/ 与 exe 同级。
+    static QStringList skinSearchBases();
     /// 按名字应用皮肤（"默认"→resetDefault；否则 resolve 目录 applyTheme）。返回覆写数；-1 失败。
     Q_INVOKABLE int applySkinByName(const QString& name);
 

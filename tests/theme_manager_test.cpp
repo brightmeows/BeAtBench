@@ -4,6 +4,8 @@
 // 2026-09：新增 L2 非颜色 token（radius/fs/font）覆写验证——皮肤布局改动幅度的根基。
 #include <gtest/gtest.h>
 
+#include <QCoreApplication>
+#include <QDir>
 #include <QFile>
 #include <QString>
 #include <QTemporaryDir>
@@ -154,6 +156,50 @@ TEST(ThemeManager, BuiltinSkinCatalog) {
     // 未知皮肤名 → 空目录 + applySkinByName 返回 -1
     EXPECT_TRUE(th.skinDir(QStringLiteral("Nope")).isEmpty());
     EXPECT_EQ(th.applySkinByName(QStringLiteral("Nope")), -1);
+}
+
+TEST(ThemeManager, SkinDirResolvedInSearchesBases) {
+    // 硬化（2026-09）：皮肤目录按**显式基准列表**查找，不依赖进程 cwd —— 发布包/快捷方式
+    // 启动时 cwd ≠ exe 目录，靠 exe 目录基准兜底（package-release.sh 随包分发 skins/）。
+    QTemporaryDir base;
+    ASSERT_TRUE(base.isValid());
+    const QString skinRel = QStringLiteral("skins/Aurora");
+    ASSERT_TRUE(QDir(base.path()).mkpath(skinRel));
+    const QString themePath = QDir(base.path()).filePath(skinRel + QStringLiteral("/theme.json"));
+    {
+        QFile f(themePath);
+        ASSERT_TRUE(f.open(QIODevice::WriteOnly));
+        f.write(R"({"bg": "#010203"})");
+    }
+
+    ThemeManager th;
+    // 第一个基准不存在 → 必须在第二个基准（模拟 exe 目录）命中
+    const QString found = th.skinDirResolvedIn(
+        QStringLiteral("Aurora"), {QStringLiteral("/nonexistent-bb-base"), base.path()});
+    EXPECT_FALSE(found.isEmpty());
+    EXPECT_EQ(QDir(found).canonicalPath(),
+              QDir(QDir(base.path()).filePath(skinRel)).canonicalPath());
+    // 命中目录可直接定位伴生 theme.json（applySkinByName 的同源路径）
+    EXPECT_TRUE(QFile::exists(QDir(found).filePath(QStringLiteral("theme.json"))))
+        << qPrintable(found);
+    // 空基准 / 未知皮肤 → 空串
+    EXPECT_TRUE(th.skinDirResolvedIn(QStringLiteral("Aurora"), {}).isEmpty());
+    EXPECT_TRUE(th.skinDirResolvedIn(QStringLiteral("Nope"), {base.path()}).isEmpty());
+}
+
+TEST(ThemeManager, SkinSearchBasesPrefersCwdThenExeDir) {
+    const QStringList bases = ThemeManager::skinSearchBases();
+    ASSERT_FALSE(bases.isEmpty());
+    EXPECT_EQ(bases.first(), QStringLiteral("."));   // cwd 优先（常规启动/开发）
+    EXPECT_TRUE(bases.contains(QStringLiteral("..")));
+    EXPECT_TRUE(bases.contains(QStringLiteral("../..")));
+    EXPECT_TRUE(bases.contains(QStringLiteral("../../..")));
+    if (QCoreApplication::instance()) {              // 有实例时注入 exe 目录（发布包布局）
+        const QString appDir = QCoreApplication::applicationDirPath();
+        EXPECT_FALSE(appDir.isEmpty());
+        EXPECT_TRUE(bases.contains(appDir));
+        EXPECT_LT(bases.indexOf(QStringLiteral(".")), bases.indexOf(appDir));
+    }
 }
 
 TEST(ThemeManager, ResetDefaultRestoresAllTokens) {
