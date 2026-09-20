@@ -105,7 +105,7 @@ TEST(Command, DispatchOkAndIdEcho) {
     // version 契约：name / version / api / license 四字段齐全（doc/06 §3.5）。
     const auto& result = resp.at("result");
     EXPECT_EQ(result.at("name").as_str(), "beatbench");
-    EXPECT_EQ(result.at("version").as_str(), "0.3.0");
+    EXPECT_EQ(result.at("version").as_str(), "0.3.1");
     EXPECT_EQ(result.at("api").as_i64(), 1);
     EXPECT_EQ(result.at("license").as_str(), "GPL-3.0-only");
     // 成功响应不带 error 键。

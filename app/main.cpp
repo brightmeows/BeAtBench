@@ -194,7 +194,7 @@ int main(int argc, char** argv) {
     QGuiApplication app(argc, argv);
     app.setOrganizationName(QStringLiteral("BeAtBench"));
     app.setApplicationName(QStringLiteral("BeAtBench"));
-    app.setApplicationVersion(QStringLiteral("0.3.0"));
+    app.setApplicationVersion(QStringLiteral("0.3.1"));
     qInstallMessageHandler(messageToLog);  // 调试期：Qt 消息落盘（GUI 无控制台）
 
     // 全局深色基线（doc/08 §2）：Fusion 尊重应用调色板，菜单/对话框/默认控件一次变深；

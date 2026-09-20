@@ -2,6 +2,33 @@
 
 本文件记录 BeAtBench 对各发布版本的用户可见变更。版本号遵循语义化版本（major.minor.patch）；仓库规范见 `doc/04`。
 
+## [0.3.1] - 2026-09-20
+
+> 补丁版：修复 v0.1.0–v0.3.0 三版发布包**未随包分发内置皮肤**（`skins/`）的问题，并加入
+> 拖拽/双击打开文件（定位为「修复 + 小功能」，未按 minor 推进版本号）。
+
+### 新增
+
+- **拖拽入窗口 / 拖到 exe 图标 / 双击文件关联打开文件**：把文件拖进主窗口任意位置（拖拽悬停时
+  显示「松开以打开」提示），或把文件拖到 `beatbench.exe` 图标（Explorer 把路径作为 `argv[1]`
+  传入）、双击已关联的文件，按后缀自动分流——谱面（`.bms/.bml/.bme/.pms`）进编辑页；音频
+  （`.wav/.ogg/.oga/.mp3/.flac`）与 MIDI（`.mid/.midi`）进切音工作台作参考音频 / MIDI 导入；
+  不支持的类型在状态栏提示且不改动当前文档。后缀分类是 C++ 纯函数
+  （`EditUtils::classifyExternalFile`，单测覆盖），窗口拖拽与 exe 命令行两条入口共用同一路由
+  （`Main.qml::handleExternalFile`）。
+
+### 修复
+
+- **发布包内置皮肤缺失（自 v0.1.0 起）**：`scripts/package-release.sh` 从未把仓库根 `skins/` 拷进
+  staging，`windeployqt` 也只部署 Qt 运行时。用户解压发布包后，菜单「视图→皮肤」的四项
+  （Aurora / Linear / OsuLight / Win10）全部报「缺 theme.json（皮肤目录未找到）」而不生效，皮肤的
+  `keymap.json` 亦随之失效（皮肤文件在仓库内开发运行时因 `../..` 回退可被找到，故此前未暴露）。
+  现随包分发 `skins/`（与 `beatbench.exe` 同级），打包含校验，并在冒烟阶段以
+  `--apply-skin Aurora` + 断言日志「皮肤已运行时切换」把漏打包钉死在打包阶段。
+- **皮肤目录解析不再依赖工作目录**：`ThemeManager` 的搜索基准新增「可执行文件目录（及其上级）」，
+  快捷方式/其他启动器的工作目录 ≠ exe 目录时仍能定位内置皮肤；启动参数 `--skin <dir>` 按同一规则
+  回退解析，主题与伴生 `keymap.json` 共用一次解析结果。
+
 ## [0.3.0] - 2026-09-09
 
 > 已发布（Windows 64 位包见 GitHub Release）。本节已并入原 `[Unreleased]` 的全部增量：
