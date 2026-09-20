@@ -123,6 +123,10 @@ jobs:
       - name: GUI smoke
         run: |
           export QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software
+          # MACOSX_BUNDLE 使 exe 在 beatbench.app/Contents/MacOS/，exe 同级没有
+          # BeatBench QML 模块目录（Linux/Windows 是 build/app/BeatBench 紧邻 exe，
+          # 引擎靠 exe 目录导入）——显式把模块父目录给引擎，对齐另两个平台的解析。
+          export QML2_IMPORT_PATH="$PWD/build/app"
           ./build/app/beatbench.app/Contents/MacOS/beatbench --screenshot smoke-macos.png --apply-skin Aurora || true
           # 失败诊断先于断言：QML 错误都在这个日志里
           echo "=== beatbench-qml-errors.log ==="; cat beatbench-qml-errors.log 2>/dev/null || echo "(无日志)"
