@@ -1,18 +1,34 @@
 # BeAtBench
 
-面向 BMS 的开源跨平台谱面编辑器
+面向 BMS 的开源谱面编辑器（Windows 10/11 64 位为当前发布平台；架构保持跨平台）
 
 技术栈: C++20 + Qt 6 Quick/QML + PortAudio + CMake
 
-目前还没支持ASIO
+目前尚未支持 ASIO。
 
 **许可：GPL-3.0**（见 `LICENSE`）。
 
+## 下载与安装
+
+免安装绿色版见 [GitHub Releases](https://github.com/wufe8/BeAtBench/releases)：
+
+1. 下载 `beatbench-v0.3.1-win64.zip`（校验同目录的 `.zip.sha256`），解压到任意目录；
+2. 双击 `beatbench.exe` 启动图形界面，或运行 `beatbench-cli.exe` 使用命令行；
+3. Windows 10/11 64 位，无需安装运行库，Qt 运行时已内置。
+
+> ⚠️ 请整目录保留解压结果：`skins/`（内置皮肤）、`BeatBench/`（QML 模块）与 Qt DLL 必须与
+> `beatbench.exe` 保持同级，单独拷贝 exe 会缺少皮肤与界面资源。
+
+**打开文件**：菜单「文件 → 打开」（Ctrl+O）；也可以把谱面 / 音频 / MIDI 文件
+**拖进窗口**、**拖到 `beatbench.exe` 图标**，或双击已关联的文件——谱面进编辑页，
+音频与 MIDI 自动进入「切音 / 对音」工作台。
+
 ## 功能特性
 
-### 已完成（M1-M6，2026-09；0.3.0 发布准备）
+### 已完成（M1-M6，2026-09；当前版本 0.3.1）
 
 - **BMS 读写**：完整解析/写出 .bms/.bme/.pms，支持 UTF-8/SJIS 编码、base62 id、#BASE 62 大小写敏感、iBMSC 式输出（定义表顺序/分割线注释）
+- **打开文件**（0.3.1）：拖拽入窗口 / 拖到 exe 图标 / 双击文件关联；按后缀自动分流——谱面进编辑页，音频（.wav/.ogg/.oga/.mp3/.flac）与 MIDI（.mid/.midi）进切音工作台
 - **谱面编辑**：note 放置/移动/删除、拖拽/框选/点选、LN（长音，LNTYPE 1/2）/地雷、单点<->LN 转换、量化/镜像/旋转变换、undo/redo、剪贴板（BMS 原始行，外部工具兼容）
 - **时间轴**：BPM/STOP/节拍事件编辑（点放/列表/改值/删除）、可视化竖向时间轴、BGM 轨展开分列（按 ch01 行序）、BGA 图层列（更多轨道）
 - **元信息编辑**：TITLE/ARTIST/BPM/PLAYER 等全字段（含"更多字段"/"扩展代码"raw 兜底）、下拉可选（label/value 分离）、#BASE 62
@@ -21,7 +37,7 @@
 - **多文档会话**：SessionRegistry，多标签页前瞻
 - **lint**：解析诊断 + 音符检查（缺失采样/重叠 note/悬挂 LN 等），打开即显示
 - **快捷键/动作注册表**：动作走 UiActionRegistry（`invoke` 为菜单/工具条/Shortcut 入口），菜单/工具条按注册表枚举；用户快捷键落盘到 QSettings（优先于皮肤 `keymap.json`），设置页确定后立即生效；2026-09 补 Space / Ctrl+R / Ctrl+, / Esc 与**作用域隔离**（编辑页/切音页同键位各绑一次，全局动作与页面动作互斥）
-- **皮肤（L1）**：theme.json token 覆写（颜色/字号/字体/圆角/note 样式/键轨着色）、内置皮肤（Aurora/Linear/OsuLight 浅色/Win10 直角）、运行时切换（菜单"视图->皮肤"）、皮肤可携带 keymap
+- **皮肤（L1）**：theme.json token 覆写（颜色/字号/字体/圆角/note 样式/键轨着色）、内置皮肤（Aurora/Linear/OsuLight 浅色/Win10 直角）、运行时切换（菜单"视图->皮肤"）、皮肤可携带 keymap；**皮肤文件随发布包分发**（0.3.1 起，与 exe 同级），目录解析不依赖工作目录
 - **音频（M4）**：采样列表点击试听 + 音频设置页 + 采样解码缓存 + 离线渲染（ChartRenderer / `cli render` / 编辑器 Space，写 `.render.wav`）+ 波形显示（右侧垂直波形条 + 秒标尺）+ 编辑增量重渲染（PortAudio WASAPI 输出 + miniaudio 解码 wav/ogg/mp3/flac）
 - **随时播放（M5）**：Space 播放/暂停、PcmEngine 零拷贝、播放时钟、编辑即停；播放头红线（视口光标）+ 视口跟随 + A-B 循环 + seek（点秒标尺/波形条拖动 scrub）；note 放置/移动鼠标预览 ghost
 - **编辑增强（小节/变拍）**：BMS 02 通道**小节长度编辑**（时间轴「小节长」页：添加/改值/删除每小节拍数）+ **变拍高渲染**（按拍数等比，4/4 基准，左标尺非 4/4 标 `×N`）+ **「加一小节」**追加编辑小节 + **File→新建谱面**（空谱面从零编辑）；播放/跟随/seek/秒标尺同步正确；编辑/撤销后右侧波形不再消失
@@ -41,10 +57,21 @@
 
 **M1-M6 已完成**（2026-09）：BMS codec + timing + CLI + QML 编辑器（编辑/时间轴/元信息/采样/BGA/lint/剪贴板/多文档/动作注册表/皮肤 L1）→ **M4 音频**（单发试听/设置页/解码缓存/离线渲染/波形/秒标尺/增量重渲染）→ **M5 随时播放**（Space 播放/暂停、PcmEngine 零拷贝、播放时钟、编辑即停）+ 播放头红线/视口跟随/A-B 循环/seek + note 编辑增强（鼠标预览 ghost、多选拖动、BGM 相对距离、`bgm_line→sub_line` 泛化）+ 编辑增强（**02 小节长度编辑 + 变拍高 + 加一小节 + 新建谱面**、编辑/撤销波形不消失）→ **M6 切音工作台**（导入/切分/导出/手动切分点/切片编辑/剪贴板整段粘贴，见 doc/04 §6）。
 **0.3.0 已发布**（tag [`v0.3.0`](https://github.com/wufe8/BeAtBench/releases/tag/v0.3.0)）：发布包 M6/bmson 文案与过期本机路径注释修正、未来功能状态表、`command/` 与 `commands/` 遗留头核实并删除、JSON 命令契约测试（含 CLI↔GUI 信封一致性）、版本推进与干净构建验证。
-**0.3.1 已发布**（tag [`v0.3.1`](https://github.com/wufe8/BeAtBench/releases/tag/v0.3.1)）：修复 v0.1.0–v0.3.0 发布包未随包分发内置皮肤 `skins/`（「视图→皮肤」四项失效）；皮肤目录解析增加 exe 目录回退，不再依赖工作目录；新增拖拽入窗口 / 拖到 exe 图标 / 双击关联打开谱面与音频/MIDI。详见 `CHANGELOG.md`。
-测试以源码 `TEST()` 计数为准（core 317 + 音频 55 + Qt 桥层 54）；真实谱面集缺失时部分 SKIP，不要把某一天的 PASS 数写死。详见 `doc/04` §6。
+**0.3.1**（2026-09-20）：修复 v0.1.0–v0.3.0 发布包未随包分发内置皮肤 `skins/`（「视图→皮肤」四项失效）；皮肤目录解析增加 exe 目录回退，不再依赖工作目录；新增拖拽入窗口 / 拖到 exe 图标 / 双击关联打开谱面与音频/MIDI；构建侧移除 PortAudio 的 PowerShell 补丁依赖。详见 `CHANGELOG.md`。
+测试以源码 `TEST()` 计数为准（core 317 + 音频 55 + Qt 桥层 57）；真实谱面集缺失时部分 SKIP，不要把某一天的 PASS 数写死。详见 `doc/04` §6。
 
 当前里程碑任务见 `doc/04-开发手册.md`（简版现状；开发历史/踩坑细节在 `local/doc/04-开发手册-完整版.md`，gitignore）；皮肤系统后续计划见 `local/doc/10-主题与皮肤路线.md`（gitignore）。
+
+## 平台支持
+
+| 平台 | 状态 |
+|---|---|
+| Windows 10/11 64 位 | ✅ 当前发布平台，提供预编译 zip（本仓库唯一验证过的发布路径） |
+| Linux | 🚧 源码可构建（core/CLI 优先）；无预编译包，打包脚本与音频后端未验证 |
+| macOS | 🚧 同上；另需 `.app` 打包、代码签名与公证 |
+
+架构保持跨平台（`core/` 零 Qt 且不引入 Win 专有 API；GUI/CLI 的平台相关代码均有 `#ifdef`
+守卫），但**当前只发布并验证 Windows**。跨平台 CI 列在 `doc/04` §7 的 M8（core/cli 优先）。
 
 ## 文档导航
 
@@ -116,6 +143,8 @@ app/        Qt Quick/QML GUI（C++ bridge + QML 界面）
   bridge/   CommandDispatcher + ChartSession + ThemeManager + UiActionRegistry + AudioEngine
   qml/      Main.qml + pages/ + components/
 tests/      GoogleTest 单元测试
+skins/      内置皮肤（Aurora / Linear / OsuLight / Win10；随发布包分发）
+scripts/    发布打包脚本（package-release.sh）
 third_party/  vendored 头文件（miniaudio.h）
 doc/        设计文档与开发手册
 ```
@@ -139,11 +168,13 @@ GUI 支持以下命令行参数（配合 `--screenshot` 做视觉验收）：
 ```bash
 build-gui/app/beatbench.exe \
   --open <bms文件>           # 启动即打开谱面
+  --apply-skin <皮肤名>      # 启动后应用内置皮肤（Aurora|Linear|OsuLight|Win10|默认）
   --screenshot <png>         # 截图后退出
   --page 0|1|2               # 切换到指定页面（0=编辑 1=切音 2=测试）
   --tool pan|select|note|ln|mine  # 设置编辑工具（pan 为默认）
   --click <x> <y>            # 模拟点击
   --probe <x> <y>            # 诊断探针
+  <文件路径>                 # 位置参数：按类型打开（等同双击关联 / 拖到 exe 图标）
 ```
 
 ## 生态参照
