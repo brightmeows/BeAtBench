@@ -84,7 +84,7 @@ cmake --build build-gui --target beatbench
 
 - ⚠️ **「无 Qt」≠「可离线」**：`audio/CMakeLists.txt` 无条件 FetchContent 拉 PortAudio；
   离线干净构建需 `-DFETCHCONTENT_SOURCE_DIR_PORTAUDIO=<已有源码>`（googletest 同理）。
-- 测试基线（源码 `TEST()` 计数，0.3.0）：core **317**（快速 315 过 / 2 SKIP）+ Qt 桥层 **54**。
+- 测试基线（源码 `TEST()` 计数，0.3.1）：core **317**（快速 315 过 / 2 SKIP）+ Qt 桥层 **57**。
   真实谱面集缺失时部分用例 SKIP，**不要把某一天的 PASS 数写死**。
 
 ## 6. 找不到文件时
