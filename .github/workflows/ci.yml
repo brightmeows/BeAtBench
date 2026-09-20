@@ -1,0 +1,177 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# CI：三平台构建 + 测试 + GUI 无头冒烟（doc/04 §4 构建、M8「跨平台 CI」落地）。
+#
+# 设计决策（为什么长这样）：
+# - Qt 统一 6.11.2：CI 是回归门禁不是发布流水线；发布包内嵌 6.11.1 由打包脚本自控。
+# - 五个 job：linux-core / windows-msvc-core 无 Qt（core/cli/audio/tests + ctest），
+#   linux-full / macos-full / windows-mingw-full 带 Qt（桥层单测 + GUI 构建 + offscreen 冒烟）。
+# - Windows 用 MinGW 全量钉住发布链路（Qt 官方 Windows 默认 kit 即 MinGW，与
+#   scripts/package-release.sh 同源），另设 MSVC 无 Qt job 守护 MSVC 兼容性。
+# - macOS continue-on-error：macOS 侧从未人工验证过，首跑风险隔离；其余 job 阻塞。
+# - 冒烟断言 = 截图存在 + 日志含「皮肤已运行时切换」（与 package-release.sh 同口径），
+#   把「皮肤未随包/路径解析失败」类回归钉死在 CI；截图上传 artifact 供人工查验。
+# - 依赖照旧 FetchContent（PortAudio v19.7.0 / googletest v1.15.2），Qt 走 action 缓存。
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QT_VERSION: '6.11.2'
+
+jobs:
+  # ---------- 无 Qt：core/cli/audio + 全部单测（app 自动跳过） ----------
+  linux-core:
+    name: linux-core
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBEATBENCH_BUILD_TESTS=ON -DBEATBENCH_BUILD_APP=OFF
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  windows-msvc-core:
+    name: windows-msvc-core
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBEATBENCH_BUILD_TESTS=ON -DBEATBENCH_BUILD_APP=OFF
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  # ---------- 带 Qt：全量 + GUI 无头冒烟 ----------
+  linux-full:
+    name: linux-full
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: linux_gcc_64
+          cache: true
+          cache-key-prefix: install-qt-linux
+      # 冒烟截图防豆腐块：runner 默认无 CJK 字体
+      - name: Install CJK fonts
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBEATBENCH_BUILD_TESTS=ON -DBEATBENCH_BUILD_APP=ON
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: GUI smoke
+        run: |
+          export QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software
+          ./build/app/beatbench --screenshot smoke-linux.png --apply-skin Aurora
+          test -f smoke-linux.png
+          grep -q "皮肤已运行时切换：skins/Aurora" beatbench-qml-errors.log
+          rm -f beatbench-qml-errors.log
+      - name: Upload smoke screenshot
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-linux
+          path: smoke-linux.png
+          if-no-files-found: ignore
+
+  macos-full:
+    name: macos-full
+    # macOS 侧从未人工验证过，首跑风险隔离（修复量可控后收紧为阻塞）
+    continue-on-error: true
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: clang_64
+          cache: true
+          cache-key-prefix: install-qt-macos
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBEATBENCH_BUILD_TESTS=ON -DBEATBENCH_BUILD_APP=ON
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: GUI smoke
+        run: |
+          export QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software
+          ./build/app/beatbench.app/Contents/MacOS/beatbench --screenshot smoke-macos.png --apply-skin Aurora
+          test -f smoke-macos.png
+          grep -q "皮肤已运行时切换：skins/Aurora" beatbench-qml-errors.log
+          rm -f beatbench-qml-errors.log
+      - name: Upload smoke screenshot
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-macos
+          path: smoke-macos.png
+          if-no-files-found: ignore
+
+  windows-mingw-full:
+    name: windows-mingw-full
+    # 发布链路（scripts/package-release.sh = MinGW + Qt；Qt 官方 Windows 默认 kit 即 MinGW）
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Qt (win64_mingw) + MinGW/Ninja toolchain
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_mingw
+          tools: 'tools_mingw1310 tools_ninja'
+          add-tools-to-path: true
+          cache: true
+          cache-key-prefix: install-qt-windows-mingw
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+            -DBEATBENCH_BUILD_TESTS=ON -DBEATBENCH_BUILD_APP=ON \
+            -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: GUI smoke
+        shell: bash
+        run: |
+          export PATH="$QT_ROOT_DIR/bin:$PATH"
+          export QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software
+          ./build/app/beatbench.exe --screenshot smoke-windows.png --apply-skin Aurora
+          test -f smoke-windows.png
+          grep -q "皮肤已运行时切换：skins/Aurora" beatbench-qml-errors.log
+          rm -f beatbench-qml-errors.log
+      - name: Upload smoke screenshot
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-windows
+          path: smoke-windows.png
+          if-no-files-found: ignore
