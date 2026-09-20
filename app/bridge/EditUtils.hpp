@@ -35,6 +35,11 @@ public:
     /// 只扫定义行 id 字段与数据行 payload（定义行文件名/路径不参与，避免误报）。
     /// 用途：目标谱面 Base36 时粘贴 Base62 raw 前确认（两位 id 数值歧义，可能覆盖定义）。
     Q_INVOKABLE bool textUsesBase62Ids(const QString& text) const;
+
+    /// 外部文件分类（拖拽入窗口 / 双击关联 / 拖到 exe 图标时按类型路由）：
+    /// "chart"（.bms/.bml/.bme/.pms）/ "audio"（.wav/.ogg/.oga/.mp3/.flac）/
+    /// "midi"（.mid/.midi）/ "unknown"。大小写不敏感，只按后缀判定（不探内容、不查存在性）。
+    Q_INVOKABLE QString classifyExternalFile(const QString& path) const;
 };
 
 }  // namespace beatbench::app

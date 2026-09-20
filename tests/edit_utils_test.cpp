@@ -123,3 +123,33 @@ TEST(EditUtils, TextUsesBase62Ids) {
     EXPECT_FALSE(u.textUsesBase62Ids(QStringLiteral("#TITLE lowercase title")));
     EXPECT_FALSE(u.textUsesBase62Ids(QString()));
 }
+
+TEST(EditUtils, ClassifyExternalFile) {
+    EditUtils u;
+    // 谱面（与 FileDialog(nameFilters) 一致）
+    EXPECT_EQ(u.classifyExternalFile(QStringLiteral("song.bms")), QStringLiteral("chart"));
+    EXPECT_EQ(u.classifyExternalFile(QStringLiteral("C:/charts/a.bme")), QStringLiteral("chart"));
+    EXPECT_EQ(u.classifyExternalFile(QStringLiteral("a.BML")), QStringLiteral("chart"));   // 大写后缀
+    EXPECT_EQ(u.classifyExternalFile(QStringLiteral("a.pms")), QStringLiteral("chart"));
+    // 音频（与 audio_extension_supported 一致，含 oga）
+    EXPECT_EQ(u.classifyExternalFile(QStringLiteral("stem.wav")), QStringLiteral("audio"));
+    EXPECT_EQ(u.classifyExternalFile(QStringLiteral("a.WAV")), QStringLiteral("audio"));
+    EXPECT_EQ(u.classifyExternalFile(QStringLiteral("a.ogg")), QStringLiteral("audio"));
+    EXPECT_EQ(u.classifyExternalFile(QStringLiteral("a.oga")), QStringLiteral("audio"));
+    EXPECT_EQ(u.classifyExternalFile(QStringLiteral("a.mp3")), QStringLiteral("audio"));
+    EXPECT_EQ(u.classifyExternalFile(QStringLiteral("a.flac")), QStringLiteral("audio"));
+    // MIDI
+    EXPECT_EQ(u.classifyExternalFile(QStringLiteral("melody.mid")), QStringLiteral("midi"));
+    EXPECT_EQ(u.classifyExternalFile(QStringLiteral("melody.midi")), QStringLiteral("midi"));
+    // 未知 / 无后缀 / 目录式路径：绝不误判成 chart（拖拽路由不能乱开文件）
+    EXPECT_EQ(u.classifyExternalFile(QStringLiteral("readme.txt")), QStringLiteral("unknown"));
+    EXPECT_EQ(u.classifyExternalFile(QStringLiteral("noext")), QStringLiteral("unknown"));
+    EXPECT_EQ(u.classifyExternalFile(QStringLiteral("C:/some/dir")), QStringLiteral("unknown"));
+    // Qt 的 QFileInfo 不把前导点当隐藏文件特例：".bms" 的后缀就是 "bms" → chart（无害边缘）
+    EXPECT_EQ(u.classifyExternalFile(QStringLiteral(".bms")), QStringLiteral("chart"));
+    EXPECT_EQ(u.classifyExternalFile(QString()), QStringLiteral("unknown"));
+    // 多个点：取最后一段后缀
+    EXPECT_EQ(u.classifyExternalFile(QStringLiteral("song.v2.bms")), QStringLiteral("chart"));
+    // 后缀带空格不算合法后缀（Windows 下文件名的尾随空格会被剥离）
+    EXPECT_EQ(u.classifyExternalFile(QStringLiteral("song.bms ")), QStringLiteral("unknown"));
+}

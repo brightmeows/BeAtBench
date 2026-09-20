@@ -7,6 +7,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QImage>
 #include <QLibraryInfo>
@@ -493,6 +494,17 @@ int main(int argc, char** argv) {
     if (openIdx >= 0 && openIdx + 1 < args.size()) {
         if (QObject* root = engine.rootObjects().value(0))
             root->setProperty("debugOpenPath", args.at(openIdx + 1));
+    }
+
+    // 双击文件关联 / 把文件拖到 exe 图标：Explorer 把文件路径作为 argv[1] 传入（无开关时）。
+    // 交给 QML 的 handleExternalFile 按后缀分流（谱面 → 编辑页；音频/MIDI → 切音工作台），
+    // 与「拖拽入窗口」同一路径，避免两处维护类型判定。argv[1] 以 '-' 开头则视为开关，跳过。
+    if (args.size() >= 2 && !args.at(1).startsWith(QLatin1Char('-'))) {
+        const QString external = args.at(1);
+        if (QFileInfo::exists(external)) {
+            if (QObject* root = engine.rootObjects().value(0))
+                root->setProperty("externalFilePath", external);
+        }
     }
 
     // --paste-text <文本>：调试——启动后把文本写入系统剪贴板并触发编辑页 Ctrl+V 粘贴

@@ -2,6 +2,7 @@
 // EditUtils 实现：见 EditUtils.hpp（纯函数，无 GUI/core 模型依赖）。
 #include "EditUtils.hpp"
 
+#include <QFileInfo>
 #include <QRegularExpression>
 #include <QStringList>
 
@@ -128,6 +129,25 @@ bool EditUtils::textUsesBase62Ids(const QString& text) const {
         if (lm.hasMatch() && lowerRe().match(lm.captured(1)).hasMatch()) return true;
     }
     return false;
+}
+
+QString EditUtils::classifyExternalFile(const QString& path) const {
+    const QString ext = QFileInfo(path).suffix().toLower();
+    if (ext.isEmpty()) return QStringLiteral("unknown");
+    // 扩展名与 UI 过滤器 / 后端能力对齐：
+    //   谱面 FileDialog(*.bms *.bml *.bme *.pms)
+    //   音频 audio_extension_supported()（wav/ogg/oga/mp3/flac）
+    //   MIDI FileDialog(*.mid *.midi)
+    static const QStringList kChart = {QStringLiteral("bms"), QStringLiteral("bml"),
+                                       QStringLiteral("bme"), QStringLiteral("pms")};
+    static const QStringList kAudio = {QStringLiteral("wav"), QStringLiteral("ogg"),
+                                       QStringLiteral("oga"), QStringLiteral("mp3"),
+                                       QStringLiteral("flac")};
+    static const QStringList kMidi = {QStringLiteral("mid"), QStringLiteral("midi")};
+    if (kChart.contains(ext)) return QStringLiteral("chart");
+    if (kAudio.contains(ext)) return QStringLiteral("audio");
+    if (kMidi.contains(ext)) return QStringLiteral("midi");
+    return QStringLiteral("unknown");
 }
 
 }  // namespace beatbench::app

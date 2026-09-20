@@ -152,6 +152,8 @@ BeAtBench v$VER (M1-M6)
 --------
 1. 双击 beatbench.exe 启动图形界面：
    - 打开谱面：菜单"文件 -> 打开"（或 Ctrl+O）
+   - 也可直接把 .bms/.bml/.bme/.pms 拖进窗口（拖到 beatbench.exe 图标/双击关联文件同样可）
+     音频(.wav/.ogg/.mp3/.flac) 与 MIDI(.mid/.midi) 拖入会自动进入"切音/对音"工作台
    - 编辑谱面：放置/选择/删除 note、LN、地雷，量化、镜像、旋转、复制粘贴（放置/移动有鼠标预览 ghost）
    - 时间轴：BPM / STOP 调整（右侧"时间轴"标签页）
    - 元信息、采样、BGA、lint 检查：左侧各标签页

@@ -934,6 +934,10 @@ ApplicationWindow {
     // --open 调试参数（main.cpp 注入）：走与 Ctrl+O 相同的调用路径
     property string debugOpenPath: ""
     onDebugOpenPathChanged: if (debugOpenPath !== "") doOpenChart(debugOpenPath)
+    // 外部文件（双击文件关联 / 把文件拖到 exe 图标：Explorer 把路径作为 argv[1] 传入）：
+    // 与「拖拽入窗口」共用同一路由函数，按后缀分流（谱面 → 编辑页；音频/MIDI → 切音工作台）。
+    property string externalFilePath: ""
+    onExternalFilePathChanged: if (externalFilePath !== "") handleExternalFile(externalFilePath)
     // M6.1 调试参数：--slice-audio / --slice-midi（切音页导入；配 --page 1 --screenshot）
     property string debugSliceAudio: ""
     property string debugSliceMidi: ""
@@ -1354,6 +1358,32 @@ ApplicationWindow {
     }
 
     function doOpenChart(path) { openChart(path) }
+
+    /// 外部文件路由（拖拽入窗口 / 拖到 exe 图标 / 双击关联）：分类 → 打开并切到对应页。
+    /// 后缀分类在 EditUtils（C++ 纯函数，单测覆盖），QML 只做分流，避免后缀表两处维护。
+    /// 返回是否已接受该文件（供 DropArea 决定 acceptProposedAction）。
+    function handleExternalFile(path) {
+        if (!path || path.length === 0) return false
+        const kind = editUtils.classifyExternalFile(path)
+        if (kind === "chart") {
+            window.currentPage = 0
+            doOpenChart(path)
+            return true
+        }
+        if (kind === "audio") {
+            window.currentPage = 1
+            sliceWorkspace.loadAudioFile(path)   // 并发解码；成功/失败均经 statusText 反馈
+            return true
+        }
+        if (kind === "midi") {
+            window.currentPage = 1
+            sliceWorkspace.loadMidiFile(path)    // 同步解析；成功/失败均经 statusText 反馈
+            return true
+        }
+        setStatus(qsTr("不支持的文件类型：%1").arg(path))
+        return false
+    }
+
     function openChart(path) {
         var req = JSON.stringify({ command: "info", args: { path: path } })
         var resp = beatbench.dispatch(req)
@@ -1911,6 +1941,49 @@ ApplicationWindow {
                 const r = sessionCmd("timing.put", { kind: metaEditDialog.kind,
                                                      measure: s.measure, pos: s.pos, value: value })
                 if (r) { refreshTiming(); setStatus(qsTr("已改 %1 值").arg(metaEditDialog.kind.toUpperCase())) }
+            }
+        }
+    }
+
+    // ---------- 拖拽入窗口（谱面 / 音频 / MIDI）----------
+    // 覆盖整个内容区（工具条/状态栏除外，接受拖拽也够用）；落在窗口内任意位置均可。
+    // DropArea 只处理拖放事件、不拦截普通鼠标事件，故不影响编辑区 pan / 框选等既有交互。
+    DropArea {
+        id: windowDropArea
+        anchors.fill: parent
+        onDropped: function (drop) {
+            if (!drop.hasUrls || drop.urls.length === 0) return
+            let accepted = false
+            for (let i = 0; i < drop.urls.length; ++i) {
+                const p = window.urlToPath(drop.urls[i])
+                if (window.handleExternalFile(p)) accepted = true
+            }
+            if (accepted) drop.acceptProposedAction()
+        }
+        // 拖入提示：仅拖拽悬停期间可见
+        Rectangle {
+            anchors.fill: parent
+            visible: windowDropArea.containsDrag
+            color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.12)
+            border.color: Theme.primary
+            border.width: 2
+            z: 10000
+            ColumnLayout {
+                anchors.centerIn: parent
+                spacing: 4
+                Label {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: qsTr("松开以打开")
+                    color: Theme.text
+                    font.pixelSize: Theme.fsBase + 4
+                    font.bold: true
+                }
+                Label {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: qsTr("谱面 / 音频 / MIDI")
+                    color: Theme.textMuted
+                    font.pixelSize: Theme.fsSmall
+                }
             }
         }
     }
