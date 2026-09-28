@@ -27,6 +27,8 @@ concurrency:
 env:
   # Linux 系统 Qt 下限（Ubuntu 24.04 LTS 的 Qt 主次版本）；探针容器漂移会被断言拦下。
   QT_FLOOR: '6.4'
+  # Windows 发布链 Qt（与 ci.yml 同版本；CI 打包产物内嵌该版本运行时）
+  QT_VERSION: '6.11.2'
 
 jobs:
   # ---------- 兼容探针：发行版系统 Qt 下限（Ubuntu 24.04 = Qt 6.4.2） ----------
@@ -170,4 +172,43 @@ jobs:
         with:
           name: beatbench-linux-arch
           path: ${{ runner.temp }}/pkg-arch
+          if-no-files-found: error
+
+  # ---------- Windows 发布包（复用 scripts/package-release.sh，MinGW + windeployqt） ----------
+  windows-package:
+    name: windows-package
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Qt (win64_mingw) + MinGW/Ninja toolchain
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_mingw
+          # Qt 6.11 新仓库布局需要 aqt master（同 ci.yml），钉 commit 保确定性
+          aqtsource: 'aqtinstall @ git+https://github.com/miurahr/aqtinstall@076e1659'
+          tools: 'tools_mingw1310 tools_ninja'
+          add-tools-to-path: true
+          cache: true
+          cache-key-prefix: install-qt-windows-mingw
+      - name: Package (Release + windeployqt + smoke)
+        shell: bash
+        run: |
+          set -euo pipefail
+          export QT_ROOT="$QT_ROOT_DIR"
+          CXX_BIN="$(command -v g++)"; export CXX_BIN
+          NINJA_BIN="$(command -v ninja)"; export NINJA_BIN
+          # 7-Zip 兜底（脚本按 zip → 7z 顺序选；Git Bash 无 zip）
+          export PATH="$PATH:/c/Program Files/7-Zip"
+          # 无头冒烟：Windows runner 无交互桌面，offscreen 渲染（与 ci.yml 同口径）
+          export QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software
+          bash scripts/package-release.sh
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v7
+        with:
+          name: beatbench-windows
+          path: |
+            out/*.zip
+            out/*.zip.sha256
           if-no-files-found: error
