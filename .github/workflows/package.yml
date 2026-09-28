@@ -197,8 +197,13 @@ jobs:
         run: |
           set -euo pipefail
           export QT_ROOT="$QT_ROOT_DIR"
-          CXX_BIN="$(command -v g++)"; export CXX_BIN
-          NINJA_BIN="$(command -v ninja)"; export NINJA_BIN
+          # Git Bash 的 command -v 返回不带扩展名的路径；CMake 需要真实存在的 .exe
+          CXX_BIN="$(command -v g++)"
+          if [ -x "${CXX_BIN}.exe" ]; then CXX_BIN="${CXX_BIN}.exe"; fi
+          export CXX_BIN
+          NINJA_BIN="$(command -v ninja)"
+          if [ -x "${NINJA_BIN}.exe" ]; then NINJA_BIN="${NINJA_BIN}.exe"; fi
+          export NINJA_BIN
           # 7-Zip 兜底（脚本按 zip → 7z 顺序选；Git Bash 无 zip）
           export PATH="$PATH:/c/Program Files/7-Zip"
           # 无头冒烟：Windows runner 无交互桌面，offscreen 渲染（与 ci.yml 同口径）
