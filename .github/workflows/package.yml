@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# 打包流水线（Package）：发布级产物与兼容探针，独立于 ci.yml 的回归门禁。
+#
+# 设计决策（为什么长这样）：
+# - 职责分离：ci.yml 守每次 push/PR 的回归；本 workflow 只在需要产物时跑（tag / 手动）。
+# - Qt 策略是系统 Qt：deb 面向 Debian 12+ 与 Ubuntu 24.04 LTS+，rpm 面向 Fedora 43+，
+#   arch 面向 Arch，故最低 Qt 口径为 6.4。probe-qt64 在 ubuntu:24.04（Qt 6.4.2）容器里
+#   构建 + 全量单测 + GUI 冒烟，防止代码悄悄用上 6.5+ API 而破坏已宣传的发行版覆盖。
+# - 容器构建用 docker run 而非 container job：最小发行版镜像里 JS action 可能缺 node；
+#   checkout 在宿主机完成，源码只读挂载，构建/冒烟产物经 /out 卷带回宿主机。
+# - 触发（自验期）：packaging 分支 push；收口时改为 tag v* + workflow_dispatch。
+name: Package
+
+on:
+  # TODO(packaging-收口): 改为 tags: ['v*']；分支 push 只在自验期保留。
+  push:
+    branches: [ci/packaging]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Linux 系统 Qt 下限（Ubuntu 24.04 LTS 的 Qt 主次版本）；探针容器漂移会被断言拦下。
+  QT_FLOOR: '6.4'
+
+jobs:
+  # ---------- 兼容探针：发行版系统 Qt 下限（Ubuntu 24.04 = Qt 6.4.2） ----------
+  probe-qt64:
+    name: probe-qt64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build + tests + GUI smoke in ubuntu:24.04 (system Qt 6.4)
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/probe-out"; mkdir -p "$OUT"
+          docker run --rm \
+            -e QT_FLOOR="${QT_FLOOR}" \
+            -v "$PWD:/src:ro" \
+            -v "$OUT:/out" \
+            ubuntu:24.04 bash -euc '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends \
+                build-essential cmake ninja-build git ca-certificates \
+                qt6-base-dev qt6-declarative-dev qt6-declarative-dev-tools \
+                qml6-module-qtqml qml6-module-qtqml-workerscript \
+                qml6-module-qtquick qml6-module-qtquick-controls \
+                qml6-module-qtquick-layouts qml6-module-qtquick-templates \
+                qml6-module-qtquick-window qml6-module-qtquick-dialogs \
+                libasound2-dev
+              qt_ver=$(dpkg-query -W -f "\${Version}" qt6-base-dev)
+              echo "== probe: system Qt $qt_ver"
+              echo "$qt_ver" | grep -q "^${QT_FLOOR}\." || {
+                echo "错误: 探针容器 Qt 不再是 ${QT_FLOOR}.x，下限口径漂移，需重盘目标矩阵" >&2
+                exit 1
+              }
+              cmake -S /src -B /tmp/build -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+                -DBEATBENCH_BUILD_TESTS=ON -DBEATBENCH_BUILD_APP=ON
+              cmake --build /tmp/build --parallel
+              ctest --test-dir /tmp/build --output-on-failure
+              mkdir -p /tmp/work && cp -r /src/skins /tmp/work/
+              cd /tmp/work
+              QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
+                /tmp/build/app/beatbench --screenshot smoke.png --apply-skin Aurora || true
+              # 失败诊断先于断言：QML 错误都在这个日志里；先带回宿主机再断言
+              cp -f smoke.png beatbench-qml-errors.log /out/ 2>/dev/null || true
+              echo "=== beatbench-qml-errors.log ==="
+              cat beatbench-qml-errors.log 2>/dev/null || echo "(无日志)"
+              test -f smoke.png
+              grep -q "皮肤已运行时切换：" beatbench-qml-errors.log
+              grep -q "已运行时切换：.*Aurora" beatbench-qml-errors.log
+            '
+      - name: Upload probe artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: probe-qt64
+          path: ${{ runner.temp }}/probe-out
+          if-no-files-found: ignore
