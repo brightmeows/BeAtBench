@@ -84,3 +84,90 @@ jobs:
           name: probe-qt64
           path: ${{ runner.temp }}/probe-out
           if-no-files-found: ignore
+
+  # ---------- Linux 发行版包（系统 Qt；各发行版容器内构建 + 目标发行版安装冒烟） ----------
+  linux-deb:
+    name: linux-deb
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build deb (baseline Debian 12 / Qt 6.4)
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/pkg-deb"; mkdir -p "$OUT"
+          docker run --rm -e OUT=/out \
+            -v "$PWD:/src:ro" -v "$OUT:/out" debian:12 \
+            bash /src/scripts/package-linux.sh deb
+      # 单份 deb 要同时覆盖 Debian 12+ 与 Ubuntu 24.04+（含 t64 改名）；每个目标发行版
+      # 都要在干净容器里实际安装 + 跑 GUI 无头冒烟，依赖名/符号缺口只有这样才会暴露。
+      - name: Install smoke on target distros
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/pkg-deb"
+          for img in debian:12 debian:13 ubuntu:24.04 ubuntu:26.04; do
+            echo "== 安装冒烟: $img"
+            docker run --rm -v "$OUT:/pkgs:ro" -v "$PWD:/src:ro" "$img" \
+              bash /src/scripts/verify-linux-package.sh deb /pkgs
+          done
+      - name: Upload deb packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: beatbench-linux-deb
+          path: ${{ runner.temp }}/pkg-deb
+          if-no-files-found: error
+
+  linux-rpm:
+    name: linux-rpm
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build rpm (baseline Fedora 43)
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/pkg-rpm"; mkdir -p "$OUT"
+          docker run --rm -e OUT=/out \
+            -v "$PWD:/src:ro" -v "$OUT:/out" fedora:43 \
+            bash /src/scripts/package-linux.sh rpm
+      - name: Install smoke on target distros
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/pkg-rpm"
+          for img in fedora:43 fedora:44; do
+            echo "== 安装冒烟: $img"
+            docker run --rm -v "$OUT:/pkgs:ro" -v "$PWD:/src:ro" "$img" \
+              bash /src/scripts/verify-linux-package.sh rpm /pkgs
+          done
+      - name: Upload rpm packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: beatbench-linux-rpm
+          path: ${{ runner.temp }}/pkg-rpm
+          if-no-files-found: error
+
+  linux-arch:
+    name: linux-arch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build arch package (rolling)
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/pkg-arch"; mkdir -p "$OUT"
+          docker run --rm -e OUT=/out \
+            -v "$PWD:/src:ro" -v "$OUT:/out" archlinux:base-devel \
+            bash /src/scripts/package-linux.sh arch
+      - name: Install smoke on Arch
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/pkg-arch"
+          docker run --rm -v "$OUT:/pkgs:ro" -v "$PWD:/src:ro" archlinux:base-devel \
+            bash /src/scripts/verify-linux-package.sh arch /pkgs
+      - name: Upload arch packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: beatbench-linux-arch
+          path: ${{ runner.temp }}/pkg-arch
+          if-no-files-found: error
