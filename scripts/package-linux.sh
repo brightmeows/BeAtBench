@@ -246,7 +246,9 @@ pkgdesc='BMS chart editor'
 arch=('x86_64')
 url='https://github.com/wufe8/BeAtBench'
 license=('GPL-3.0-only')
-depends=('qt6-base' 'qt6-declarative' 'alsa-lib' 'hicolor-icon-theme')
+# 下限 6.4 与代码侧 API 口径一致（probe-qt64 守卫）：pacman -U 只校验包版本依赖、
+# 不查 ELF 符号版本，这行 depends 是 arch 包唯一的机械版本防线。
+depends=('qt6-base>=6.4' 'qt6-declarative' 'alsa-lib' 'hicolor-icon-theme')
 optdepends=('qt6-wayland: Wayland 平台插件' 'noto-fonts-cjk: 中文界面字体')
 options=('!debug')
 source=()
