@@ -95,6 +95,26 @@ stage_assert() {
   [ "$missing" = 0 ] || exit 1
 }
 
+# 断言：staging 内所有 ELF 对 Qt 的符号版本依赖只能是泛化 Qt_6，不得出现小版本 tag
+# （Qt_6.4 / Qt_6.12 之类）。小版本 tag 来自 QtCore 的 qt_version_tag 哨兵，构建侧已在
+# CMake 全局禁用（QT_NO_VERSION_TAGGING）；此断言机械防回退——新目标/新依赖漏覆盖时
+# 在打包阶段失败，而不是流出到低版本 Qt 用户手里（实例：v0.3.2 arch 包在 Qt 6.11
+# 系统上 version 'Qt_6.12' not found）。
+assert_portable_qt_links() {
+  local bad=0 f
+  while IFS= read -r -d '' f; do
+    # 只检查 ELF（头四字节 7f 45 4c 46）；其余文件 readelf 无意义
+    [ "$(head -c 4 "$f" | od -An -tx1 | tr -d ' \n')" = "7f454c46" ] || continue
+    if readelf -V "$f" 2>/dev/null | grep -qE 'Qt_[0-9]+\.[0-9]+'; then
+      echo "错误: $f 绑定了 Qt 小版本符号版本（应为泛化 Qt_6）：" >&2
+      readelf -V "$f" 2>/dev/null | grep -E 'Qt_[0-9]+\.[0-9]+' >&2
+      bad=1
+    fi
+  done < <(find "$PKGROOT" -type f -print0)
+  [ "$bad" = 0 ] || { echo "错误: 产物不得依赖 Qt 小版本符号版本（见 QT_NO_VERSION_TAGGING）" >&2; exit 1; }
+  echo "==> Qt 链接可移植性断言通过（无小版本符号版本依赖）"
+}
+
 make_deb() {
   # Debian 政策：/usr/share/doc/<pkg>/copyright
   install -Dm644 "$SRC/LICENSE" "$PKGROOT/usr/share/doc/beatbench/copyright"
@@ -262,6 +282,7 @@ EOF
 install_build_deps
 build_and_stage
 stage_assert
+assert_portable_qt_links
 case "$FORMAT" in
   deb) make_deb ;;
   rpm) make_rpm ;;
