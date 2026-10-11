@@ -91,8 +91,10 @@ macOS 打包范畴；② GUI 的悬停 / 拖拽等交互行为在 Linux/macOS **
 
 ## 快速构建
 
-> GUI 需要 Qt **6.4+**（Linux 系统 Qt 下限，CI 的 `probe-qt64` 持续验证；CI 另在 6.11.2 上跑全量；
-> Windows 发布包内嵌 CI 所用 Qt 版本 6.11.2）。
+> GUI 需要 Qt **6.4+**(Linux 系统 Qt 下限,CI 的 `probe-qt64` 持续验证;CI 另在 6.11.2 上跑全量;
+> Windows 发布包内嵌 CI 所用 Qt 版本 6.11.2)。发行版包**不绑定 Qt 小版本**(构建侧禁用
+> Qt 版本哨兵 `QT_NO_VERSION_TAGGING`,打包脚本机械断言兜底),只要系统的 Qt ≥ 6.4
+> 即可加载,与构建容器的 Qt 版本无关。
 
 ### CLI + 测试
 
