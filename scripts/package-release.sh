@@ -85,9 +85,26 @@ echo "==> windeployqt 部署 Qt 运行时"
 # --no-quick3dutils：Qt6Quick3DUtils.dll（0.49 MB）同理，只有装了 qtquick3d 的 Qt 才会带。
 #   包内 exe/DLL 的导入表与全部 QML 都不引用这两个 DLL（实测扫描），删掉安全；
 #   真少了会加载失败，下方冒烟会拦住。
+#
+#   ⚠️ 但 --no-quick3dutils **只在装了 qtquick3d 的 Qt 上被注册**：quick3d 相关开关是随该
+#   模块注册的，缺失时 windeployqt 直接 `Unknown option 'no-quick3dutils'` 并以 1 退出
+#   （同类先例 msys2/MINGW-packages#22952）。它**不列在 --help 里**，所以不能靠帮助文本判断，
+#   只能实跑探测。CI 的 aqt 最小安装恰好没有 qtquick3d —— v0.4.0 首次自动发版就倒在这里
+#   （本机开发是完整 Qt，开关存在，故 A/B 测试发现不了）。
+#   处理：探测不可用就跳过；未装 qtquick3d 的 Qt 本来也不会部署那个 DLL，跳过无损失。
+QUICK3D_OPT=()
+# 探测**不能写成 `windeployqt … | grep -q`**：本脚本开了 pipefail，探测命令本身以非 0 退出
+# 会让整条管道非 0，grep 即便命中也会被读成「不支持」——恰好在 CI 那种情况下判反。
+quick3d_probe="$("$QT_ROOT/bin/windeployqt.exe" --no-quick3dutils 2>&1 || true)"
+case "$quick3d_probe" in
+  *"Unknown option"*)
+    echo "  [skip] 此 windeployqt 未注册 --no-quick3dutils（该 Qt 未装 qtquick3d，没有 Quick3D 残留可裁）" ;;
+  *) QUICK3D_OPT=(--no-quick3dutils) ;;
+esac
+
 "$QT_ROOT/bin/windeployqt.exe" --release --qmldir "$ROOT/app/qml" \
   --no-opengl-sw --no-system-d3d-compiler --no-system-dxc-compiler --no-compiler-runtime \
-  --no-quick3dutils \
+  "${QUICK3D_OPT[@]}" \
   "$STAGE/beatbench.exe" >/dev/null
 # windeployqt 偶发把 exe 复制/改名成与 QML 模块同名文件（BeatBench，无扩展名），
 # 且可能生成残留目录；此处一律清掉（应用模块稍后从构建目录重新拷贝）。
