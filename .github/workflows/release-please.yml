@@ -5,10 +5,12 @@
 # 合并后自动打 tag vX.Y.Z 并建 GitHub Release。
 #
 # ⚠️ 下游衔接：合并 release PR 后的 tag 必须能触发 release.yml / package.yml，而
-# GITHUB_TOKEN 产生的事件不会触发其它 workflow（GitHub 防递归）。因此仓库需配置
-# secret RELEASE_PLEASE_TOKEN（classic PAT 带 repo，或 fine-grained 的
-# Contents: RW + Pull requests: RW）。未配置时表达式降级为 GITHUB_TOKEN，发版会停在
-# 「tag 已打、产物不构建」，需手动 dispatch release.yml（输入 tag）与 package.yml 补跑。
+# GITHUB_TOKEN 产生的事件不会触发其它 workflow（GitHub 防递归）。因此仓库**必须**配置
+# secret RELEASE_PLEASE_TOKEN：fine-grained PAT 勾 Contents: RW + Issues: RW +
+# Pull requests: RW（且只授权本仓库），或 classic PAT 带 repo（+ workflow）。
+# ⚠️ 本仓库 Settings→Actions→General 的 "Allow GitHub Actions to create and approve
+# pull requests" 处于关闭状态，GITHUB_TOKEN 连 release PR 都建不出来——**不存在可用的
+# GITHUB_TOKEN 降级路径**；缺 secret 时本 workflow 会在创建 PR 时失败（见下方检查步骤）。
 #
 # 操作约定（配合 doc/11 §5）：
 # - 变更只写 Conventional Commits：feat → 次版本，fix → 修订版，
@@ -23,6 +25,7 @@ on:
 
 permissions:
   contents: write
+  issues: write          # release-please 要给 release PR 打 autorelease 标签（属 Issues 权限）
   pull-requests: write
 
 jobs:
@@ -34,7 +37,7 @@ jobs:
           RELEASE_PLEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
         run: |
           if [ -z "$RELEASE_PLEASE_TOKEN" ]; then
-            echo "::warning::未配置 secret RELEASE_PLEASE_TOKEN：本次降级用 GITHUB_TOKEN，其打的 tag 不会触发 release.yml / package.yml（GitHub 防递归），发版会停在「tag 已打、产物不构建」，需手动 dispatch 两条流水线补跑。配置步骤见 doc/11 §5。"
+            echo '::warning::未配置 secret RELEASE_PLEASE_TOKEN：GITHUB_TOKEN 既建不出 release PR（本仓库未开启 Actions 创建 PR），其打的 tag 也不会触发 release.yml / package.yml（GitHub 防递归）——本次发版必然失败。请配置该 secret（Contents RW + Issues RW + Pull requests RW），见 doc/11 §5。'
           fi
       - uses: googleapis/release-please-action@v4
         with:
