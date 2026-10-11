@@ -27,11 +27,26 @@ ROOT="$(pwd)"
 # ---- 可配置项 ----
 QT_ROOT="${QT_ROOT:-}"
 CXX_BIN="${CXX_BIN:-}"
+CC_BIN="${CC_BIN:-}"
 NINJA_BIN="${NINJA_BIN:-}"
 
 [ -n "$QT_ROOT" ] || { echo "错误: 请设置 QT_ROOT（Qt 安装目录）" >&2; exit 1; }
 [ -n "$CXX_BIN" ] || { echo "错误: 请设置 CXX_BIN（MinGW g++.exe 路径）" >&2; exit 1; }
 [ -n "$NINJA_BIN" ] || { echo "错误: 请设置 NINJA_BIN（Ninja 路径）" >&2; exit 1; }
+
+# C 编译器：PortAudio 是 C 代码。只指定 CXX 而让 C 走 PATH 上的默认编译器时，若那套 gcc 与
+# Qt 自带的 MinGW 不是同一个（例如 Git Bash 的 /mingw64 与 Qt 的 minGW13**），报错是
+# 「dsound.h / rpcsal.h: No such file or directory」这类**指向错误**的假线索——头文件其实都在
+# Qt 的 MinGW 里。默认从 CXX_BIN 同目录推导 gcc（Qt 的 MinGW 套件里二者同级）。
+if [ -z "$CC_BIN" ]; then
+  _cc_cand="$(dirname "$CXX_BIN")/gcc.exe"
+  [ -f "$_cc_cand" ] && CC_BIN="$_cc_cand"
+fi
+if [ -z "$CC_BIN" ]; then
+  echo "提示: 未能确定 C 编译器（CC_BIN）。PortAudio 是 C 代码，若 PATH 上默认 gcc 与 Qt 自带的" >&2
+  echo "      MinGW 不一致，会报 dsound.h/rpcsal.h 缺失之类的假错误。建议设 CC_BIN，或把 Qt 的" >&2
+  echo "      MinGW bin 目录放到 PATH 最前面。" >&2
+fi
 BUILD="$ROOT/build-release"
 OUT="$ROOT/out"
 
@@ -53,9 +68,13 @@ echo "==> Qt:   $QT_ROOT"
 if [ ! -f "$BUILD/CMakeCache.txt" ]; then
   echo "==> 配置 $BUILD (Release/Ninja)"
   # CMake >= 4.0 移除 <3.5 兼容；portaudio(FetchContent).CMakeLists 仍写 VERSION 2.8，需显式放行。
+  # C 编译器同样显式指定（PortAudio 是 C）：见上方 CC_BIN 的说明。
+  CC_ARG=()
+  [ -n "$CC_BIN" ] && CC_ARG=(-DCMAKE_C_COMPILER="$CC_BIN")
   cmake -S . -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_PREFIX_PATH="$QT_ROOT" \
     -DCMAKE_CXX_COMPILER="$CXX_BIN" \
+    "${CC_ARG[@]}" \
     -DCMAKE_MAKE_PROGRAM="$NINJA_BIN" \
     -DBEATBENCH_BUILD_TESTS=OFF \
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5
@@ -85,9 +104,26 @@ echo "==> windeployqt 部署 Qt 运行时"
 # --no-quick3dutils：Qt6Quick3DUtils.dll（0.49 MB）同理，只有装了 qtquick3d 的 Qt 才会带。
 #   包内 exe/DLL 的导入表与全部 QML 都不引用这两个 DLL（实测扫描），删掉安全；
 #   真少了会加载失败，下方冒烟会拦住。
+#
+#   ⚠️ 但 --no-quick3dutils **只在装了 qtquick3d 的 Qt 上被注册**：quick3d 相关开关是随该
+#   模块注册的，缺失时 windeployqt 直接 `Unknown option 'no-quick3dutils'` 并以 1 退出
+#   （同类先例 msys2/MINGW-packages#22952）。它**不列在 --help 里**，所以不能靠帮助文本判断，
+#   只能实跑探测。CI 的 aqt 最小安装恰好没有 qtquick3d —— v0.4.0 首次自动发版就倒在这里
+#   （本机开发是完整 Qt，开关存在，故 A/B 测试发现不了）。
+#   处理：探测不可用就跳过；未装 qtquick3d 的 Qt 本来也不会部署那个 DLL，跳过无损失。
+QUICK3D_OPT=()
+# 探测**不能写成 `windeployqt … | grep -q`**：本脚本开了 pipefail，探测命令本身以非 0 退出
+# 会让整条管道非 0，grep 即便命中也会被读成「不支持」——恰好在 CI 那种情况下判反。
+quick3d_probe="$("$QT_ROOT/bin/windeployqt.exe" --no-quick3dutils 2>&1 || true)"
+case "$quick3d_probe" in
+  *"Unknown option"*)
+    echo "  [skip] 此 windeployqt 未注册 --no-quick3dutils（该 Qt 未装 qtquick3d，没有 Quick3D 残留可裁）" ;;
+  *) QUICK3D_OPT=(--no-quick3dutils) ;;
+esac
+
 "$QT_ROOT/bin/windeployqt.exe" --release --qmldir "$ROOT/app/qml" \
   --no-opengl-sw --no-system-d3d-compiler --no-system-dxc-compiler --no-compiler-runtime \
-  --no-quick3dutils \
+  "${QUICK3D_OPT[@]}" \
   "$STAGE/beatbench.exe" >/dev/null
 # windeployqt 偶发把 exe 复制/改名成与 QML 模块同名文件（BeatBench，无扩展名），
 # 且可能生成残留目录；此处一律清掉（应用模块稍后从构建目录重新拷贝）。
