@@ -2,10 +2,6 @@
 
 本文件记录 BeAtBench 对各发布版本的用户可见变更。版本号遵循语义化版本（major.minor.patch）；仓库规范见 `doc/04`。
 
-> 2026-10 起版本小节由 release-please 依据 Conventional Commits 自动生成：`feat` →
-> 次版本、`fix` → 修订版、`!` + `BREAKING CHANGE:` → 主版本（ci/docs/chore 等不进
-> CHANGELOG），不再手工维护；发布流程见 `doc/11` §5。
-
 ## [0.3.2] - 2026-10-08
 
 > 打包版：**谱面编辑功能与 0.3.1 完全一致**，本版把发布面铺开——新增 Linux 发行版包
