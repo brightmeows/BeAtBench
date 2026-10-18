@@ -10,6 +10,7 @@
 //     的完整状态（含 ln_pair 指向的伙伴快照），invert 用快照精确恢复。
 #include "beatbench/core/edit/EditorSession.hpp"
 #include "beatbench/core/edit/Selection.hpp"
+#include "beatbench/core/ChartMode.hpp"
 #include "beatbench/core/bms/BmsUtil.hpp"  // c36/c62 id 转换（LNOBJ 文本 → 数值 id）
 
 #include <algorithm>
@@ -1373,31 +1374,25 @@ std::string QuantizeNoteCommand::describe() const {
 
 // ---------- TransformNoteCommand ----------
 
-namespace {
-
-// 变换 lane：mirror = key i ↔ key (max-i+1)；rotate = key 循环移位。返回变换后 lane。
+// 变换 lane（见 EditorSession.hpp 声明）：mirror = key i ↔ key (max+1-i)；
+// rotate = key 循环移位。键号上限由调用方按谱面模式传入（chart_mode_key_count）——
+// pms9k 镜像键1↔键9、7key 镜像键1↔键7；DP 两侧各自变换（player 保留，只动 index）。
 // 非 Key lane（scratch/pedal/bgm）不参与（LR2 惯例：镜像/旋转只动按键轨）。
-Lane transform_lane(const Lane& lane, bool mirror, int rotate) {
+Lane transform_lane(const Lane& lane, bool mirror, int rotate, int max_key) {
     if (lane.kind != LaneKind::Key) return lane;
-    // 键号上限：按模式？——命令不感知模式（模式是 Chart.mode_id 的呈现层概念）。
-    // 这里用保守的 1..7（sp7k/dp 的键号区间；pms9k 键 1..9 超出部分不参与）。
-    // 镜像：i → 8-i（1↔7, 2↔6, 3↔5, 4↔4）
-    constexpr int kMaxKey = 7;
     int idx = lane.index;
-    if (mirror) idx = kMaxKey + 1 - idx;
+    if (mirror) idx = max_key + 1 - idx;
     if (rotate != 0) {
-        // 循环移位：1→2→3→…→7→1（rotate 步）
-        idx = ((idx - 1 + rotate) % kMaxKey + kMaxKey) % kMaxKey + 1;
+        // 循环移位：1→2→…→max_key→1（rotate 步）
+        idx = ((idx - 1 + rotate) % max_key + max_key) % max_key + 1;
     }
-    // 超出 1..7 的键号（pms9k 的 8/9）镜像后回落到 0/负 → 夹回
+    // 超出 1..max_key 的键号（异常输入）夹回
     if (idx < 1) idx = 1;
-    if (idx > kMaxKey) idx = kMaxKey;
+    if (idx > max_key) idx = max_key;
     Lane out = lane;
     out.index = static_cast<std::uint8_t>(idx);
     return out;
 }
-
-}  // namespace
 
 TransformNoteCommand::TransformNoteCommand(std::uint32_t measure, Rational pos, Lane lane,
                                            std::uint32_t sample, bool mirror, int rotate)
@@ -1407,7 +1402,10 @@ TransformNoteCommand::TransformNoteCommand(std::uint32_t measure, Rational pos, 
 void TransformNoteCommand::apply(Chart& chart) {
     const auto idx = find_note(chart.notes, m_measure, m_pos, m_lane, m_sample);
     if (!idx) return;
-    m_new_lane = transform_lane(m_lane, m_mirror, m_rotate);
+    // 键号上限按谱面模式（apply 时刻的 chart.mode_id；undo 侧恢复原 lane 不重算）
+    const int max_key =
+        chart_mode_key_count(chart.mode_id.value_or("sp7k"));
+    m_new_lane = transform_lane(m_lane, m_mirror, m_rotate, max_key);
     if (*m_new_lane == m_lane) {
         m_new_lane.reset();  // 无变化 → invert 无操作
         return;

@@ -279,6 +279,11 @@ private:
     std::optional<Lane> m_new_lane;
 };
 
+/// 键轨 lane 变换（镜像/循环移位公式）：mirror = key i ↔ key (max_key+1-i)；
+/// rotate = key 轨循环移位（1→2→…→max_key→1，负数反向）。非 Key lane 原样返回。
+/// max_key 由调用方按谱面模式传入（chart_mode_key_count），本函数不感知模式。
+Lane transform_lane(const Lane& lane, bool mirror, int rotate, int max_key);
+
 /// 编辑头部字段（doc/05 §107「元信息表单」→ meta.edit）。
 /// 语义：设置 Chart.meta[key] = value。**value 为空串 = 删除该字段**（元信息表单清空输入）。
 /// 逆操作：恢复原值（原不存在 → 移除；原存在 → 恢复旧值）。
