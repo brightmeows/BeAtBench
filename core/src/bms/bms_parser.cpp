@@ -267,39 +267,80 @@ BmsReadResult read_bms(std::string_view text, const BmsReadOptions& opts) {
         chart.mode_id = opts.mode;
     }
 
-    // ---- 预扫描 0c：9key（PMS）通道约定探测（2026-10 BME-SP 型兼容）。 ----
-    // 9KEYS 有两套真实通道约定（BMS command memo PMS 节）：
-    //   标准 PMS：键6-9 = 22-25（BMS-DP 通道复用，绝大多数 .pms）；
-    //   BME-SP 型：键6=18、键7=19、键8=16、键9=17（LR2 2009+ 对 .pms 的解释；
-    //   现行笔记派表把 16-19 顺次读成键6-9，BME-SP 谱面键位错位）。
-    // 探测（只依赖通道证据，不区分显式/推断来源）：出现 22-25 → 标准；仅出现
-    // 16-19 → 判 BME-SP 型，mode_id 升级为 "pms9k-bmesp"（读侧换 BME-SP 表、写回
-    // 约定跟随保号；LN 5x/地雷 D/E 槽位 5-8 同位序跟随）；两集合共存 → 维持标准
-    // 判读 + Warning（异常混用，写回标准）。无任何证据 → 标准（零破坏）。
-    // 显式 opts.mode = "pms9k-bmesp" 可强制（跳过探测，直接走 BME-SP 表）。
+    // ---- 预扫描 0c：9key（PMS）写回约定探测（2026-10 BME-SP 型兼容）。 ----
+    // 9KEYS 有两套真实通道约定（hitkey「9KEYS BMS-DP」/「BME-SP 型」；BMS command memo
+    // PMS 节）：
+    //   标准 PMS：键6-9 普通=22-25、LN=62-65、地雷=E2-E5（BMS-DP 通道复用，绝大多数 .pms）；
+    //   BME-SP 型：键6-9 普通=18/19/16/17、LN=58/59/56/57、地雷=D8/D9/D6/D7
+    //   （LR2 2009+ 对 .pms 的解释）。
+    // 读写分离：两套别名在 9key 读侧表内并存、物理键固定（bms_channel_maps.cpp），
+    // 读侧键位不依赖探测结果；本探测只决定写回 profile：仅 BME-SP 别名证据 → mode_id
+    // 升级 "pms9k-bmesp"（写回保号，面向 LR2 等老播放器）；其余 → "pms9k"（写回标准
+    // PMS）；两集合共存 = 混合编码，维持标准写回 + Warning（部分播放器不兼容，保存时
+    // 统一为标准通道）。无任何证据 → 标准（零破坏）。
+    // 证据行语义与主循环一致：跳过块注释 /* */、// 与 * 行注释、空行；数据行须含
+    // 非 00 槽位（全 00 行不构成证据）；通道大小写折叠（36 进制）。
+    // 显式 opts.mode = "pms9k-bmesp" 可强制（跳过探测）。
     if (chart.mode_id && chart.mode_id->rfind("pms9k", 0) == 0 &&
         *chart.mode_id != "pms9k-bmesp") {
         bool bmesp_used = false;
         bool std_used = false;
         int first_bmesp_line = 0;
+        bool in_block_comment = false;
         for (const auto& [line, number] : lines) {
-            (void)number;
-            if (line.empty() || line[0] != '#') continue;
-            const auto token = field_token(line);
-            // 数据行：#mmmcc:（3 位小节 + 2 位数字通道；16-19/22-25 全数字，无大小写问题）
-            if (token.size() != 5 || !is_ascii_digit(token[0]) || !is_ascii_digit(token[1]) ||
-                !is_ascii_digit(token[2]) || !is_ascii_digit(token[3]) ||
-                !is_ascii_digit(token[4])) {
+            if (in_block_comment) {
+                if (line.find("*/") != std::string_view::npos) in_block_comment = false;
                 continue;
             }
+            if (line.empty()) continue;
+            std::size_t lead = 0;
+            while (lead < line.size() && std::isspace(static_cast<unsigned char>(line[lead]))) {
+                ++lead;
+            }
+            const auto rest = line.substr(lead);
+            if (rest.starts_with("/*")) {
+                in_block_comment = rest.find("*/") == std::string_view::npos;
+                continue;
+            }
+            if (rest.starts_with("//") || rest.starts_with("*")) continue;
+            if (line[0] != '#') continue;
+            const auto token = field_token(line);
+            // 数据行：#mmmcc:（3 位小节 + 2 位 36 进制通道 + ':'；与主循环判定一致）
             const std::size_t token_end =
                 static_cast<std::size_t>(token.data() - line.data()) + token.size();
-            if (token_end >= line.size() || line[token_end] != ':') continue;
-            const auto cc = line.substr(static_cast<std::size_t>(token.data() - line.data()) + 3, 2);
-            if (cc >= "16" && cc <= "19") {
+            if (token.size() != 5 || token_end >= line.size() || line[token_end] != ':') {
+                continue;
+            }
+            if (!is_ascii_digit(token[0]) || !is_ascii_digit(token[1]) ||
+                !is_ascii_digit(token[2]) || !is_c36_digit(token[3]) ||
+                !is_c36_digit(token[4])) {
+                continue;
+            }
+            // 全 00 数据行不构成证据（与主循环「00 槽位为空」一致）
+            const auto data = line.substr(token_end + 1);
+            bool has_event = false;
+            for (std::size_t i = 0; i + 1 < data.size(); i += 2) {
+                if (data[i] != '0' || data[i + 1] != '0') {
+                    has_event = true;
+                    break;
+                }
+            }
+            if (!has_event) continue;
+            // 证据集合（大小写折叠后匹配）：
+            //   BME-SP 别名：16-19（普通）/ 56-59（LN）/ D6-D9（地雷）
+            //   标准别名：22-25（普通）/ 62-65（LN）/ E2-E5（地雷）
+            const char c0 =
+                static_cast<char>(std::toupper(static_cast<unsigned char>(token[3])));
+            const char c1 =
+                static_cast<char>(std::toupper(static_cast<unsigned char>(token[4])));
+            const bool bmesp_ev =
+                (c0 == '1' || c0 == '5' || c0 == 'D') && c1 >= '6' && c1 <= '9';
+            const bool std_ev =
+                (c0 == '2' || c0 == '6' || c0 == 'E') && c1 >= '2' && c1 <= '5';
+            if (bmesp_ev) {
                 if (!bmesp_used) first_bmesp_line = number;
                 bmesp_used = true;
-            } else if (cc >= "22" && cc <= "25") {
+            } else if (std_ev) {
                 std_used = true;
             }
         }
@@ -307,8 +348,8 @@ BmsReadResult read_bms(std::string_view text, const BmsReadOptions& opts) {
             if (std_used) {
                 result.diagnostics.push_back(
                     {Severity::Warning,
-                     "9key 通道约定混用（16-19 与 22-25 共存）：按标准 PMS 判读，"
-                     "16-19 将按键6-9 处理；请检查谱面通道", first_bmesp_line});
+                     "9key 通道约定混用（标准与 BME-SP 别名共存）：混合编码部分播放器"
+                     "不兼容，按标准 PMS 判读；保存时将统一写为标准通道", first_bmesp_line});
             } else {
                 chart.mode_id = "pms9k-bmesp";
             }
