@@ -9,9 +9,11 @@
 #include <QMetaObject>
 #include <QThreadPool>
 
+#include "beatbench/core/ChartMode.hpp"
 #include "beatbench/core/bms/BmsCodec.hpp"
 #include "beatbench/core/bms/BmsUtil.hpp"
 #include "beatbench/core/bms/ChannelMap.hpp"
+#include "beatbench/core/codec/BmsChannelMaps.hpp"
 #include "beatbench/core/codec/Codec.hpp"
 #include "beatbench/core/codec/CodecRegistry.hpp"
 #include "beatbench/core/command/Command.hpp"
@@ -111,6 +113,11 @@ QStringList ChartSession::codecModes() const {
         for (const auto& m : c->modes()) out << QString::fromStdString(std::string(m));
     }
     return out;
+}
+
+int ChartSession::playKeyCount() const {
+    if (!m_chart) return 7;
+    return beatbench::chart_mode_key_count(m_chart->mode_id.value_or("sp7k"));
 }
 
 void ChartSession::refresh() {
@@ -506,8 +513,12 @@ QString ChartSession::laneChannel(int player, const QString& kindStr, int index)
     else if (kindStr == QLatin1String("pedal")) lane.kind = beatbench::LaneKind::Pedal;
     else if (kindStr == QLatin1String("bgm")) lane.kind = beatbench::LaneKind::Bgm;
     else lane.kind = beatbench::LaneKind::Key;
+    // 按**当前谱面模式**反向映射（2026-10 复核：legacy bms_channel_for 恒 7key 表，
+    // PMS 键6/7 显示成 ch18/19、键8/9 为空）。显示的是规范化**写出通道**（保存时按
+    // mode_id 约定落盘的通道号，与列头同源）。
+    const std::string mode = m_chart->mode_id.value_or("sp7k");
     const std::string ch =
-        beatbench::bms::bms_channel_for(lane, false, beatbench::NoteKind::Normal);
+        beatbench::bms::bms_channel_for_mode(mode, lane, false, beatbench::NoteKind::Normal);
     return ch.empty() ? QString() : QString::fromStdString(ch);
 }
 

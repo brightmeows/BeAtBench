@@ -1192,6 +1192,8 @@ ApplicationWindow {
         title: qsTr("另存为 BMS 谱面")
         fileMode: FileDialog.SaveFile
         nameFilters: [qsTr("BMS 谱面 (*.bms *.bml *.bme *.pms)"), qsTr("所有文件 (*)")]
+        // PMS 谱默认 .pms 后缀（parser 按后缀推断模式；2026-10 复核验收项）
+        defaultSuffix: window.chartMode === "pms9k" ? "pms" : "bms"
         onAccepted: {
             const ok = saveChartAs(urlToPath(selectedFile))
             if (window.pendingDocAction !== "") {
@@ -1688,9 +1690,11 @@ ApplicationWindow {
         window.chartFormat = "bms"
         window.chartMode = mode
         window.chartEncoding = "utf8"
-        // 默认元信息（空谱面面板可编辑；TITLE 等留空让用户填）
+        // 默认元信息（空谱面面板可编辑；TITLE 等留空让用户填）。
+        // ⚠️ 不预设 PLAYER（2026-10 复核）：草稿回填 "1" 会覆盖模式推导——DP/Battle 新建
+        // 保存后 PLAYER 由 writer 按 mode_id 推导（dp=3/battle=4），重开不再退回 SP。
         window.chartMeta = { "TITLE": "", "ARTIST": "", "GENRE": "", "SUBTITLE": "",
-                             "BPM": "130", "PLAYER": "1", "PLAYLEVEL": "", "RANK": "",
+                             "BPM": "130", "PLAYLEVEL": "", "RANK": "",
                              "TOTAL": "", "DIFFICULTY": "" }
         window.currentBpmValue = 130
         window.pendingLnHead = null

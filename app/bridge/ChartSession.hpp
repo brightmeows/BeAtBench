@@ -42,6 +42,9 @@ public:
     Q_INVOKABLE bool newChart(const QString& mode = {});
     /// 各格式支持的游玩模式 id（Codec::modes，capabilities 同源）——新建对话框/子菜单用。
     Q_INVOKABLE QStringList codecModes() const;
+    /// 当前谱面模式的 1P 键轨数（sp7k/dp/battle=7、pms9k=9；chart_mode_key_count 同源）。
+    /// 无谱面/未知模式返回 7。拖动落点夹边的单一事实源（QML 侧不再硬编码 7）。
+    Q_INVOKABLE int playKeyCount() const;
 
     /// 编辑命令 / 会话切换后由 QML 调用：检测「文档切换」（documentChanged，视图应重置
     /// 滚动）或「内容变化」（contentChanged，视图保持滚动），必要时重建 TimingEngine。
