@@ -153,7 +153,7 @@ public:
     QString path() const { return m_path; }
     Q_INVOKABLE QString errorMessage() const { return m_error; }
     bool hasChart() const { return m_chart != nullptr; }
-    QString activeSessionId() const { return QString::fromStdString(m_sessionId); }
+    Q_INVOKABLE QString activeSessionId() const { return QString::fromStdString(m_sessionId); }
 
     /// 小节数 = 最大事件小节 + 1（空谱 = 0）。
     int measureCount() const;

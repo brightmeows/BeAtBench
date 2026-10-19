@@ -35,7 +35,8 @@ if(BEATBENCH_NODE_EXECUTABLE)
     if(BEATBENCH_NODE_VERSION MATCHES "^v([0-9]+)" AND CMAKE_MATCH_1 GREATER_EQUAL 18)
         add_test(NAME qml_session_regression_tests
             COMMAND "${BEATBENCH_NODE_EXECUTABLE}" --test
-                "${CMAKE_CURRENT_SOURCE_DIR}/qml_session_regression_test.js")
+                "${CMAKE_CURRENT_SOURCE_DIR}/qml_session_regression_test.js"
+                "${CMAKE_CURRENT_SOURCE_DIR}/qml_pms_save_guard_test.js")
         set_tests_properties(qml_session_regression_tests PROPERTIES TIMEOUT 20)
     endif()
 endif()
