@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <unordered_set>
 #include <vector>
 
 #include "beatbench/core/Chart.hpp"
@@ -262,7 +263,7 @@ private:
 class TransformNoteCommand : public EditCommand {
 public:
     TransformNoteCommand(std::uint32_t measure, Rational pos, Lane lane, std::uint32_t sample,
-                         bool mirror, int rotate);
+                         bool mirror, int rotate, std::uint32_t sub_line = 0);
     std::string name() const override { return "note.transform"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
@@ -275,6 +276,16 @@ private:
     std::uint32_t m_sample;
     bool m_mirror;
     int m_rotate;
+    std::uint32_t m_sub_line;
+    friend class CompositeCommand;
+    /// 批次先统一定位源；每个原物件最多认领一次，不会命中先前写入的目标。
+    void bind_source(const Chart& chart, std::unordered_set<std::size_t>& claimed);
+    void bind_target(const Chart& chart, std::unordered_set<std::size_t>& claimed);
+    void apply_bound(Chart& chart);
+    void invert_bound(Chart& chart);
+    /// 索引仅在同批次读写之间稳定；撤销前按完整特征重新绑定，容忍其它命令重排。
+    std::optional<std::size_t> m_index;
+    std::optional<Note> m_source;
     /// apply 后的新 lane（invert 恢复）
     std::optional<Lane> m_new_lane;
 };

@@ -82,6 +82,8 @@ std::optional<ChartMode> chart_mode_by_id(std::string_view id) {
 }
 
 int chart_mode_key_count(std::string_view id) {
+    // 写回 profile 不是新建模式选项；BME-SP 变体沿用 PMS 的九键布局。
+    if (id == "pms9k-bmesp") id = "pms9k";
     const auto m = chart_mode_by_id(id);
     if (!m) return 7;  // 未知 id：sp7k 兑底
     int max_key = 1;

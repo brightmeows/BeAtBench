@@ -18,8 +18,8 @@
 //     "pms9k-bmesp"（parser 预扫描 0c 探测升级，或显式指定）→ BME-SP 保号：
 //     1P 键6-9 → 18/19/16/17、58/59/56/57、D8/D9/D6/D7（面向 LR2 等老播放器）。
 //   探测只决定写回 profile，见 bms_parser.cpp 预扫描 0c。
-//   2P 两 profile 一致（BME-DP 记法）：键1-5 → 21-25 / 61-65 / E1-E5；键6-9 →
-//   28/29/26/27 / 66-69 / E6-E9。9key 单面谱正常不出现，仅为往返保留。
+//   单面 PMS 的 22-25/62-65/E2-E5 已属于 1P；不能反写 2P 普通键或键2-5。
+//   读表遗留支持的 2P LN/地雷键1、6-9，仍可写回 61/66-69、E1/E6-E9。
 #include "beatbench/core/codec/BmsChannelMaps.hpp"
 
 #include <array>
@@ -195,8 +195,6 @@ constexpr const char* kPmsStdMine69[4] = {"E2", "E3", "E4", "E5"};
 constexpr const char* kPmsBmespKey69[4] = {"18", "19", "16", "17"};
 constexpr const char* kPmsBmespLn69[4] = {"58", "59", "56", "57"};
 constexpr const char* kPmsBmespMine69[4] = {"D8", "D9", "D6", "D7"};
-// 9key 2P 键6-9 普通音（BME-DP 记法，两 profile 一致）。
-constexpr const char* kPms2pKey69[4] = {"28", "29", "26", "27"};
 
 }  // namespace
 
@@ -224,12 +222,15 @@ std::optional<BmsChannelRule> bms_channel_rule_for(std::string_view mode,
 
 std::string bms_channel_for_mode(std::string_view mode, const Lane& lane, bool ln,
                                  NoteKind kind) {
+    // 模型可由协议/插件直接构造，不能依赖读侧保证玩家与数组下标合法。
+    if (lane.player > 1) return {};
     // 背景音轨（ch01）：不参与 LN/地雷位序，恒为 "01"
     if (lane.kind == LaneKind::Bgm) {
         if (ln) return {};
         return "01";
     }
     if (is_pms9k_mode(mode)) {
+        if (lane.kind != LaneKind::Key || lane.index < 1 || lane.index > 9) return {};
         // 9key（PMS）写侧：profile 按 mode_id 分派（读侧两套别名并存、物理键固定，
         // 见文件头注释）。读入什么约定，写回什么约定（约定跟随保号）。
         const bool bmesp = mode == "pms9k-bmesp";
@@ -246,18 +247,13 @@ std::string bms_channel_for_mode(std::string_view mode, const Lane& lane, bool l
             if (ln) return bmesp ? kPmsBmespLn69[i] : kPmsStdLn69[i];
             return bmesp ? kPmsBmespKey69[i] : kPmsStdKey69[i];
         }
-        // 2P（BME-DP 记法，两 profile 一致）：键1-5 → 21-25/61-65/E1-E5；
-        // 键6-9 → 28/29/26/27 / 66-69 / E6-E9（9key 单面谱正常不出现，仅为往返保留）。
-        if (lane.index <= 5) {
-            const char d = static_cast<char>('1' + (lane.index - 1));
-            if (kind == NoteKind::Landmine) return std::string("E") + d;
-            if (ln) return std::string("6") + d;
-            return std::string("2") + d;
-        }
-        const char d = static_cast<char>('5' + (lane.index - 5));  // 键6-9 → '6'-'9'
+        // 仅保留读表确实支持的 2P LN/地雷，不能写出会读成1P键6-9的碰撞通道，
+        // 也不能把未注册的21/26-29称作可表示。18KEYS布局不在本单面profile范围内。
+        if (lane.index >= 2 && lane.index <= 5) return {};
+        const char d = static_cast<char>('0' + lane.index);
         if (kind == NoteKind::Landmine) return std::string("E") + d;
         if (ln) return std::string("6") + d;
-        return kPms2pKey69[lane.index - 6];
+        return {};
     }
     const auto& t = table7();
     const int slot = lane_slot(t, lane.kind, lane.index);

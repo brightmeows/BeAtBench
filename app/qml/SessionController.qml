@@ -504,15 +504,17 @@ QtObject {
         const newRefs = []
         for (let i = 0; i < refs.length; i++) {
             const ref = refs[i]
-            // ⚠️ 绝对目标吸附（用户 2026-09）：落点 = 源 + delta 后**整体吸附到网格**，
-            // 不是只吸附位移 delta——否则 1/8 音符在 1/4 snap 下仍停在 1/8+k/4（不量化到通道）。
-            // 期望：1/8 note 在 1/4 snap 下只能到 0/4,1/4,2/4,3/4。网格对齐 note 保持「同距离」。
+            // 与 ghost 的 qFuzzyIsNull 契约一致：纯横拖保留离网原拍位。
+            // 纵向直接以整数槽表示绝对目标，再由现有有理数工具归一化；
+            // 不把「吸附目标 - 离网源」按 snap 分母再量化（会产生二次位移）。
             const origMf = ref.measure + ref.pos.num / ref.pos.den
-            const snappedTarget = Math.round((origMf + deltaF) * slots) / slots
-            const d = snappedTarget - origMf
-            const dm = Math.floor(d)
-            const delta = { measure: dm, pos: { num: Math.round((d - dm) * den), den: den } }
-            const to = addPosDelta(ref, delta)
+            const targetSlotF = (origMf + deltaF) * slots
+            // 与 ghost 的 std::round 一致，负半槽也向远离零方向舍入。
+            const targetSlot = targetSlotF < 0 ? -Math.round(-targetSlotF) : Math.round(targetSlotF)
+            const to = Math.abs(deltaF) <= 1e-12
+                ? { measure: ref.measure, pos: ref.pos }
+                : addPosDelta({ measure: 0, pos: { num: 0, den: 1 } },
+                              { measure: 0, pos: { num: targetSlot, den: slots } })
             let changedLane = false
             // 连续轨道列秩间距：noteCol = 该 note 源列下标；gap = 相对拖起列的列间距。
             // 用于 key→key / play→bgm / bgm→key 任一跨族平移——同一变换，天然保相对间距。
@@ -987,7 +989,7 @@ QtObject {
         if (r) {
             if (typeof editPage !== "undefined" && editPage) editPage.commitMeta()
             window.chartPath = r.output
-            var msg = qsTr("已保存：%1（%2 字节）").arg(r.output).arg(r.bytes)
+            var msg = qsTr("已保存：%1（%2 字节）").arg(r.output).arg(r.bytes) + pmsSuffixWarning(r.output)
             if (r.backup_error) msg += qsTr(" · 崩溃备份失败：") + r.backup_error
             setStatus(msg)
             return true
@@ -1012,6 +1014,12 @@ QtObject {
                   ? qsTr("元信息已保存 %1 处（写文件时随整体保存落盘）").arg(n)
                   : qsTr("元信息无改动"))
     }
+    function pmsSuffixWarning(path) {
+        // parser 只由 .pms 后缀自动识别 9key；#PLAYER/内容不能恢复 PMS 模式。
+        return window.isPmsChart && !String(path).toLowerCase().endsWith(".pms")
+            ? qsTr(" · ⚠ 非 .pms 后缀：重新打开无法自动恢复 PMS 9key，通道可能被解释为 SP/DP；请使用 .pms 后缀")
+            : ""
+    }
     function saveChartAs(path) {
         if (typeof editPage !== "undefined" && editPage) {
             const edits = editPage.collectMetaEdits()
@@ -1022,13 +1030,7 @@ QtObject {
         if (r) {
             if (typeof editPage !== "undefined" && editPage) editPage.commitMeta()
             window.chartPath = r.output
-            var msg = qsTr("已另存为：%1").arg(r.output)
-            // 错误扩展名提示（2026-10 复核验收项）：PMS 谱存成 .bms 后缀，重开时
-            // parser 只能靠内容探测（无法从后缀先验 pms9k），提示用户。
-            const p = String(r.output).toLowerCase()
-            if (window.chartMode === "pms9k" && p.endsWith(".bms")) {
-                msg += qsTr(" · ⚠ PMS 谱面保存为 .bms 后缀，重新打开时将按内容推断模式")
-            }
+            var msg = qsTr("已另存为：%1").arg(r.output) + pmsSuffixWarning(r.output)
             if (r.backup_error) msg += qsTr(" · 崩溃备份失败：") + r.backup_error
             setStatus(msg)
             return true

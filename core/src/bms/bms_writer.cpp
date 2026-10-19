@@ -393,11 +393,16 @@ std::string write_bms(const Chart& chart, const BmsWriteOptions& opts) {
         // 即使模型异常残留 ln_channel/配对，也按普通背景 note 写回（绝不丢数据）。
         const bool want_ln =
             !lntype2 && (is_head || is_tail) && n.lane.kind != LaneKind::Bgm;
-        const auto channel =
-            bms_channel_for_mode(mode, n.lane, want_ln, n.kind);
+        auto channel = bms_channel_for_mode(mode, n.lane, want_ln, n.kind);
+        // 部分遗留 PMS 2P 仅有 LN 通道而无普通通道。孤儿也保留源 LN 标记，
+        // 不能降级成会读成1P的普通通道，更不能因缺少配对而静默丢弃。
+        if (channel.empty() && n.ln_channel)
+            channel = bms_channel_for_mode(mode, n.lane, true, n.kind);
         if (channel.empty()) continue;  // 无法表示的 Lane（罕见）→ 丢弃并依赖诊断
         std::string slot_text;
-        if (is_tail && lntype2 && n.lane.kind != LaneKind::Bgm) {
+        const auto output_rule = bms_channel_rule_for(mode, channel);
+        const bool rdm_channel = output_rule && output_rule->ln_channel;
+        if (is_tail && lntype2 && !rdm_channel && n.lane.kind != LaneKind::Bgm) {
             slot_text = lnobj_text;
         } else {
             slot_text = fmt_id(chart, n.sample.id);
@@ -525,21 +530,30 @@ std::string write_bms(const Chart& chart, const BmsWriteOptions& opts) {
                         if (c.sub_line != g) continue;
                         by_pos[c.pos].push_back(c.text);
                     }
-                    std::int64_t n = 1;
+                    // 不同源通道的别名可收敛到同一输出通道/子行；同拍值仍须拆行，
+                    // 不能只取 front()。空子行也保留一行，既有 BGM 空层语义不变。
+                    std::size_t n_rows = 1;
                     for (const auto& [pos, texts] : by_pos) {
-                        if (!texts.empty()) n = std::lcm(n, pos.den);
+                        (void)pos;
+                        n_rows = std::max(n_rows, texts.size());
                     }
-                    std::vector<std::string> slots(static_cast<std::size_t>(n), "00");
-                    for (const auto& [pos, texts] : by_pos) {
-                        if (texts.empty()) continue;
-                        const auto idx = static_cast<std::size_t>(pos.num * n / pos.den);
-                        slots[idx] = texts.front();
+                    for (std::size_t row = 0; row < n_rows; ++row) {
+                        std::int64_t n = 1;
+                        for (const auto& [pos, texts] : by_pos) {
+                            if (texts.size() > row) n = std::lcm(n, pos.den);
+                        }
+                        std::vector<std::string> slots(static_cast<std::size_t>(n), "00");
+                        for (const auto& [pos, texts] : by_pos) {
+                            if (texts.size() <= row) continue;
+                            const auto idx = static_cast<std::size_t>(pos.num * n / pos.den);
+                            slots[idx] = texts[row];
+                        }
+                        char head[16];
+                        std::snprintf(head, sizeof(head), "#%03u%s:", measure, channel.c_str());
+                        out += head;
+                        for (const auto& s : slots) out += s;
+                        out.push_back('\n');
                     }
-                    char head[16];
-                    std::snprintf(head, sizeof(head), "#%03u%s:", measure, channel.c_str());
-                    out += head;
-                    for (const auto& s : slots) out += s;
-                    out.push_back('\n');
                 }
                 continue;
             }

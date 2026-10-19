@@ -73,6 +73,7 @@ ApplicationWindow {
     property string chartEncoding: ""
     /// 游玩模式（info 的 mode；"" = 未打开/未知，显示 SP 7K 缺省）。
     property string chartMode: ""
+    readonly property bool isPmsChart: chartMode === "pms9k" || chartMode === "pms9k-bmesp"
     function modeLabel() {
         const m = window.chartMode
         if (m === "sp7k" || m === "") return "SP7K"
@@ -1194,8 +1195,8 @@ ApplicationWindow {
         title: qsTr("另存为 BMS 谱面")
         fileMode: FileDialog.SaveFile
         nameFilters: [qsTr("BMS 谱面 (*.bms *.bml *.bme *.pms)"), qsTr("所有文件 (*)")]
-        // PMS 谱默认 .pms 后缀（parser 按后缀推断模式；2026-10 复核验收项）
-        defaultSuffix: window.chartMode === "pms9k" ? "pms" : "bms"
+        // 所有 PMS 写出 profile 均需 .pms 后缀，重开才能自动识别 9key。
+        defaultSuffix: window.isPmsChart ? "pms" : "bms"
         onAccepted: {
             const ok = saveChartAs(urlToPath(selectedFile))
             if (window.pendingDocAction !== "") {

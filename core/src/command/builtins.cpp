@@ -502,11 +502,22 @@ namespace {
 
 // JSON → Lane：{player, kind, index}；kind 字符串 "key"/"scratch"/"pedal"/"bgm"
 Lane lane_from_json(const Json& j) {
+    if (!j.is_object()) throw CommandError("bad_args", "lane 应为对象");
     Lane l;
-    if (const Json* p = j.find("player")) l.player = static_cast<std::uint8_t>(p->as_i64());
-    if (const Json* i = j.find("index")) l.index = static_cast<std::uint8_t>(i->as_i64());
+    const auto bounded_byte = [](const Json& v, std::int64_t max, const char* name) {
+        if (!v.is_int() || v.as_i64() < 0 || v.as_i64() > max)
+            throw CommandError("bad_args", std::string("lane.") + name + " 超出范围或不是整数");
+        return static_cast<std::uint8_t>(v.as_i64());
+    };
+    if (const Json* p = j.find("player")) l.player = bounded_byte(*p, 1, "player");
+    if (const Json* i = j.find("index")) l.index = bounded_byte(*i, 255, "index");
     if (const Json* k = j.find("kind")) {
-        const auto& s = k->as_str();
+        if (!k->is_string()) throw CommandError("bad_args", "lane.kind 应为字符串");
+        auto s = k->as_str();
+        for (auto& c : s) if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+        if (s != "key" && s != "scratch" && s != "pedal" && s != "bgm" &&
+            s != "normal" && s != "ln" && s != "mine")
+            throw CommandError("bad_args", "未知 lane.kind");
         if (s == "scratch") l.kind = LaneKind::Scratch;
         else if (s == "pedal") l.kind = LaneKind::Pedal;
         else if (s == "bgm") l.kind = LaneKind::Bgm;
@@ -977,6 +988,7 @@ public:
         std::vector<CopyCell> cells;
         cells.reserve(refs.size());
         std::vector<std::size_t> selected_idx;
+        std::set<std::size_t> claimed;
         for (const auto& ref : refs) {
             const Event<Note>* found = nullptr;
             std::size_t found_i = 0;
@@ -984,9 +996,12 @@ public:
                 const auto& ev = chart.notes[i];
                 if (ev.measure == ref.measure && ev.pos == ref.pos &&
                     ev.value.lane == ref.lane && ev.value.sample.id == ref.sample &&
-                    ev.value.sub_line == ref.sub_line) {
+                    ev.value.sub_line == ref.sub_line && !claimed.contains(i)) {
+                    // 别名收敛后两个合法物件可能拥有完全相同的引用值；逐一认领，
+                    // 否则完整LN选择也会反复命中第一端、被误判为半选。
                     found = &ev;
                     found_i = i;
+                    claimed.insert(i);
                     break;
                 }
             }
@@ -1021,16 +1036,28 @@ public:
         for (const auto& [key, grp] : groups) {
             const auto& [measure, channel, sub_line] = key;
             (void)sub_line;
-            std::int64_t n = 1;
-            for (const auto& c : grp) n = std::lcm(n, c.ref.pos.den);
-            std::vector<std::string> slots(static_cast<std::size_t>(n), "00");
+            // PMS 别名归一后可能同子行同拍有多个值，逐行拆分而非覆盖旧槽位。
+            std::map<Rational, std::vector<std::string>> by_pos;
+            std::size_t n_rows = 1;
             for (const auto& c : grp) {
-                const auto idx = static_cast<std::size_t>(c.ref.pos.num * n / c.ref.pos.den);
-                slots[idx] = fmt_id_text(chart, c.ref.sample);
+                auto& values = by_pos[c.ref.pos];
+                values.push_back(fmt_id_text(chart, c.ref.sample));
+                n_rows = std::max(n_rows, values.size());
             }
-            std::string line = "#" + pad3(measure) + channel + ":";
-            for (const auto& s : slots) line += s;
-            lines.push_back(std::move(line));
+            for (std::size_t row = 0; row < n_rows; ++row) {
+                std::int64_t n = 1;
+                for (const auto& [pos, values] : by_pos)
+                    if (values.size() > row) n = std::lcm(n, pos.den);
+                std::vector<std::string> slots(static_cast<std::size_t>(n), "00");
+                for (const auto& [pos, values] : by_pos) {
+                    if (values.size() <= row) continue;
+                    const auto idx = static_cast<std::size_t>(pos.num * n / pos.den);
+                    slots[idx] = values[row];
+                }
+                std::string line = "#" + pad3(measure) + channel + ":";
+                for (const auto& s : slots) line += s;
+                lines.push_back(std::move(line));
+            }
         }
         Json out = Json::object();
         out.set("lines", std::move(lines));
@@ -1534,7 +1561,9 @@ public:
             if (const Json* lj = args.find("lane")) {
                 if (lj->is_object()) return lane_from_json(*lj);
                 if (lj->is_number()) {
-                    // 兼容：直接给数字（索引）→ 默认 key lane
+                    // 兼容：直接给数字（索引）→ 默认 key lane；先校验，避免窄化回绕。
+                    if (!lj->is_int() || lj->as_i64() < 1 || lj->as_i64() > 9)
+                        throw CommandError("bad_args", "lane 键号应为 1..9 的整数");
                     return Lane{0, LaneKind::Key, static_cast<std::uint8_t>(lj->as_i64())};
                 }
                 throw CommandError("bad_args", "lane 应为对象 {player,kind,index}");
@@ -1568,6 +1597,10 @@ public:
         // 2026-09 用户：LN 只能放在「游玩轨/LN 轨」（具体通道由文件格式决定）；
         // BMS 中 BGM（ch01）无 LN 表示——映射层 bms_channel_for(..., ln) 为空。
         // 前端已阻止，此处协议层兜底（避免生成写出时被丢弃/降级的脏数据）。
+        if (bms::bms_channel_for_mode(session.chart().mode_id.value_or("sp7k"),
+                                      lane, ln_kind, kind).empty()) {
+            throw CommandError("bad_args", "该轨道/音符类型无法表示为当前模式的 BMS 通道");
+        }
         if (ln_kind && !lane_can_ln(session.chart(), lane)) {
             throw CommandError("bad_args",
                                "该轨道不能放置 LN（格式映射中无 LN 通道表示）");
@@ -1786,7 +1819,7 @@ public:
         auto comp = std::make_unique<edit::CompositeCommand>();
         for (const auto& r : refs) {
             comp->add(std::make_unique<edit::TransformNoteCommand>(
-                r.measure, r.pos, r.lane, r.sample, mirror, rotate));
+                r.measure, r.pos, r.lane, r.sample, mirror, rotate, r.sub_line));
         }
         const bool ok = session.exec(std::move(comp));
         // 返回变换后的选择引用（QML 直接采用，不再独立计算映射——单一事实源在 core；

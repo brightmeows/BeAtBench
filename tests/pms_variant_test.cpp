@@ -411,20 +411,19 @@ TEST(PmsVariant, WriteSideProfiles) {
         EXPECT_EQ(bms_channel_for_mode("pms9k", lane, false, NoteKind::Landmine), "D" + d);
         EXPECT_EQ(bms_channel_for_mode("pms9k-bmesp", lane, false, NoteKind::Landmine), "D" + d);
     }
-    // 2P：两 profile 一致（BME-DP 记法）
-    for (int k = 1; k <= 5; ++k) {
-        const Lane lane{1, LaneKind::Key, static_cast<std::uint8_t>(k)};
-        const std::string d(1, static_cast<char>('1' + (k - 1)));
-        EXPECT_EQ(bms_channel_for_mode("pms9k", lane, false, NoteKind::Normal), "2" + d);
-        EXPECT_EQ(bms_channel_for_mode("pms9k-bmesp", lane, true, NoteKind::Normal), "6" + d);
-        EXPECT_EQ(bms_channel_for_mode("pms9k-bmesp", lane, false, NoteKind::Landmine), "E" + d);
+    // 单面9key：2P普通键不可表示；62-65/E2-E5属于1P，不能写作2P键2-5。
+    // 仅读表既有的61/66-69/E1/E6-E9可保留为2P LN/地雷，两profile一致。
+    for (const auto* mode : {"pms9k", "pms9k-bmesp"}) {
+        for (int k = 1; k <= 9; ++k) {
+            const Lane lane{1, LaneKind::Key, static_cast<std::uint8_t>(k)};
+            const std::string d(1, static_cast<char>('0' + k));
+            EXPECT_TRUE(bms_channel_for_mode(mode, lane, false, NoteKind::Normal).empty());
+            EXPECT_EQ(bms_channel_for_mode(mode, lane, true, NoteKind::Normal),
+                      k == 1 || k >= 6 ? "6" + d : "");
+            EXPECT_EQ(bms_channel_for_mode(mode, lane, false, NoteKind::Landmine),
+                      k == 1 || k >= 6 ? "E" + d : "");
+        }
     }
-    EXPECT_EQ(bms_channel_for_mode("pms9k", Lane{1, LaneKind::Key, 6}, false,
-                                   NoteKind::Normal),
-              "28");
-    EXPECT_EQ(bms_channel_for_mode("pms9k-bmesp", Lane{1, LaneKind::Key, 9}, false,
-                                   NoteKind::Normal),
-              "27");
     EXPECT_EQ(bms_channel_for_mode("pms9k", Lane{1, LaneKind::Key, 6}, true,
                                    NoteKind::Normal),
               "66");

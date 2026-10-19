@@ -115,11 +115,11 @@ TEST(BmsChannelMaps, ReverseByMode) {
               "22");
     EXPECT_EQ(bms::bms_channel_for_mode("pms9k", {0, LaneKind::Key, 9}, false, NoteKind::Normal),
               "25");
-    // 9key 2P（BME-DP）：键6-9 → 28/29/26/27
-    EXPECT_EQ(bms::bms_channel_for_mode("pms9k", {1, LaneKind::Key, 6}, false, NoteKind::Normal),
-              "28");
-    EXPECT_EQ(bms::bms_channel_for_mode("pms9k", {1, LaneKind::Key, 9}, false, NoteKind::Normal),
-              "27");
+    // 单面9key不注册28/27，不能将不支持的2P普通键宣称可保真写出。
+    EXPECT_TRUE(bms::bms_channel_for_mode("pms9k", {1, LaneKind::Key, 6}, false,
+                                        NoteKind::Normal).empty());
+    EXPECT_TRUE(bms::bms_channel_for_mode("pms9k", {1, LaneKind::Key, 9}, false,
+                                        NoteKind::Normal).empty());
     EXPECT_EQ(bms::bms_channel_for_mode("pms9k", {0, LaneKind::Key, 7}, true, NoteKind::Normal),
               "63");
     EXPECT_EQ(bms::bms_channel_for_mode("pms9k", {0, LaneKind::Key, 3}, false,
