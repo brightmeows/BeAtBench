@@ -11,6 +11,7 @@
 #include <iomanip>
 #include <map>
 #include <numeric>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <string>
@@ -135,6 +136,21 @@ std::string write_bms(const Chart& chart, const BmsWriteOptions& opts) {
                                   std::end(kMetaOrder);
             (is_known ? known : unknown).push_back(up);
         }
+        // #PLAYER 派生（2026-10 模式系统阶段一）：显式元信息优先；缺失/空且模式推导值
+        // 非默认时补写（dp=3、battle=4）——session.new{mode:dp/battle} 新建谱面保存即落
+        // 正确 PLAYER（重开不退回 sp7k）。sp7k/pms9k 推导值 = 默认 1，省略不写（零破坏：
+        // 打开无 PLAYER 的普通谱保存不新增行，meta 往返相等；pms9k 重开靠 .pms 后缀）。
+        const auto meta_player = chart.meta.find("PLAYER");
+        std::optional<std::string> derived_player;
+        if (meta_player == chart.meta.end() || meta_player->second.empty()) {
+            if (chart.mode_id) {
+                if (*chart.mode_id == "dp") derived_player = "3";
+                else if (*chart.mode_id == "battle") derived_player = "4";
+            }
+        }
+        if (derived_player) {
+            known.push_back("PLAYER");  // kMetaOrder 已含 PLAYER，排序自然归位
+        }
         std::sort(known.begin(), known.end(),
                   [](const std::string& a, const std::string& b) {
                       std::size_t ia = 0, ib = 0;
@@ -146,7 +162,13 @@ std::string write_bms(const Chart& chart, const BmsWriteOptions& opts) {
                   });
         for (const auto& k : known) {
             if (const auto it = chart.meta.find(k); it != chart.meta.end()) {
-                append_line(out, k, it->second);
+                if (k == "PLAYER" && it->second.empty() && derived_player) {
+                    append_line(out, k, *derived_player);  // PLAYER 空串且有推导值 → 推导
+                } else {
+                    append_line(out, k, it->second);  // 空值照常输出（无尾随空格，原有行为）
+                }
+            } else if (k == "PLAYER" && derived_player) {
+                append_line(out, k, *derived_player);
             }
         }
         std::sort(unknown.begin(), unknown.end());

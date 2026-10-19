@@ -16,6 +16,7 @@
 
 #include "bridge/ChartSession.hpp"
 #include "bridge/ThemeManager.hpp"
+#include "beatbench/core/ChartMode.hpp"
 #include "beatbench/core/bms/BmsUtil.hpp"
 #include "beatbench/core/bms/ChannelMap.hpp"
 #include "beatbench/core/codec/BmsChannelMaps.hpp"
@@ -1121,8 +1122,11 @@ void ChartViewItem::updateHover(const QPointF& pos) {
                         chart.notes[*ev.value.ln_pair].value.ln_pair &&
                         *chart.notes[*ev.value.ln_pair].value.ln_pair == evIdx;
                     if (ev.value.ln_channel || paired) {
-                        const std::string ch = beatbench::bms::bms_channel_for(
-                            ev.value.lane, ev.value.ln_channel, NoteKind::Normal);
+                        // LN 通道号按当前谱面模式反向映射（写出通道，与列头同源；
+                        // 2026-10 复核：legacy bms_channel_for 恒 7key 表）
+                        const std::string ch = beatbench::bms::bms_channel_for_mode(
+                            chart.mode_id.value_or("sp7k"), ev.value.lane,
+                            ev.value.ln_channel, NoteKind::Normal);
                         if (!ch.empty())
                             lnText = QStringLiteral("+LN(%1)").arg(QString::fromStdString(ch));
                     }
@@ -1411,7 +1415,15 @@ void ChartViewItem::drawPreview(QPainter* p) const {
                 lane.kind = laneKindFromString(t.value(QStringLiteral("kind")).toString());
                 lane.index = static_cast<std::uint8_t>(t.value(QStringLiteral("index")).toInt());
                 if (lane.kind == beatbench::LaneKind::Key) {
-                    const int ni = std::clamp(static_cast<int>(lane.index) + (noteCol - grabCol), 1, 7);
+                    // 键号上限按当前谱面模式（2026-10 复核：硬编码 7 会把 PMS 键8/9 夹回键7；
+                    // 与 SessionController 拖动提交同源 chart_mode_key_count）
+                    int maxKey = 7;
+                    if (const ChartSession* cs = sessionObj()) {
+                        if (const beatbench::Chart* c = cs->chart()) {
+                            maxKey = beatbench::chart_mode_key_count(c->mode_id.value_or("sp7k"));
+                        }
+                    }
+                    const int ni = std::clamp(static_cast<int>(lane.index) + (noteCol - grabCol), 1, maxKey);
                     if (ni != static_cast<int>(lane.index)) lane.index = static_cast<std::uint8_t>(ni);
                 }
             }

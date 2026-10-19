@@ -17,6 +17,7 @@
 #include <utility>
 
 #include "beatbench/core/Version.hpp"
+#include "beatbench/core/ChartMode.hpp"
 #include "beatbench/core/bms/BmsCodec.hpp"
 #include "beatbench/core/bms/BmsUtil.hpp"
 #include "beatbench/core/bms/ChartCheck.hpp"
@@ -512,6 +513,16 @@ Lane lane_from_json(const Json& j) {
         else l.kind = LaneKind::Key;
     }
     return l;
+}
+
+// Lane → JSON kind 字符串（lane_from_json 的逆；note.transform 返回 selection 用）
+const char* lane_kind_str(LaneKind k) {
+    switch (k) {
+        case LaneKind::Scratch: return "scratch";
+        case LaneKind::Pedal: return "pedal";
+        case LaneKind::Bgm: return "bgm";
+        default: return "key";
+    }
 }
 
 // 从 args 读 (measure, pos)（"measure": int, "pos": {"num":n,"den":d} 或 [n,d]）
@@ -1318,6 +1329,21 @@ public:
     Json run(const Json& args) const override {
         auto& session = session_from_args(args);
         beatbench::Chart chart;  // 空谱面（0 小节）
+        // 可选 mode（2026-10 模式系统阶段一，issue #26）：显式指定新建谱面的游玩模式，
+        // 编辑下限/写回/check 全链路按 chart.mode_id 跟随（消除 value_or("sp7k") 兑底分裂）。
+        // 缺省不设 → 沿用现行兑底行为（协议向后兼容）；传了就必须是合法非空字符串
+        //（类型错/空串 bad_args，会话不变——2026-10 复核：非法参数不得静默清空会话）。
+        // 值域 = chart_mode_by_id 可识别 id（pms9k-bmesp 变体是读侧探测产物，不在配置表 →
+        // 天然被拒）。
+        if (const Json* m = args.find("mode")) {
+            if (!m->is_string() || m->as_str().empty()) {
+                throw CommandError("bad_args", "mode 必须为非空字符串（不传 = 兑底行为）");
+            }
+            if (!chart_mode_by_id(m->as_str())) {
+                throw CommandError("bad_args", "未知游玩模式: " + m->as_str());
+            }
+            chart.mode_id = m->as_str();
+        }
         session.load(std::move(chart), "");
         // 注入 BMS 持久化钩子（另存为/自动保存用）
         if (const Codec* bms = global_codec_registry().by_id("bms"))
@@ -1763,9 +1789,33 @@ public:
                 r.measure, r.pos, r.lane, r.sample, mirror, rotate));
         }
         const bool ok = session.exec(std::move(comp));
+        // 返回变换后的选择引用（QML 直接采用，不再独立计算映射——单一事实源在 core；
+        // 键号上限按谱面模式，与命令 apply 同一 transform_lane）。
+        const std::string mode =
+            session.has_chart() ? session.chart().mode_id.value_or("sp7k") : "sp7k";
+        const int max_key = chart_mode_key_count(mode);
+        Json sel = Json::array();
+        for (const auto& r : refs) {
+            const Lane nl = edit::transform_lane(r.lane, mirror, rotate, max_key);
+            Json o = Json::object();
+            o.set("measure", static_cast<std::int64_t>(r.measure));
+            Json p = Json::object();
+            p.set("num", static_cast<std::int64_t>(r.pos.num));
+            p.set("den", static_cast<std::int64_t>(r.pos.den));
+            o.set("pos", std::move(p));
+            Json l = Json::object();
+            l.set("player", static_cast<std::int64_t>(nl.player));
+            l.set("kind", lane_kind_str(nl.kind));
+            l.set("index", static_cast<std::int64_t>(nl.index));
+            o.set("lane", std::move(l));
+            o.set("sample", static_cast<std::int64_t>(r.sample));
+            o.set("sub_line", static_cast<std::int64_t>(r.sub_line));
+            sel.push_back(std::move(o));
+        }
         Json out = Json::object();
         out.set("ok", ok);
         out.set("notes", static_cast<std::int64_t>(refs.size()));
+        out.set("selection", std::move(sel));
         out.set("mirror", mirror);
         out.set("rotate", static_cast<std::int64_t>(rotate));
         out.set("undo_depth", static_cast<std::int64_t>(session.undo_depth()));

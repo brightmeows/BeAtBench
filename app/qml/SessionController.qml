@@ -546,7 +546,10 @@ QtObject {
                 to.lane = { player: targetLane.lanePlayer, kind: targetLane.laneKind,
                             index: targetLane.laneIndex }
                 if (targetLane.laneKind === "key") {
-                    to.lane.index = Math.max(1, Math.min(7, targetLane.laneIndex + gap))
+                    // 键号上限按当前谱面模式（playKeyCount：sp7k/battle=7、pms9k=9；
+                    // 2026-10 复核：硬编码 7 会把 PMS 键8/9 夹回键7）。越界夹边。
+                    const maxKey = chartSession.playKeyCount()
+                    to.lane.index = Math.max(1, Math.min(maxKey, targetLane.laneIndex + gap))
                 }
                 changedLane = true
             }
@@ -627,8 +630,9 @@ QtObject {
         }
     }
     /// 变换：镜像（mirror=true）/ 旋转（rotate=±1）；note.transform；一个 undo 步。
-    /// 变换后**保持选中**（selectionRefs 的 key 轨道更新为镜像/旋转后的下标；相对位置不变）。
-    /// ⚠️ 只处理 key 轨（镜像/旋转不影响皿/踏板/BGM）；按 7key 映射（key i ↔ key 8-i）。
+    /// 变换后**保持选中**：直接采用协议返回的 selection（core 用与命令同一 transform_lane
+    /// 计算，键号上限按谱面模式——QML 不再独立计算 7 键映射，2026-10 复核修正）。
+    /// ⚠️ 只处理 key 轨（镜像/旋转不影响皿/踏板/BGM）。
     function transformSelection(mirror, rotate) {
         if (!window.selectionRefs || window.selectionRefs.length === 0) {
             setStatus(qsTr("先选中 note（点击/框选）再变换"))
@@ -639,12 +643,13 @@ QtObject {
         if (rotate !== 0) args.rotate = rotate
         var r = sessionCmd("note.transform", args)
         if (r) {
-            window.selectionRefs = window.selectionRefs.map(function(ref) {
-                if (ref.lane.kind !== "key") return ref   // 非 key 轨不变
-                const idx = ref.lane.index
-                const nidx = mirror ? (8 - idx) : (((idx - 1 + rotate) % 7 + 7) % 7 + 1)
-                return { measure: ref.measure, pos: ref.pos,
-                         lane: { player: ref.lane.player, kind: "key", index: nidx },
+            const sel = r.selection || []
+            window.selectionRefs = window.selectionRefs.map(function(ref, i) {
+                const nl = sel[i]
+                if (!nl || ref.lane.kind !== "key") return ref   // 非 key 轨不变（协议同序）
+                return { measure: nl.measure, pos: nl.pos,
+                         lane: { player: nl.lane.player, kind: nl.lane.kind,
+                                 index: nl.lane.index },
                          sample: ref.sample, sub_line: ref.sub_line }
             })
             setStatus(mirror ? qsTr("已镜像 %1 个 note").arg(r.notes)
@@ -1018,6 +1023,12 @@ QtObject {
             if (typeof editPage !== "undefined" && editPage) editPage.commitMeta()
             window.chartPath = r.output
             var msg = qsTr("已另存为：%1").arg(r.output)
+            // 错误扩展名提示（2026-10 复核验收项）：PMS 谱存成 .bms 后缀，重开时
+            // parser 只能靠内容探测（无法从后缀先验 pms9k），提示用户。
+            const p = String(r.output).toLowerCase()
+            if (window.chartMode === "pms9k" && p.endsWith(".bms")) {
+                msg += qsTr(" · ⚠ PMS 谱面保存为 .bms 后缀，重新打开时将按内容推断模式")
+            }
             if (r.backup_error) msg += qsTr(" · 崩溃备份失败：") + r.backup_error
             setStatus(msg)
             return true
