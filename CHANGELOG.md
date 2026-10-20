@@ -30,6 +30,11 @@
 
 * document accepted LN limitations for patch release ([7e2ea5d](https://github.com/wufe8/BeAtBench/commit/7e2ea5daeaf59d356c1cf5027ae247a3e94c2c9b))
 
+### 已知问题
+
+* **LN 头尾采样不同**：LN 通道物件在编辑后按轨道与采样 ID 重新配对。导入的 LN 若头尾采样 ID 不同，编辑后可能失去配对，保存时可能降为普通音。LNTYPE 1 下使用相同采样 ID 的完整头尾可避开此特定触发条件。
+* **孤立 LN 端点**：缺少另一端的 LN 通道物件，保存时可能降为普通音。保存前请运行谱面检查（lint）并处理未配对 LN 提示；lint 不会自动修复或强制阻止保存。
+
 ## [0.4.0](https://github.com/wufe8/BeAtBench/compare/v0.3.2...v0.4.0) (2026-10-11)
 
 
