@@ -80,3 +80,13 @@ markdown 内仓库路径指针有效性、中文弯引号。
 - 构建与测试：`doc/04` §4（构建命令权威）；分支与门禁：`doc/10`；打包与发布：`doc/11`。
 - 快速门禁：`scripts/check.sh --quick`；pre-push 自动执行，赶时间 `SKIP_CHECK=1 git push`。
 - 找不到文件 → `doc/README.md` 文档地图；地图也解答不了 → 按 §3 落点规则归类。
+
+## 6. 工作树
+
+多任务并行时优先为每个任务新建工作树开发，主工作区只留当前任务：
+
+- 挂载点固定 `.worktrees/<任务名>/`（已 gitignore，status 与 rg/fd 搜索不受干扰）。
+- 新建：`git worktree add -b <分支名> .worktrees/<任务名>`；构建目录随工作树本地化，
+  在工作树内照 §5 流程全新配置，首次联网拉取 PortAudio / GoogleTest。
+- 门禁钩子经共享 config 全仓生效，工作树内 pre-commit / pre-push 直接可用。
+- 任务完成即移除：`git worktree remove --force .worktrees/<任务名>`，并删除对应分支。
