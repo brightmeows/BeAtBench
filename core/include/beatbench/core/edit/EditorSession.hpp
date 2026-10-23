@@ -70,6 +70,12 @@ class EditorSession {
     Selection& selection_mut() { return m_selection; }
     void set_selection(Selection sel) { m_selection = std::move(sel); }
 
+    /// 纵向移动锁（GUI 编辑策略；默认 false = CLI/脚本保持原行为）。
+    /// 命令层只拦“时间坐标发生变化”的移动；纯换轨/换图层/改值不受影响。
+    /// 该标志属于会话状态，不入 undo 栈；GUI 打开/新建谱面时重新置 true。
+    bool vertical_move_locked() const { return m_vertical_move_locked; }
+    void set_vertical_move_locked(bool locked) { m_vertical_move_locked = locked; }
+
     // —— 崩溃备份 / 自动保存（2026-09，用户决策：默认关自动保存，以手动保存 + 崩溃备份为主） ——
     // 机制：每次 exec/undo/redo 修改文档后调用 maybe_persist()：
     //   - backup（默认开）：把「修改后」chart 写到 path + ".bak"（崩溃时 .bak = 内存最新，
@@ -108,6 +114,7 @@ class EditorSession {
     std::vector<std::uint64_t> m_undo_generation;  ///< 与 m_undo 平行：该命令 apply 后的代际
     std::vector<std::uint64_t> m_redo_generation;  ///< 与 m_redo 平行
     PersistHook m_persist_hook;
+    bool m_vertical_move_locked = false;  ///< GUI 纵向移动锁（见上）
     bool m_backup = true;
     bool m_autosave = false;
     std::string m_last_backup_error;

@@ -119,6 +119,15 @@ int ChartSession::playKeyCount() const {
     return beatbench::chart_mode_key_count(m_chart->mode_id.value_or("sp7k")).value_or(7);
 }
 
+void ChartSession::setVerticalMoveLocked(bool locked) {
+    auto& s = beatbench::edit::session_registry().active();
+    if (s.has_chart()) s.set_vertical_move_locked(locked);
+}
+
+bool ChartSession::verticalMoveLocked() const {
+    return beatbench::edit::session_registry().active().vertical_move_locked();
+}
+
 void ChartSession::refresh() {
     auto& reg = beatbench::edit::session_registry();
     auto& s = reg.active();

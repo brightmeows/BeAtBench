@@ -198,9 +198,9 @@ ApplicationWindow {
     property int apiFilterIndex: 0
     // 缩放锚点（2026-09 用户：鼠标滚轮缩放时往鼠标位置放大；默认开）
     property bool zoomToCursor: true
-    // 平移模式（checkbox 开关，默认关）：拖拽选中 note = 移动；勾选=按方向轴锁定
-    // （纵向→时间/通道不变；横向→通道/时间不变）。未勾=自由 2D（时间+通道都动）。
-    property bool moveMode: false
+    // 纵向移动锁（默认开）：note/BGA/BPM/STOP 只能横向换轨/换图层；解锁后才允许改时间。
+    // 每个文档重置为锁定；Ctrl+L / 工具条开关切换。
+    property bool verticalMoveLocked: true
     // LN 选取模式（默认关）：开启后点选 LN 任一段自动选中配对两端（整体移动/删除）
     property bool lnSelectMode: false
     // 槽位弱线显示开关（「网格」按钮；默认开）。吸附计算不依赖此开关，仅控制画不画槽位线。
@@ -260,6 +260,9 @@ ApplicationWindow {
     Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("edit.delete") : ""
                enabled: chartMeta !== null && currentPage === 0
                onActivated: uiActions.invoke("edit.delete") }
+    Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("edit.toggleVerticalMove") : ""
+               enabled: chartMeta !== null && currentPage === 0 && !window.textInputFocused
+               onActivated: uiActions.invoke("edit.toggleVerticalMove") }
 
     // 工具动作（数字 1-5：文本输入焦点时让行）
     Shortcut { sequence: uiActions.shortcutRevision >= 0 ? uiActions.shortcut("tool.pan") : ""
@@ -626,17 +629,16 @@ ApplicationWindow {
                         ToolTip.text: uiActions.tooltip(actId)
                     }
                 }
-                // 平移 = 轴锁定开关（不占工具位、非门控）：勾选后拖拽选中 note 按方向主轴
-                // 移动——纵向=时间（note.move，通道不变）；横向=通道（delete+put，时间不变）。
-                // 未勾选 = 自由 2D（时间+通道都动）。无论勾选与否，拖拽选中 note 都可移动。
+                // 纵向锁：默认勾选=只能横向换轨；取消勾选=自由 2D（时间+通道都动）。
+                // 锁在 core 命令层同时生效（粘贴/量化/BPM/STOP/BGA 纵向移动也会被拒绝）。
                 BbCheckBox {
-                    id: moveModeCheck
-                    text: qsTr("平移")
-                    checked: window.moveMode
-                    onToggled: window.moveMode = checked
+                    id: verticalLockCheck
+                    text: qsTr("纵向锁定")
+                    checked: window.verticalMoveLocked
+                    onToggled: window.setVerticalMoveLocked(checked)
                     ToolTip.visible: hovered
-                    ToolTip.text: qsTr("勾选=按方向轴锁定移动（纵向→时间/通道不变，横向→通道/时间不变）；"
-                                     + "未勾选=自由 2D 移动（时间+通道都动）。拖拽选中 note 恒可移动")
+                    ToolTip.text: qsTr("勾选=禁止改时间（只能横向换轨/换图层）；"
+                                     + "取消=自由 2D。Ctrl+L 切换；每个文档默认锁定")
                 }
                 Item { Layout.fillWidth: true }
                 // LN 选取模式（默认关）：勾选后点选 LN 任一段，自动选中配对两端（可整体移动/删除）
@@ -740,7 +742,7 @@ ApplicationWindow {
                 showExtras: window.showExtras
                 showGrid: window.showGrid
                 editorTool: window.editorTool
-                moveMode: window.moveMode
+                verticalMoveLocked: window.verticalMoveLocked
                 sampleId: chartSession.sampleValueOf(window.currentSampleId)
                 sampleText: sampleModel.currentSampleText
                 selection: window.selectionRefs
@@ -864,6 +866,14 @@ ApplicationWindow {
                     Layout.minimumWidth: 90
                     Layout.maximumWidth: 320
                 }
+                // 纵向锁常驻提示（编辑页状态栏；切音页不显示）
+                Label {
+                    text: window.verticalMoveLocked ? qsTr("纵向锁定") : qsTr("纵向自由")
+                    color: window.verticalMoveLocked ? Theme.textFaint : Theme.warning
+                    font.family: Theme.fontMono
+                    font.pixelSize: Theme.fsSmall
+                    font.bold: !window.verticalMoveLocked
+                }
                 // —— 固定长度令牌（右区右段，right-aligned，自然宽度不截断）：SP7K/格式/编码 ——
                 // M5 收尾 2026-09：有播放头（已渲染/已播放，playheadSec>=0）→ 时间/小节 = **播放头**
                 // （随播放推进；暂停停在播放位置，无视"跟随"开关）；未渲染（playheadSec<0）→ 视口光标。
@@ -917,6 +927,21 @@ ApplicationWindow {
     function setStatus(msg) {
         window.statusText = msg
         statusClearTimer.restart()
+    }
+    /// 纵向移动锁：UI 状态 + EditorSession 命令层守卫同步。
+    /// 打开/新建谱面时由 openChart/performNewChart 直接置 true（不弹瞬态消息）。
+    function setVerticalMoveLocked(locked) {
+        const v = !!locked
+        window.verticalMoveLocked = v
+        if (typeof chartSession !== "undefined" && chartSession)
+            chartSession.setVerticalMoveLocked(v)
+        if (v)
+            setStatus(qsTr("纵向锁定：只能横向换轨（Ctrl+L 解锁）"))
+        else
+            setStatus(qsTr("纵向自由：可改时间（Ctrl+L 恢复锁定）"))
+    }
+    function toggleVerticalMove() {
+        setVerticalMoveLocked(!window.verticalMoveLocked)
     }
     /// LN 放置提示是否该显示（当前为 LN 工具 + 已打开谱面）。
     function lnHintActive() { return window.editorTool === "ln" && window.chartMeta !== null }
@@ -1610,6 +1635,8 @@ ApplicationWindow {
             window.chartEncoding = enc
             // M2 第 5 步：时间轴真数据（ChartSession + TimingEngine，与 info 同源解析）
             chartSession.openChart(path)
+            window.verticalMoveLocked = true
+            chartSession.setVerticalMoveLocked(true)  // 每个文档默认锁定
             window.pendingLnHead = null  // 换谱面：清除可能的未完成 LN 头
             window.selectionRefs = []
             window.metaSelection = []
@@ -1803,6 +1830,8 @@ ApplicationWindow {
         window.chartFormat = "bms"
         window.chartMode = mode
         window.chartEncoding = "utf8"
+        window.verticalMoveLocked = true
+        chartSession.setVerticalMoveLocked(true)  // 新文档默认锁定
         // 默认元信息（空谱面面板可编辑；TITLE 等留空让用户填）。
         // ⚠️ 不预设 PLAYER（2026-10 复核）：草稿回填 "1" 会覆盖模式推导——DP/Battle 新建
         // 保存后 PLAYER 由 writer 按 mode_id 推导（dp=3/battle=4），重开不再退回 SP。
@@ -1950,6 +1979,7 @@ ApplicationWindow {
         setActionEnabled("edit.paste", chartMeta !== null && currentPage === 0)
         setActionEnabled("edit.delete", chartMeta !== null && currentPage === 0 &&
                                            (selectionRefs.length > 0 || metaSelection.length > 0))
+        setActionEnabled("edit.toggleVerticalMove", chartMeta !== null && currentPage === 0)
         setActionEnabled("tool.quantize", selectionRefs.length > 0)
         setActionEnabled("tool.mirror", selectionRefs.length > 0)
         setActionEnabled("tool.rotate", selectionRefs.length > 0)

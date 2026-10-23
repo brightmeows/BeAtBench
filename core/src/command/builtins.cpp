@@ -513,6 +513,14 @@ edit::EditorSession& session_from_args(const Json& args) {
 
 namespace {
 
+// 纵向移动锁守卫（GUI 编辑策略；CLI 默认关闭）。只在时间坐标变化时拒绝——
+// 纯换轨/换图层/改值仍允许。
+void require_vertical_move_unlocked(const edit::EditorSession& session, bool changes_time) {
+    if (changes_time && session.vertical_move_locked()) {
+        throw CommandError("vertical_locked", "纵向移动已锁定：先解锁（Ctrl+L）");
+    }
+}
+
 // JSON → Lane：{player, kind, index}；kind 字符串 "key"/"scratch"/"pedal"/"bgm"
 Lane lane_from_json(const Json& j) {
     if (!j.is_object()) throw CommandError("bad_args", "lane 应为对象");
@@ -600,6 +608,29 @@ std::vector<edit::NoteRef> selection_from_json(const Json& args) {
         refs.push_back(ref);
     }
     return refs;
+}
+
+// note.move 的 moves/单对象参数是否改变时间坐标（纵向锁预检用）。
+bool move_changes_time(const Json& move) {
+    const Json* from = move.find("from");
+    const Json* to = move.find("to");
+    if (!from || !from->is_object() || !to || !to->is_object()) return false;
+    const std::uint32_t fm = u32_arg(*from, "measure");
+    const Rational fp = pos_from_json(*from);
+    const std::uint32_t tm = u32_arg(*to, "measure");
+    const Rational tp = pos_from_json(*to);
+    return fm != tm || fp != tp;
+}
+
+bool moves_change_time(const Json& args) {
+    if (const Json* mv = args.find("moves")) {
+        if (!mv->is_array()) return false;
+        for (const auto& m : mv->as_array()) {
+            if (m.is_object() && move_changes_time(m)) return true;
+        }
+        return false;
+    }
+    return move_changes_time(args);
 }
 
 // 时间轴事件种类参数（timing.* 的 kind：bpm / stop / measure）
@@ -903,6 +934,7 @@ class BgaMoveCommandCmd : public Command {
         const int tl = tj->find("layer") ? bga_layer_arg(*tj) : fl;
         const std::uint32_t tm = tj->find("measure") ? u32_arg(*tj, "measure") : fm;
         const Rational tp = tj->find("pos") ? pos_from_json(*tj) : fp;
+        require_vertical_move_unlocked(session, tm != fm || tp != fp);
         // 读当前事件 sample（#BMP id），id 保持不变
         std::uint32_t sample = 0;
         bool found = false;
@@ -943,6 +975,7 @@ class TimingMoveCommandCmd : public Command {
         if (!tj || !tj->is_object()) throw CommandError("bad_args", "缺少 to 对象");
         const std::uint32_t tm = tj->find("measure") ? u32_arg(*tj, "measure") : fm;
         const Rational tp = tj->find("pos") ? pos_from_json(*tj) : fp;
+        require_vertical_move_unlocked(session, tm != fm || tp != fp);
         // 读当前值
         double value = 0;
         bool found = false;
@@ -1097,6 +1130,7 @@ class ClipboardPasteCommand : public Command {
     Json run(const Json& args) const override {
         auto& session = session_from_args(args);
         if (!session.has_chart()) throw CommandError("no_chart", "未加载谱面（先 session.load）");
+        require_vertical_move_unlocked(session, true);  // 粘贴 = 按目标小节放置，整体视为纵向
         const auto& chart = session.chart();
         const std::string mode = chart.mode_id.value_or("sp7k");
 
@@ -1704,6 +1738,8 @@ class NoteMoveCommand : public Command {
         if (!session.has_chart()) {
             throw CommandError("no_chart", "未加载谱面（先 session.load）");
         }
+        // 纵向锁：只拦时间坐标变化；换轨（to 时间 = from 时间）仍允许。
+        require_vertical_move_unlocked(session, moves_change_time(args));
         // Y1（2026）：`moves` 数组（1..N 项，每项 {from,to}）优先；
         // 兼容旧顶层 `{from,to}`（无 moves 时回退，视为单元素数组）。
         // 多 note 移动 = CompositeCommand 包 N 个 MoveNoteCommand（一个 undo 步）；
@@ -1799,6 +1835,7 @@ class NoteQuantizeCommand : public Command {
         if (!session.has_chart()) {
             throw CommandError("no_chart", "未加载谱面（先 session.load）");
         }
+        require_vertical_move_unlocked(session, true);  // 量化 = 改 pos
         const auto refs = selection_from_json(args);
         if (refs.empty()) throw CommandError("empty_selection", "选择集为空（无可量化内容）");
         // snap 参数：{num,den} 或 [num,den]；缺省 1/16
@@ -2007,6 +2044,7 @@ class NoteConvertCommand : public Command {
                 tm = r.measure;
                 tp = r.pos;
             }
+            require_vertical_move_unlocked(session, tm != r.measure || tp != r.pos);
             comp->add(std::make_unique<edit::ConvertNoteCommand>(r, target, tm, tp));
         }
         if (comp->size() == 0)
@@ -2050,6 +2088,7 @@ class NoteConvertBackCommand : public Command {
             if (top->find("measure")) to_m = u32_arg(*top, "measure");
             if (top->find("pos")) to_p = pos_from_json(*top);
         }
+        require_vertical_move_unlocked(session, to_m != measure || to_p != pos);
         const bool ok = session.exec(std::make_unique<edit::ConvertMetaToNoteCommand>(
             kind, measure, pos, layer, lane, to_m, to_p));
         Json out = Json::object();
@@ -2096,6 +2135,7 @@ class NoteMoveRegionCommand : public Command {
             if (!tl->is_int()) throw CommandError("bad_args", "to_sub_line 应为整数");
             to_sub_line = static_cast<std::uint32_t>(tl->as_i64());
         }
+        require_vertical_move_unlocked(session, d_measure != 0 || d_pos != Rational(0, 1));
         // 可选 target（跨命名空间转换目标：bga_*/bpm/stop——整组 note → 同语义事件）；
         // 传了 = 替换 to_lane（note 不再是 note，无 lane 概念）
         std::optional<edit::ConvertTarget> convert_target;

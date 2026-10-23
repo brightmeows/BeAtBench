@@ -49,6 +49,11 @@ class ChartSession : public QObject {
     /// 滚动）或「内容变化」（contentChanged，视图保持滚动），必要时重建 TimingEngine。
     Q_INVOKABLE void refresh();
 
+    /// 纵向移动锁（GUI 编辑策略）：写入当前活动 EditorSession；CLI 不调用 → 默认关闭。
+    /// 打开/新建谱面后由 QML 重新置 true（每个文档默认锁定）。
+    Q_INVOKABLE void setVerticalMoveLocked(bool locked);
+    Q_INVOKABLE bool verticalMoveLocked() const;
+
     /// 当前活动会话相对最近一次 load/save 是否未保存。
     bool dirty() const { return m_dirty; }
 
