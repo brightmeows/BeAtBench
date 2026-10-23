@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#include "beatbench/core/codec/CodecRegistry.hpp"
-
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
 #include <stdexcept>
+
+#include "beatbench/core/codec/CodecRegistry.hpp"
 
 namespace beatbench::codec {
 
@@ -20,7 +20,8 @@ std::string norm_ext(std::string_view ext) {
 
 }  // namespace
 
-void CodecRegistry::add(std::unique_ptr<Codec> codec) { // NOLINT(readability-function-size)——固有分支密度（解析/协议形状），有意保留
+// NOLINTNEXTLINE(readability-function-size)——固有分支密度（解析/协议形状），有意保留
+void CodecRegistry::add(std::unique_ptr<Codec> codec) {
     if (!codec) return;
     const std::string id(codec->id());
     if (id.empty()) throw std::invalid_argument("codec id 不能为空");
