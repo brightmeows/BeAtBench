@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 
 namespace beatbench::audio {
@@ -116,7 +117,7 @@ void SamplePlayer::shutdown() {
     m_pcmBaseline.store(-1, std::memory_order_relaxed);
 }
 
-void SamplePlayer::render(float* out, int frames, double deviceRate) {
+void SamplePlayer::render(float* out, int frames, double deviceRate) { // NOLINT(readability-function-cognitive-complexity,readability-function-size)——混音内核逐样本实时循环（回调零分配纪律），拆分引入调用开销
     if (frames <= 0) return;
     if (deviceRate > 0) m_deviceRate = deviceRate;
 
@@ -182,7 +183,7 @@ void SamplePlayer::render(float* out, int frames, double deviceRate) {
             v.sample = cmd.sample;           // 命令的引用转移给 voice
             const double startFrames = cmd.startSec * v.sample->sampleRate;
             v.framePos = static_cast<std::uint64_t>(startFrames);
-            v.frac = startFrames - v.framePos;
+            v.frac = startFrames - static_cast<double>(v.framePos);
             v.startFrame0 = v.framePos;      // 截取起点（包络 base；见 render）
             v.step = v.sample->sampleRate / m_deviceRate;
             v.volume = cmd.volume;
@@ -237,12 +238,12 @@ void SamplePlayer::render(float* out, int frames, double deviceRate) {
             // 主音量（实时参数；回调线程读原子）乘到每个 voice
             const float g = v.volume * env *
                             m_masterVolume.load(std::memory_order_relaxed);
-            out[o * 2] += l * g;
+            out[static_cast<ptrdiff_t>(o * 2)] += l * g;
             out[o * 2 + 1] += rgt * g;
             v.frac += v.step;
             const std::uint64_t advance = static_cast<std::uint64_t>(v.frac);
             v.framePos += advance;
-            v.frac -= advance;
+            v.frac -= static_cast<double>(advance);
         }
         if (finished) {
             if (v.sample) {

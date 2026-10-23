@@ -34,7 +34,7 @@ constexpr std::string_view kControlTags[] = {
     "SETRANDOM", "ENCODING",
 };
 
-inline bool is_control_tag(std::string_view tag) {
+inline bool is_control_tag(std::string_view tag) { // NOLINT(readability-function-size)——控制指令识别链
     for (const auto t : kControlTags) {
         if (tag.size() == t.size()) {
             bool eq = true;
@@ -170,7 +170,7 @@ struct NoteInfo {
 
 }  // namespace
 
-BmsReadResult read_bms(std::string_view text, const BmsReadOptions& opts) {
+BmsReadResult read_bms(std::string_view text, const BmsReadOptions& opts) { // NOLINT(readability-function-cognitive-complexity,readability-function-size)——BMS 逐行解析状态机（格式核心，勿轻拆）
     BmsReadResult result;
     Chart& chart = result.chart;
 
@@ -253,7 +253,7 @@ BmsReadResult read_bms(std::string_view text, const BmsReadOptions& opts) {
                                           token.size();
             if (upper_ascii(token) != "PLAYER") continue;
             const auto v = field_value(line, token_end);
-            if (!v.empty()) player = std::atoi(std::string(v).c_str());
+            if (!v.empty()) player = static_cast<int>(std::strtol(std::string(v).c_str(), nullptr, 10));
             break;  // 首个 #PLAYER 即生效
         }
         if (player == 3) {
@@ -302,7 +302,7 @@ BmsReadResult read_bms(std::string_view text, const BmsReadOptions& opts) {
                 in_block_comment = rest.find("*/") == std::string_view::npos;
                 continue;
             }
-            if (rest.starts_with("//") || rest.starts_with("*")) continue;
+            if (rest.starts_with("//") || rest.starts_with('*')) continue;
             if (line[0] != '#') continue;
             const auto token = field_token(line);
             // 数据行：#mmmcc:（3 位小节 + 2 位 36 进制通道 + ':'；与主循环判定一致）
@@ -423,7 +423,7 @@ BmsReadResult read_bms(std::string_view text, const BmsReadOptions& opts) {
             if (opts.preserve_comments) raw.emplace_back(line);
             continue;
         }
-        if (rest.starts_with("//") || rest.starts_with("*")) {
+        if (rest.starts_with("//") || rest.starts_with('*')) {
             // BMSE 风格：// 行注释、* 星号注释
             // 结构分割线（bms_sections.hpp）是 writer 生成的装饰、不算用户注释：
             // 豁免不入 raw_lines，否则 写→读→写 每次在尾部累积一份（幂等性破坏）。
@@ -712,7 +712,7 @@ BmsReadResult read_bms(std::string_view text, const BmsReadOptions& opts) {
     return result;
 }
 
-BmsReadResult read_bms_file(const std::string& path, const BmsReadOptions& opts) {
+BmsReadResult read_bms_file(const std::string& path, const BmsReadOptions& opts) { // NOLINT(readability-function-cognitive-complexity,readability-function-size)——文件装载：编码与模式探测分支
     BmsReadResult result;
 
     // 路径处理（2026-09 修复日文/非 ASCII 路径打不开）：
@@ -773,7 +773,7 @@ BmsReadResult read_bms_file(const std::string& path, const BmsReadOptions& opts)
                         val.push_back(line_view[i]);
                         ++i;
                     }
-                    if (!val.empty()) player = std::atoi(val.c_str());
+                    if (!val.empty()) player = static_cast<int>(std::strtol(val.c_str(), nullptr, 10));
                     break;
                 }
             }
