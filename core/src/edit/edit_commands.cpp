@@ -262,6 +262,7 @@ void EditorSession::load(Chart chart) {
     m_redo.clear();
     m_selection.clear();
     m_path.clear();
+    m_vertical_move_locked = false;  // 新文档默认不锁；GUI 在 load 后显式置 true
     m_generation = 0;
     m_next_generation = 1;
     m_clean_generation = 0;

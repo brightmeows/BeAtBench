@@ -970,3 +970,111 @@ TEST(EditCommands, NoteDeleteSelectionIsSingleUndo) {
     ASSERT_TRUE(session.undo());
     EXPECT_EQ(session.chart().notes.size(), before);
 }
+
+// —— 纵向移动锁（GUI 策略；命令层只拦时间变化） ——
+
+TEST(EditCommands, VerticalMoveLockRejectsTimeChangesButAllowsLaneChange) {
+    auto& session = global_editor_session();
+    session.load(make_chart());
+    session.set_vertical_move_locked(true);
+
+    // 纯换轨（时间不变）允许
+    Json lane_move = Json::object();
+    lane_move.set("from", note_sel_item(session.chart().notes[0]));
+    Json to_lane = Json::object();
+    to_lane.set("measure", 1);
+    Json pos = Json::object();
+    pos.set("num", 0);
+    pos.set("den", 1);
+    to_lane.set("pos", std::move(pos));
+    Json lane = Json::object();
+    lane.set("player", 0);
+    lane.set("kind", "key");
+    lane.set("index", 4);
+    to_lane.set("lane", std::move(lane));
+    lane_move.set("to", std::move(to_lane));
+    Json moves = Json::array();
+    moves.push_back(std::move(lane_move));
+    Json req = Json::object();
+    req.set("command", "note.move");
+    Json args = Json::object();
+    args.set("moves", std::move(moves));
+    req.set("args", std::move(args));
+    Json resp = global_registry().dispatch(req);
+    ASSERT_TRUE(resp.at("ok").as_bool()) << resp.dump();
+    EXPECT_EQ(session.chart().notes[0].value.lane.index, 4);
+
+    // 改时间（时间坐标变化）拒绝
+    Json time_move = Json::object();
+    time_move.set("from", note_sel_item(session.chart().notes[1]));
+    Json to_time = Json::object();
+    to_time.set("measure", 2);
+    Json pos2 = Json::object();
+    pos2.set("num", 0);
+    pos2.set("den", 1);
+    to_time.set("pos", std::move(pos2));
+    time_move.set("to", std::move(to_time));
+    Json moves2 = Json::array();
+    moves2.push_back(std::move(time_move));
+    Json req2 = Json::object();
+    req2.set("command", "note.move");
+    Json args2 = Json::object();
+    args2.set("moves", std::move(moves2));
+    req2.set("args", std::move(args2));
+    const Json resp2 = global_registry().dispatch(req2);
+    ASSERT_FALSE(resp2.at("ok").as_bool()) << resp2.dump();
+    EXPECT_EQ(resp2.at("error").at("code").as_str(), "vertical_locked");
+
+    // 解锁后同一移动允许
+    session.set_vertical_move_locked(false);
+    const Json resp3 = global_registry().dispatch(req2);
+    ASSERT_TRUE(resp3.at("ok").as_bool()) << resp3.dump();
+}
+
+TEST(EditCommands, VerticalMoveLockBlocksPasteAndQuantize) {
+    auto& session = global_editor_session();
+    session.load(make_chart());
+    session.set_vertical_move_locked(true);
+    const std::size_t before = session.chart().notes.size();
+    const std::size_t undo_before = session.undo_depth();
+
+    Json paste_args = Json::object();
+    Json lines = Json::array();
+    lines.push_back("#00111:01000000");
+    paste_args.set("lines", std::move(lines));
+    paste_args.set("target_measure", 3);
+    Json paste_req = Json::object();
+    paste_req.set("command", "clipboard.paste");
+    paste_req.set("args", std::move(paste_args));
+    const Json paste_resp = global_registry().dispatch(paste_req);
+    ASSERT_FALSE(paste_resp.at("ok").as_bool()) << paste_resp.dump();
+    EXPECT_EQ(paste_resp.at("error").at("code").as_str(), "vertical_locked");
+    EXPECT_EQ(session.chart().notes.size(), before);
+    EXPECT_EQ(session.undo_depth(), undo_before);
+
+    Json quant_args = Json::object();
+    Json sel = Json::array();
+    sel.push_back(note_sel_item(session.chart().notes[0]));
+    quant_args.set("selection", std::move(sel));
+    Json snap = Json::object();
+    snap.set("num", 1);
+    snap.set("den", 4);
+    quant_args.set("snap", std::move(snap));
+    Json quant_req = Json::object();
+    quant_req.set("command", "note.quantize");
+    quant_req.set("args", std::move(quant_args));
+    const Json quant_resp = global_registry().dispatch(quant_req);
+    ASSERT_FALSE(quant_resp.at("ok").as_bool()) << quant_resp.dump();
+    EXPECT_EQ(quant_resp.at("error").at("code").as_str(), "vertical_locked");
+    EXPECT_EQ(session.undo_depth(), undo_before);
+}
+
+TEST(EditCommands, LoadResetsVerticalMoveLock) {
+    EditorSession s;
+    s.set_vertical_move_locked(true);
+    s.load(make_chart());
+    EXPECT_FALSE(s.vertical_move_locked());
+    s.set_vertical_move_locked(true);
+    s.load(make_chart());
+    EXPECT_FALSE(s.vertical_move_locked());
+}
