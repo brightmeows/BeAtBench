@@ -1004,6 +1004,16 @@ class TimingMoveCommandCmd : public Command {
 // 2026-09 扩展（切音导出 raw 整段粘贴）：额外识别 `#WAVxx <file>` 采样定义行与
 // `#NNN02:<值>` 小节长度行（ch01 多行按 sub_line FIFO 与原解析器一致）。
 
+// (measure,pos,lane,sub_line) 共享序：CopyCell（copy 出口）与 PatternSlot（apply 入口）
+// 的排序同源，保证「复制序 = 套用序」往返一致；第三处同构比较器据此收口。
+constexpr bool slot_order(std::uint32_t am, const Rational& ap, const Lane& al, std::uint32_t as,
+                          std::uint32_t bm, const Rational& bp, const Lane& bl, std::uint32_t bs) {
+    if (am != bm) return am < bm;
+    if (ap != bp) return ap < bp;
+    if (al != bl) return al < bl;
+    return as < bs;
+}
+
 class ClipboardCopyCommand : public Command {
    public:
     std::string_view name() const override { return "clipboard.copy"; }
@@ -1097,10 +1107,8 @@ class ClipboardCopyCommand : public Command {
         // 配置复制用的轨道序列（与 BMS 行分开）：只记录顺序/轨道/LN 标记，不记录 sample id。
         std::vector<CopyCell> ordered = cells;
         std::sort(ordered.begin(), ordered.end(), [](const CopyCell& a, const CopyCell& b) {
-            if (a.ref.measure != b.ref.measure) return a.ref.measure < b.ref.measure;
-            if (a.ref.pos != b.ref.pos) return a.ref.pos < b.ref.pos;
-            if (a.ref.lane != b.ref.lane) return a.ref.lane < b.ref.lane;
-            return a.ref.sub_line < b.ref.sub_line;
+            return slot_order(a.ref.measure, a.ref.pos, a.ref.lane, a.ref.sub_line, b.ref.measure,
+                              b.ref.pos, b.ref.lane, b.ref.sub_line);
         });
         Json pattern = Json::array();
         for (const auto& c : ordered) {
@@ -1173,15 +1181,12 @@ std::vector<PatternSlot> pattern_slots_from_json(const Json& args) {
         out.push_back(slot);
     }
     std::sort(out.begin(), out.end(), [](const PatternSlot& a, const PatternSlot& b) {
-        if (a.measure != b.measure) return a.measure < b.measure;
-        if (a.pos != b.pos) return a.pos < b.pos;
-        if (a.lane != b.lane) return a.lane < b.lane;
-        return a.sub_line < b.sub_line;
+        return slot_order(a.measure, a.pos, a.lane, a.sub_line, b.measure, b.pos, b.lane,
+                          b.sub_line);
     });
     return out;
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)——BMS 行解析分支表（协议数据格式）
 std::vector<PatternSlot> pattern_slots_from_text(std::string_view mode, const std::string& text) {
     // 外部 BMS 文本走 codec parser（issue #47 承诺「外部文本按现有 parser 规则」）：
     // 小节号任意位数、通道别名/大小写、LNOBJ 隐式 LN 尾、多行 ch01 的 sub_line
@@ -1203,10 +1208,8 @@ std::vector<PatternSlot> pattern_slots_from_text(std::string_view mode, const st
     }
     // parser 输出按 (measure,pos) 升序；lane/sub_line 维度由调用方统一排序。
     std::sort(out.begin(), out.end(), [](const PatternSlot& a, const PatternSlot& b) {
-        if (a.measure != b.measure) return a.measure < b.measure;
-        if (a.pos != b.pos) return a.pos < b.pos;
-        if (a.lane != b.lane) return a.lane < b.lane;
-        return a.sub_line < b.sub_line;
+        return slot_order(a.measure, a.pos, a.lane, a.sub_line, b.measure, b.pos, b.lane,
+                          b.sub_line);
     });
     return out;
 }
