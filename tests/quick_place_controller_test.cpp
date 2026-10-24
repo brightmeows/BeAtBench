@@ -101,7 +101,7 @@ TEST(QuickPlace, MovesSelectedBgmNoteToKeyAndConsumes) {
     Fixture f(make_chart());
     f.place.setSelection(selection_of(global_editor_session().chart(), {0}));
     EXPECT_EQ(f.place.pendingCount(), 1);
-    QKeyEvent key(QEvent::KeyPress, Qt::Key_Z, Qt::NoModifier);
+    QKeyEvent key(QEvent::KeyPress, Qt::Key_B, Qt::NoModifier);
     EXPECT_TRUE(f.place.eventFilter(nullptr, &key));
     EXPECT_TRUE(has_lane(global_editor_session().chart(), 1, {0, LaneKind::Key, 1}));
     EXPECT_EQ(f.place.pendingCount(), 0);
@@ -113,16 +113,16 @@ TEST(QuickPlace, DoublePlaySideSwitchAndShiftMomentary) {
     QKeyEvent g(QEvent::KeyPress, Qt::Key_G, Qt::NoModifier);
     EXPECT_TRUE(f.place.eventFilter(nullptr, &g));
     EXPECT_EQ(f.place.side(), 1);
-    QKeyEvent z(QEvent::KeyPress, Qt::Key_Z, Qt::NoModifier);
-    EXPECT_TRUE(f.place.eventFilter(nullptr, &z));
+    QKeyEvent b(QEvent::KeyPress, Qt::Key_B, Qt::NoModifier);
+    EXPECT_TRUE(f.place.eventFilter(nullptr, &b));
     EXPECT_TRUE(has_lane(global_editor_session().chart(), 1, {1, LaneKind::Key, 1}));
 
     // 第二首：Shift 临时切回 1P
     global_editor_session().load(make_chart("dp"));
     f.session.refresh();
     f.place.setSelection(selection_of(global_editor_session().chart(), {0}));
-    QKeyEvent shiftZ(QEvent::KeyPress, Qt::Key_Z, Qt::ShiftModifier);
-    EXPECT_TRUE(f.place.eventFilter(nullptr, &shiftZ));
+    QKeyEvent shiftB(QEvent::KeyPress, Qt::Key_B, Qt::ShiftModifier);
+    EXPECT_TRUE(f.place.eventFilter(nullptr, &shiftB));
     EXPECT_TRUE(has_lane(global_editor_session().chart(), 1, {0, LaneKind::Key, 1}));
 }
 
@@ -155,14 +155,14 @@ TEST(QuickPlace, CollisionAndHiddenTargetDoNotConsume) {
     c.notes.push_back(note(1, Rational(0, 1), {0, LaneKind::Key, 1}, 9));
     Fixture f(std::move(c));
     f.place.setSelection(selection_of(global_editor_session().chart(), {0}));
-    QKeyEvent z(QEvent::KeyPress, Qt::Key_Z, Qt::NoModifier);
-    EXPECT_TRUE(f.place.eventFilter(nullptr, &z));
+    QKeyEvent b(QEvent::KeyPress, Qt::Key_B, Qt::NoModifier);
+    EXPECT_TRUE(f.place.eventFilter(nullptr, &b));
     EXPECT_EQ(f.place.pendingCount(), 1);
     EXPECT_TRUE(has_lane(global_editor_session().chart(), 1, {0, LaneKind::Bgm, 0}));
 
     f.place.setHiddenLanes({QStringLiteral("lane:0:key:1")});
-    QKeyEvent z2(QEvent::KeyPress, Qt::Key_Z, Qt::NoModifier);
-    EXPECT_TRUE(f.place.eventFilter(nullptr, &z2));
+    QKeyEvent b2(QEvent::KeyPress, Qt::Key_B, Qt::NoModifier);
+    EXPECT_TRUE(f.place.eventFilter(nullptr, &b2));
     EXPECT_EQ(f.place.pendingCount(), 1);
 }
 
