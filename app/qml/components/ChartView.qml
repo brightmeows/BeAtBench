@@ -145,13 +145,19 @@ Item {
         z: 20
     }
 
-    // 共享纵向滚动：view 写入 sync，sync 回写 view；值相同则跳过，避免绑定环。
+    // 共享纵向（滚动 + 缩放同一收敛机制）：view 写入 sync，sync 回写 view；
+    // 值差小于阈值则跳过，避免绑定环。
     Connections {
         target: root.verticalSync
         function onScrollYChanged() {
             if (root.syncVertical && root.verticalSync &&
                     Math.abs(view.scrollY - root.verticalSync.scrollY) > 0.01)
                 view.scrollY = root.verticalSync.scrollY
+        }
+        function onMeasureHeightChanged() {
+            if (root.syncVertical && root.verticalSync &&
+                    Math.abs(view.measureHeight - root.verticalSync.measureHeight) > 0.5)
+                view.measureHeight = root.verticalSync.measureHeight
         }
     }
     Connections {
@@ -161,9 +167,17 @@ Item {
                     Math.abs(view.scrollY - root.verticalSync.scrollY) > 0.01)
                 root.verticalSync.scrollY = view.scrollY
         }
+        function onMeasureHeightChanged() {
+            if (root.syncVertical && root.verticalSync &&
+                    Math.abs(view.measureHeight - root.verticalSync.measureHeight) > 0.5)
+                root.verticalSync.measureHeight = view.measureHeight
+        }
     }
     onHiddenColumnsChanged: view.hiddenColumns = root.hiddenColumns
-    onSyncVerticalChanged: if (syncVertical && verticalSync) verticalSync.scrollY = view.scrollY
+    onSyncVerticalChanged: if (syncVertical && verticalSync) {
+        verticalSync.scrollY = view.scrollY
+        verticalSync.measureHeight = view.measureHeight
+    }
 
     // ---- M5.2 播放头叠层（性能拆层 2026-09）：红线 + A/B 标记只重绘本层（<1ms），
     //     播放时钟 20Hz 更新不触发 ChartViewItem 全量重绘（30fps → 60fps+） ----

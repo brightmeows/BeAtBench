@@ -76,7 +76,8 @@ Item {
     property int columnListTick: 0
     readonly property var activeView: activePane === 0 ? chartView : chartView2
     /// 共享纵向滚动（QtObject 动态属性；ChartView 内做双向同步）。
-    QtObject { id: sharedVertical; property real scrollY: 0 }
+    // 共享纵向状态单一载体：滚动与缩放同源（双 pane 收敛机制对称）
+    QtObject { id: sharedVertical; property real scrollY: 0; property real measureHeight: 96 }
     /// 放置用采样数值 id（chartSession.sampleValueOf；-1 = 未选）
     property int sampleId: -1
     /// 当前采样展示文本（提示用）
@@ -269,6 +270,7 @@ Item {
         if (root.dualView) {
             root.activePane = 0
             sharedVertical.scrollY = chartView.scrollY
+            sharedVertical.measureHeight = chartView.measureHeight
         }
     }
     /// 共享纵向 ↔ 独立纵向；切回共享时以活动 pane 位置为准。
@@ -276,6 +278,7 @@ Item {
         root.independentVertical = !root.independentVertical
         if (!root.independentVertical && activeView)
             sharedVertical.scrollY = activeView.scrollY
+            sharedVertical.measureHeight = activeView.measureHeight
     }
     function activeColumnList() { return activeView ? activeView.columnList() : [] }
     function toggleActiveColumn(key) {
@@ -290,6 +293,7 @@ Item {
         if (root.dualView) {
             root.activePane = 0
             sharedVertical.scrollY = chartView.scrollY
+            sharedVertical.measureHeight = chartView.measureHeight
         } else {
             root.activePane = 0
         }
@@ -531,12 +535,8 @@ Item {
                         onMetaEditRequested: (obj) => root.metaEditRequested(obj)
                         onEditAreaPressed: root.editAreaPressed()
                     }
-                    Binding {
-                        target: chartView2
-                        property: "measureHeight"
-                        value: chartView.measureHeight
-                        when: root.dualView && !root.independentVertical
-                    }
+                    // 共享缩放不再走单向 Binding：measureHeight 与 scrollY 同走 sharedVertical
+                    // 收敛（ChartView 内双 Connections；主 pane 缩放后副 pane 跟随，值差回写同源）。
                     ChartView {
                         id: chartView2
                         visible: root.dualView
