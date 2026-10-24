@@ -103,27 +103,7 @@ void QuickPlaceController::cancel() {
     m_selection.clear();
     m_queue.clear();
     m_index = 0;
-    m_lastSignature.clear();
     emit pendingCountChanged();
-}
-
-QString QuickPlaceController::signature(const std::vector<NoteRef>& refs) const {
-    std::vector<NoteRef> sorted = refs;
-    std::sort(sorted.begin(), sorted.end());
-    QStringList parts;
-    parts.reserve(static_cast<int>(sorted.size()));
-    for (const auto& r : sorted) {
-        parts.push_back(QStringLiteral("%1|%2/%3|%4|%5|%6|%7|%8")
-                            .arg(r.measure)
-                            .arg(static_cast<qlonglong>(r.pos.num))
-                            .arg(static_cast<qlonglong>(r.pos.den))
-                            .arg(static_cast<int>(r.lane.player))
-                            .arg(static_cast<int>(r.lane.kind))
-                            .arg(static_cast<int>(r.lane.index))
-                            .arg(r.sample)
-                            .arg(r.sub_line));
-    }
-    return parts.join(QLatin1Char(';'));
 }
 
 std::vector<NoteRef> QuickPlaceController::readSelection(const QVariantList& list) const {
@@ -180,8 +160,6 @@ void QuickPlaceController::rebuildFromSelection(const std::vector<NoteRef>& inpu
         cancel();
         return;
     }
-    const QString inputSig = signature(input);
-    if (inputSig == m_lastSignature) return;  // 控制器自己回写的 selection：保留队列指针
 
     std::set<NoteRef> normalized;
     for (const auto& ref : input) {
@@ -221,17 +199,20 @@ void QuickPlaceController::rebuildFromSelection(const std::vector<NoteRef>& inpu
         used.insert(ref);
         m_queue.push_back(std::move(item));
     }
-    m_lastSignature = signature(m_selection);
     emit pendingCountChanged();
-    if (inputSig != m_lastSignature) emitSelection();
+    if (input != refs) emitSelection();  // 回写含 LN 伙伴的补全集
 }
 
 void QuickPlaceController::emitSelection() {
-    m_lastSignature = signature(m_selection);
+    // 自身回写保护：selectionUpdated → QML → setSelection 的同步环内直接忽略。
+    // 比较签名不如显式互斥：用户手动重选出完全相同的位置集合时不会被误判为回写。
+    m_muting = true;
     emit selectionUpdated(toVariant(m_selection));
+    m_muting = false;
 }
 
 void QuickPlaceController::setSelection(const QVariantList& list) {
+    if (m_muting) return;  // 自身回写环内：保留队列指针与进度
     rebuildFromSelection(readSelection(list));
 }
 
