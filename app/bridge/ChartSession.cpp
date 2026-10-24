@@ -7,6 +7,7 @@
 #include <QMetaObject>
 #include <QThreadPool>
 #include <bit>
+#include <set>
 
 #include "beatbench/audio/ChartRenderer.hpp"
 #include "beatbench/audio/SampleCache.hpp"
@@ -19,6 +20,7 @@
 #include "beatbench/core/codec/Codec.hpp"
 #include "beatbench/core/codec/CodecRegistry.hpp"
 #include "beatbench/core/command/Command.hpp"
+#include "beatbench/core/edit/Selection.hpp"
 #include "beatbench/core/edit/SessionRegistry.hpp"
 #include "beatbench/core/json/Json.hpp"
 
@@ -237,14 +239,14 @@ bool ChartSession::renderAudition(const QVariantList& selection, double startSec
     if (!m_chart || !m_timing || selection.isEmpty()) return false;
     Chart filtered = *m_chart;
     filtered.notes.clear();
+    // 选中集转值集合后单遍扫描：原实现外层 selection 内层全表 = O(S×N)，
+    // 大选择集（轨头全选）在 UI 线程卡顿；set 查找降至 O((N+S)·log S)。
+    std::set<beatbench::edit::NoteRef> wanted;
     for (const auto& item : selection) {
         const QVariantMap m = item.toMap();
         if (m.isEmpty()) continue;
-        const int measure = m.value(QStringLiteral("measure")).toInt();
         const QVariantMap pos = m.value(QStringLiteral("pos")).toMap();
         const QVariantMap laneMap = m.value(QStringLiteral("lane")).toMap();
-        const int sample = m.value(QStringLiteral("sample")).toInt();
-        const int sub = m.value(QStringLiteral("sub_line")).toInt();
         const QString kind = laneMap.value(QStringLiteral("kind")).toString();
         beatbench::Lane lane;
         lane.player = static_cast<std::uint8_t>(laneMap.value(QStringLiteral("player")).toInt());
@@ -253,16 +255,18 @@ bool ChartSession::renderAudition(const QVariantList& selection, double startSec
                     : kind == QStringLiteral("bgm")   ? beatbench::LaneKind::Bgm
                                                       : beatbench::LaneKind::Key;
         lane.index = static_cast<std::uint8_t>(laneMap.value(QStringLiteral("index")).toInt());
-        const beatbench::Rational rp(pos.value(QStringLiteral("num")).toLongLong(),
-                                     pos.value(QStringLiteral("den")).toLongLong());
-        for (const auto& ev : m_chart->notes) {
-            if (static_cast<int>(ev.measure) == measure && ev.pos == rp && ev.value.lane == lane &&
-                static_cast<int>(ev.value.sample.id) == sample &&
-                static_cast<int>(ev.value.sub_line) == sub) {
-                filtered.notes.push_back(ev);
-                break;
-            }
-        }
+        wanted.insert(beatbench::edit::NoteRef{
+            static_cast<std::uint32_t>(m.value(QStringLiteral("measure")).toInt()),
+            beatbench::Rational(pos.value(QStringLiteral("num")).toLongLong(),
+                                pos.value(QStringLiteral("den")).toLongLong()),
+            lane, static_cast<std::uint32_t>(m.value(QStringLiteral("sample")).toInt()),
+            static_cast<std::uint32_t>(m.value(QStringLiteral("sub_line")).toInt())});
+    }
+    if (wanted.empty()) return false;
+    for (const auto& ev : m_chart->notes) {
+        if (wanted.count(beatbench::edit::NoteRef{ev.measure, ev.pos, ev.value.lane,
+                                                  ev.value.sample.id, ev.value.sub_line}) != 0)
+            filtered.notes.push_back(ev);
     }
     if (filtered.notes.empty()) return false;
     bool has_after = false;
@@ -288,9 +292,11 @@ bool ChartSession::renderAudition(const QVariantList& selection, double startSec
             timing.rebuild(filtered);
             *result = beatbench::audio::render_chart_range_w(
                 filtered, timing, m_auditionCache, static_cast<double>(sampleRate),
-                std::max(0.0, startSec), 0.0, sourceDir);
+                std::max(0.0, startSec), 0.0, sourceDir,
+                [this, gen] { return m_auditionTasks.cancelled(gen); });
         },
         [this, result](AudioTaskRunner::Generation) {
+            if (result->cancelled) return;  // 主动取消：静默丢弃，不冒错误提示
             if (!result->ok) {
                 emit auditionFinished(false, QString::fromStdString(result->message));
                 return;

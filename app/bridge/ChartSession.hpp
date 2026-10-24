@@ -205,7 +205,8 @@ class ChartSession : public QObject {
     std::shared_ptr<const beatbench::audio::WaveformPyramid> m_waveform;
     // —— #50 整轨试听 ——
     beatbench::audio::SampleCache m_auditionCache;
-    AudioTaskRunner m_auditionTasks;
+    // 单线程：试听取消靠渲染循环轮询代际；并发渲染只会白烧 CPU 与内存
+    AudioTaskRunner m_auditionTasks{nullptr, 1};
     std::shared_ptr<const std::vector<float>> m_auditionPcm;
     double m_auditionRate = 0.0;
     double m_auditionDuration = 0.0;
