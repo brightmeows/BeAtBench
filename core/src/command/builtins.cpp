@@ -1183,56 +1183,25 @@ std::vector<PatternSlot> pattern_slots_from_json(const Json& args) {
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)——BMS 行解析分支表（协议数据格式）
 std::vector<PatternSlot> pattern_slots_from_text(std::string_view mode, const std::string& text) {
-    std::vector<std::string> lines;
-    std::size_t p = 0;
-    while (p <= text.size()) {
-        const auto e = text.find('\n', p);
-        auto line = (e == std::string::npos) ? text.substr(p) : text.substr(p, e - p);
-        if (!line.empty() && line.back() == '\r') line.pop_back();
-        if (!line.empty()) lines.push_back(std::move(line));
-        if (e == std::string::npos) break;
-        p = e + 1;
-    }
+    // 外部 BMS 文本走 codec parser（issue #47 承诺「外部文本按现有 parser 规则」）：
+    // 小节号任意位数、通道别名/大小写、LNOBJ 隐式 LN 尾、多行 ch01 的 sub_line
+    // 全部由 parser 权威处理，不再维护第二套行解析器。
+    bms::BmsReadOptions opts;
+    opts.mode = std::string(mode);
+    opts.preserve_comments = false;
+    const auto r = bms::read_bms(text, opts);
     std::vector<PatternSlot> out;
-    std::map<std::pair<std::uint32_t, std::string>, std::uint32_t> sub_counts;
-    for (const auto& raw : lines) {
-        std::string_view line(raw);
-        std::size_t q = 0;
-        while (q < line.size() && (line[q] == ' ' || line[q] == '\t')) ++q;
-        if (q >= line.size() || line[q] != '#') continue;
-        line.remove_prefix(q + 1);
-        const auto colon = line.find(':');
-        if (colon == std::string_view::npos || colon < 4) continue;
-        const auto token = line.substr(0, colon);
-        if (token.size() < 4) continue;
-        std::uint32_t measure = 0;
-        bool ok = true;
-        for (std::size_t i = 0; i < 3; ++i) {
-            if (token[i] < '0' || token[i] > '9') {
-                ok = false;
-                break;
-            }
-            measure = measure * 10 + static_cast<std::uint32_t>(token[i] - '0');
-        }
-        if (!ok) continue;
-        const auto channel = token.substr(3);
-        const auto rule = bms::bms_channel_rule_for(mode, channel);
-        if (!rule || rule->semantics != bms::ChannelSemantics::Note) continue;
-        const auto data = line.substr(colon + 1);
-        const std::size_t n_slots = data.size() / 2;
-        const std::uint32_t sub = sub_counts[{measure, std::string(channel)}]++;
-        for (std::size_t i = 0; i < n_slots; ++i) {
-            const auto slot = data.substr(i * 2, 2);
-            if (slot == "00") continue;
-            PatternSlot ps;
-            ps.measure = measure;
-            ps.pos = Rational(static_cast<std::int64_t>(i), static_cast<std::int64_t>(n_slots));
-            ps.lane = rule->lane;
-            ps.sub_line = sub;
-            ps.ln = rule->ln_channel && rule->lane.kind != LaneKind::Bgm;
-            out.push_back(ps);
-        }
+    for (const auto& ev : r.chart.notes) {
+        PatternSlot ps;
+        ps.measure = ev.measure;
+        ps.pos = ev.pos;
+        ps.lane = ev.value.lane;
+        ps.sub_line = ev.value.sub_line;
+        ps.ln = (ev.value.ln_channel || ev.value.ln_pair.has_value()) &&
+                ev.value.lane.kind != LaneKind::Bgm;
+        out.push_back(std::move(ps));
     }
+    // parser 输出按 (measure,pos) 升序；lane/sub_line 维度由调用方统一排序。
     std::sort(out.begin(), out.end(), [](const PatternSlot& a, const PatternSlot& b) {
         if (a.measure != b.measure) return a.measure < b.measure;
         if (a.pos != b.pos) return a.pos < b.pos;
@@ -1584,10 +1553,18 @@ class ClipboardApplyPatternCommand : public Command {
         const auto plan = edit::plan_lane_moves(chart, groups, targets, options);
         for (const auto& move : plan.moves) {
             if (move.move) continue;
-            if (move.reason == "hidden") throw CommandError("target_hidden", "目标轨道已隐藏");
-            if (move.reason == "occupied" || move.reason == "duplicate_target")
-                throw CommandError("target_occupied", "目标位置已有 note");
-            if (move.reason == "not_found") throw CommandError("not_found", "目标 note 不存在");
+            using R = edit::LaneMoveReason;
+            switch (move.reason) {
+                case R::Hidden:
+                    throw CommandError("target_hidden", "目标轨道已隐藏");
+                case R::Occupied:
+                case R::DuplicateTarget:
+                    throw CommandError("target_occupied", "目标位置已有 note");
+                case R::NotFound:
+                    throw CommandError("not_found", "目标 note 不存在");
+                default:
+                    break;  // ln_mismatch：跳过该组（协议返回 skipped），不阻断整批
+            }
         }
 
         auto comp = std::make_unique<edit::CompositeCommand>();

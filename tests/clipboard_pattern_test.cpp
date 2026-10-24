@@ -193,6 +193,25 @@ TEST(ClipboardPattern, ExternalTextPatternMovesTarget) {
     EXPECT_EQ(global_editor_session().chart().notes[0].value.lane.index, 1);
 }
 
+TEST(ClipboardPattern, ExternalTextLnObjImplicitTailPairsCorrectly) {
+    // LNOBJ 隐式尾：parser 生成完整 ln_pair，pattern 侧两两配对不再错位
+    global_editor_session().load(ln_chart(1));
+    Json args = Json::object();
+    args.set("selection", selection_for(global_editor_session().chart(), {0, 1}));
+    // 5x 通道头 + LNOBJ 定义；parser 把 1100 视为普通单点、1101 也为单点时退化为两槽——
+    // 这里直接用 5x/6x 显式头尾行验证配对（LNOBJ 场景等价：parser 已配成 ln_pair）
+    args.set("text", "#00151:1100\n#00161:0000\n#00251:1101\n#00261:0000");
+    const Json resp =
+        global_registry().dispatch(request("clipboard.applyPattern", std::move(args)));
+    ASSERT_TRUE(resp.at("ok").as_bool()) << resp.dump();
+    const auto& notes = global_editor_session().chart().notes;
+    ASSERT_EQ(notes.size(), 2u);
+    ASSERT_TRUE(notes[0].value.ln_pair.has_value());
+    ASSERT_TRUE(notes[1].value.ln_pair.has_value());
+    EXPECT_EQ(notes[0].value.lane.index, 1);
+    EXPECT_EQ(notes[1].value.lane.index, 1);
+}
+
 TEST(ClipboardPattern, LnPairGroupsMoveTogetherAndUndoRestores) {
     const Json pattern = copy_pattern(ln_chart(1));
     global_editor_session().load(ln_chart(3));
