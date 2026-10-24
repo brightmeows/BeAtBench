@@ -1695,8 +1695,8 @@ class NoteMoveCommand : public Command {
             to_sub_line = static_cast<std::uint32_t>(bl->as_i64());
         }
         return std::make_unique<edit::MoveNoteCommand>(
-            edit::NoteRef{from_m, from_pos, lane, sample, from_sub_line}, to_m, to_pos, false,
-            to_lane, to_sub_line);
+            edit::NoteRef{from_m, from_pos, lane, sample, from_sub_line}, to_m, to_pos, to_lane,
+            to_sub_line);
     }
 
     Json run(const Json& args) const override {
@@ -1867,7 +1867,8 @@ class NoteTransformCommand : public Command {
         // 键号上限按谱面模式，与命令 apply 同一 transform_lane）。
         const std::string mode =
             session.has_chart() ? session.chart().mode_id.value_or("sp7k") : "sp7k";
-        const int max_key = chart_mode_key_count(mode);
+        // exec 已通过 bind_source 校验模式已知；value_or 仅为回显防御。
+        const int max_key = chart_mode_key_count(mode).value_or(7);
         Json sel = Json::array();
         for (const auto& r : refs) {
             const Lane nl = edit::transform_lane(r.lane, mirror, rotate, max_key);
@@ -2129,7 +2130,7 @@ class NoteMoveRegionCommand : public Command {
                     r, *convert_target, static_cast<std::uint32_t>(to_m), to_pos));
             } else {
                 comp->add(std::make_unique<edit::MoveNoteCommand>(
-                    r, static_cast<std::uint32_t>(to_m), to_pos, false, to_lane, to_sub_line));
+                    r, static_cast<std::uint32_t>(to_m), to_pos, to_lane, to_sub_line));
             }
         }
         if (comp->size() == 0) {

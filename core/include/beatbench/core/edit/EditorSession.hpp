@@ -152,16 +152,12 @@ class PutNoteCommand : public EditCommand {
 /// 跨通道（2026-09，M2 自由 2D 拖动）：`to_lane` 可选——传了 = 移动同时改到目标轨道
 /// （时间 + 通道一起动）；缺省 nullopt = 纯时间移动（向后兼容，行为与旧版完全一致）。
 ///
-/// LN 处理（2026-08 对齐 BMS 编辑器惯例，用户确认）：
-/// - move_ln_pair = false（默认）：LN 当作单个 note 处理——只移动该 note，
-///   配对解除（伙伴 ln_pair 清空）。配对断了由解析器自然延续/ lint 告警，
-///   编辑器不主动修复（BMS 编辑器常见行为）。
-/// - move_ln_pair = true：识别到 LN 则整体头尾一起移动（保持相对位置），配对保留；
-///   跨通道时伙伴 lane 同步改为 to_lane（LN 头尾恒同轨道）。
+/// LN 处理（2026-09 用户最终确认）：LN 当作单个 note 处理——只移动该 note，
+/// 配对互指保持（不随动、不断开）；LN 整体换轨走 MoveLnPairCommand。
 class MoveNoteCommand : public EditCommand {
    public:
     MoveNoteCommand(NoteRef from, std::uint32_t to_measure, Rational to_pos,
-                    bool move_ln_pair = false, std::optional<Lane> to_lane = std::nullopt,
+                    std::optional<Lane> to_lane = std::nullopt,
                     std::optional<std::uint32_t> to_sub_line = std::nullopt);
     std::string name() const override { return "note.move"; }
     void apply(Chart& chart) override;
@@ -176,7 +172,6 @@ class MoveNoteCommand : public EditCommand {
     NoteRef m_from;  ///< 源五元组
     std::uint32_t m_to_measure;
     Rational m_to_pos;
-    bool m_move_ln_pair;
     /// 目标轨道（可选；nullopt = 纯时间移动，不换轨）
     std::optional<Lane> m_to_lane;
     /// 源 BGM 行序号（消歧：同 (measure,pos,lane,sample) 的 Bgm note 靠它定位）
@@ -194,7 +189,7 @@ class MoveNoteCommand : public EditCommand {
 };
 
 /// 整体移动 LN 头尾：两端同时改到目标轨道，时间/采样不变。
-/// 与 MoveNoteCommand 的 move_ln_pair 旧参数不同：本命令确实移动两端并保留配对。
+/// 与 MoveNoteCommand（单端移动、配对互指保持）互补：本命令确实移动两端并保留配对。
 /// 前置条件：源 note 必须已有 ln_pair；否则 apply 无操作。
 /// 单个 undo 步；目标只能是 lane（不提供时间位移）。
 class MoveLnPairCommand : public EditCommand {

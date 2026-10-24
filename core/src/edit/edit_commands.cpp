@@ -406,12 +406,11 @@ std::string PutNoteCommand::describe() const {
 // ---------- MoveNoteCommand ----------
 
 MoveNoteCommand::MoveNoteCommand(NoteRef from, std::uint32_t to_measure, Rational to_pos,
-                                 bool move_ln_pair, std::optional<Lane> to_lane,
+                                 std::optional<Lane> to_lane,
                                  std::optional<std::uint32_t> to_sub_line)
     : m_from(from),
       m_to_measure(to_measure),
       m_to_pos(to_pos),
-      m_move_ln_pair(move_ln_pair),
       m_to_lane(to_lane),
       m_to_sub_line(to_sub_line) {}
 
@@ -610,7 +609,7 @@ bool MoveNoteCommand::merge_with(const EditCommand& next) {
     if (!mv) return false;
     if (mv->m_from.measure == m_to_measure && mv->m_from.pos == m_to_pos &&
         mv->m_from.lane == m_from.lane && mv->m_from.sample == m_from.sample &&
-        mv->m_move_ln_pair == m_move_ln_pair && mv->m_to_lane == m_to_lane) {
+        mv->m_to_lane == m_to_lane) {
         m_to_measure = mv->m_to_measure;
         m_to_pos = mv->m_to_pos;
         m_to_lane = mv->m_to_lane;
@@ -1570,8 +1569,9 @@ void TransformNoteCommand::bind_source(const Chart& chart,
         // has a BMS representation. Include ln_channel even for orphan LN notes:
         // the writer can retain those using its LN-channel fallback.
         const auto mode = chart.mode_id.value_or("sp7k");
-        const auto target =
-            transform_lane(m_ref.lane, m_mirror, m_rotate, chart_mode_key_count(mode));
+        const auto max_key = chart_mode_key_count(mode);
+        if (!max_key) throw std::invalid_argument("Unknown chart mode: " + mode);
+        const auto target = transform_lane(m_ref.lane, m_mirror, m_rotate, *max_key);
         if (target != m_ref.lane &&
             !bms::bms_can_represent(mode, target, e.value.ln_channel, e.value.kind)) {
             throw std::invalid_argument(
@@ -1613,9 +1613,11 @@ void TransformNoteCommand::apply(Chart& chart) {
 
 void TransformNoteCommand::apply_bound(Chart& chart) {
     if (!m_index) return;
-    // 键号上限按谱面模式（apply 时刻的 chart.mode_id；undo 侧恢复原 lane 不重算）
-    const int max_key = chart_mode_key_count(chart.mode_id.value_or("sp7k"));
-    m_new_lane = transform_lane(m_ref.lane, m_mirror, m_rotate, max_key);
+    // 键号上限按谱面模式（apply 时刻的 chart.mode_id；undo 侧恢复原 lane 不重算）。
+    // bind_source 已校验模式已知；此处防御性无操作兜底不可达路径。
+    const auto max_key = chart_mode_key_count(chart.mode_id.value_or("sp7k"));
+    if (!max_key) return;
+    m_new_lane = transform_lane(m_ref.lane, m_mirror, m_rotate, *max_key);
     if (*m_new_lane == m_ref.lane) {
         m_new_lane.reset();  // 无变化 → invert 无操作
         return;

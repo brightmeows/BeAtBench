@@ -13,10 +13,37 @@
 using namespace beatbench;
 using beatbench::edit::EditorSession;
 using beatbench::edit::LaneMove;
+using beatbench::edit::LaneMoveReason;
 using beatbench::edit::LanePlanOptions;
 using beatbench::edit::LaneTarget;
 using beatbench::edit::NoteGroup;
 using beatbench::edit::NoteRef;
+
+// gtest 打印 LaneMoveReason（enum class 无隐式转换；PrintTo 走 ADL 须在原命名空间）。
+namespace beatbench::edit {
+inline void PrintTo(LaneMoveReason r, std::ostream* os) { *os << static_cast<int>(r); }
+}  // namespace beatbench::edit
+
+/// 断言消息用的人类可读原因名（enum 不能直接流式输出）。
+inline const char* reason_name(LaneMoveReason r) {
+    switch (r) {
+        case LaneMoveReason::None:
+            return "none";
+        case LaneMoveReason::NotFound:
+            return "not_found";
+        case LaneMoveReason::InvalidLane:
+            return "invalid_lane";
+        case LaneMoveReason::Hidden:
+            return "hidden";
+        case LaneMoveReason::LnMismatch:
+            return "ln_mismatch";
+        case LaneMoveReason::Occupied:
+            return "occupied";
+        case LaneMoveReason::DuplicateTarget:
+            return "duplicate_target";
+    }
+    return "?";
+}
 
 namespace {
 
@@ -87,7 +114,7 @@ TEST(LanePlan, MovesLaneWithoutTimeChange) {
     auto plan = beatbench::edit::plan_lane_moves(
         c, groups, {LaneTarget{{0, LaneKind::Key, 2}, false}}, options());
     ASSERT_EQ(plan.moves.size(), 1u);
-    ASSERT_TRUE(plan.moves[0].move) << plan.moves[0].reason;
+    ASSERT_TRUE(plan.moves[0].move) << reason_name(plan.moves[0].reason);
 
     EditorSession s;
     s.load(c);
@@ -109,7 +136,7 @@ TEST(LanePlan, StationarySelectedTargetBlocksCollision) {
         c, groups, {LaneTarget{{0, LaneKind::Key, 3}, false}}, options());
     ASSERT_EQ(plan.moves.size(), 1u);
     EXPECT_FALSE(plan.moves[0].move);
-    EXPECT_EQ(plan.moves[0].reason, "occupied");
+    EXPECT_EQ(plan.moves[0].reason, LaneMoveReason::Occupied);
     EXPECT_EQ(plan.skipped, 1u);
     EXPECT_EQ(plan.unplanned, 1u);
 }
@@ -124,9 +151,9 @@ TEST(LanePlan, DuplicateTargetsPlanOnlyFirst) {
         {LaneTarget{{0, LaneKind::Key, 2}, false}, LaneTarget{{0, LaneKind::Key, 2}, false}},
         options());
     ASSERT_EQ(plan.moves.size(), 2u);
-    EXPECT_TRUE(plan.moves[0].move) << plan.moves[0].reason;
+    EXPECT_TRUE(plan.moves[0].move) << reason_name(plan.moves[0].reason);
     EXPECT_FALSE(plan.moves[1].move);
-    EXPECT_EQ(plan.moves[1].reason, "duplicate_target");
+    EXPECT_EQ(plan.moves[1].reason, LaneMoveReason::DuplicateTarget);
 }
 
 TEST(LanePlan, BgmTargetAutoPicksFreeSubLine) {
@@ -137,7 +164,7 @@ TEST(LanePlan, BgmTargetAutoPicksFreeSubLine) {
     auto plan = beatbench::edit::plan_lane_moves(
         c, groups, {LaneTarget{{0, LaneKind::Bgm, 0}, false}}, options());
     ASSERT_EQ(plan.moves.size(), 1u);
-    ASSERT_TRUE(plan.moves[0].move) << plan.moves[0].reason;
+    ASSERT_TRUE(plan.moves[0].move) << reason_name(plan.moves[0].reason);
     EXPECT_EQ(plan.moves[0].sub_line, 1u);
 }
 
@@ -150,7 +177,7 @@ TEST(LanePlan, HiddenAndModeInvalidTargets) {
         c, groups, {LaneTarget{{0, LaneKind::Key, 2}, false}}, hidden_opts);
     ASSERT_EQ(hidden.moves.size(), 1u);
     EXPECT_FALSE(hidden.moves[0].move);
-    EXPECT_EQ(hidden.moves[0].reason, "hidden");
+    EXPECT_EQ(hidden.moves[0].reason, LaneMoveReason::Hidden);
 
     Chart pms = make_chart();
     pms.mode_id = "pms9k";
@@ -159,13 +186,13 @@ TEST(LanePlan, HiddenAndModeInvalidTargets) {
         pms, pms_groups, {LaneTarget{{0, LaneKind::Scratch, 0}, false}}, options());
     ASSERT_EQ(scratch.moves.size(), 1u);
     EXPECT_FALSE(scratch.moves[0].move);
-    EXPECT_EQ(scratch.moves[0].reason, "invalid_lane");
+    EXPECT_EQ(scratch.moves[0].reason, LaneMoveReason::InvalidLane);
 
     auto player2 = beatbench::edit::plan_lane_moves(
         c, groups, {LaneTarget{{1, LaneKind::Key, 1}, false}}, options());
     ASSERT_EQ(player2.moves.size(), 1u);
     EXPECT_FALSE(player2.moves[0].move);
-    EXPECT_EQ(player2.moves[0].reason, "invalid_lane");
+    EXPECT_EQ(player2.moves[0].reason, LaneMoveReason::InvalidLane);
 }
 
 TEST(LanePlan, LnMismatchSkipsWithoutMoving) {
@@ -177,7 +204,7 @@ TEST(LanePlan, LnMismatchSkipsWithoutMoving) {
                                                  {LaneTarget{{0, LaneKind::Key, 2}, false}}, opts);
     ASSERT_EQ(plan.moves.size(), 1u);
     EXPECT_FALSE(plan.moves[0].move);
-    EXPECT_EQ(plan.moves[0].reason, "ln_mismatch");
+    EXPECT_EQ(plan.moves[0].reason, LaneMoveReason::LnMismatch);
 }
 
 TEST(LanePlan, LnPairMovesTogetherAndUndoRestores) {
@@ -188,7 +215,7 @@ TEST(LanePlan, LnPairMovesTogetherAndUndoRestores) {
     auto plan = beatbench::edit::plan_lane_moves(c, groups,
                                                  {LaneTarget{{0, LaneKind::Key, 2}, true}}, opts);
     ASSERT_EQ(plan.moves.size(), 1u);
-    ASSERT_TRUE(plan.moves[0].move) << plan.moves[0].reason;
+    ASSERT_TRUE(plan.moves[0].move) << reason_name(plan.moves[0].reason);
 
     EditorSession s;
     s.load(c);
@@ -207,7 +234,7 @@ TEST(LanePlan, ChangesTimeCapability) {
     const Lane lane2{0, LaneKind::Key, 2};
 
     beatbench::edit::MoveNoteCommand lane_only(NoteRef{1, Rational(0, 1), lane1, 1}, 1,
-                                               Rational(0, 1), false, lane2);
+                                               Rational(0, 1), lane2);
     EXPECT_FALSE(lane_only.changes_time());
 
     beatbench::edit::MoveNoteCommand time_move(NoteRef{1, Rational(0, 1), lane1, 1}, 2,

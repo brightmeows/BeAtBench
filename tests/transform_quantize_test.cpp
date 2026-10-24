@@ -425,9 +425,10 @@ TEST(TransformQuantize, DetectedBmespUsesNineKeysWithoutBecomingCreationMode) {
     opts.mode = "pms9k";
     const auto read = bms::read_bms("#BPM 120\n#00016:01\n", opts);
     ASSERT_EQ(read.chart.mode_id.value_or(""), "pms9k-bmesp");
-    EXPECT_EQ(chart_mode_key_count(*read.chart.mode_id), 9);
+    ASSERT_TRUE(chart_mode_key_count(*read.chart.mode_id).has_value());
+    EXPECT_EQ(*chart_mode_key_count(*read.chart.mode_id), 9);
     EXPECT_FALSE(chart_mode_by_id("pms9k-bmesp").has_value());
-    EXPECT_EQ(chart_mode_key_count("unknown"), 7);
+    EXPECT_FALSE(chart_mode_key_count("unknown").has_value());
     auto& session = global_editor_session();
     session.load(read.chart);
     const auto response = global_registry().dispatch(transform_request(read.chart, {0}, true, 0));

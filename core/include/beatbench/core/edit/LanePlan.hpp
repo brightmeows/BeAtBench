@@ -31,6 +31,17 @@ struct LaneTarget {
     bool ln = false;
 };
 
+/// 规划失败原因（enum 而非字符串：调用方按类别 switch，拼错编译期报错）。
+enum class LaneMoveReason : std::uint8_t {
+    None,             ///< 成功
+    NotFound,         ///< 源 note 已不存在
+    InvalidLane,      ///< 模式表/开关不允许的目标轨（含 LN 不可进 BGM）
+    Hidden,           ///< 目标轨在活动视口隐藏
+    LnMismatch,       ///< pattern 槽 LN 标记与源组不一致
+    Occupied,         ///< 目标位置已有其它 note（含动态冲突收敛）
+    DuplicateTarget,  ///< 多个组套用同一目标槽
+};
+
 struct LanePlanOptions {
     /// 允许 BGM 目标（配置复制为 true；快速摆音为 false）。
     bool allow_bgm = false;
@@ -49,7 +60,7 @@ struct LaneMove {
     std::uint32_t sub_line = 0;
     bool ln = false;
     bool move = false;
-    std::string reason;  ///< invalid_lane / hidden / ln_mismatch / occupied / duplicate_target
+    LaneMoveReason reason = LaneMoveReason::None;
 };
 
 struct LanePlan {

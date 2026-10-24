@@ -75,7 +75,7 @@ TEST(BgmLine, MoveAcrossSubLane) {
     s.load(make_chart());
     // 把 sub_line=0 移到同小节 sub_line=1（同 pos）
     ASSERT_TRUE(s.exec(std::make_unique<MoveNoteCommand>(
-        NoteRef{1, Rational(0, 1), Lane{0, LaneKind::Bgm, 0}, 0x22, 0}, 1, Rational(0, 1), false,
+        NoteRef{1, Rational(0, 1), Lane{0, LaneKind::Bgm, 0}, 0x22, 0}, 1, Rational(0, 1),
         std::nullopt, 1)));
     ASSERT_EQ(s.chart().notes.size(), 3u);
     // 现在两个 Bgm note 都在 sub_line=1？——不，移动后原 0 变 1，原 1 仍在 1
@@ -108,7 +108,7 @@ TEST(BgmLine, BgmToKey) {
     EditorSession s;
     s.load(make_chart());
     ASSERT_TRUE(s.exec(std::make_unique<MoveNoteCommand>(
-        NoteRef{1, Rational(0, 1), Lane{0, LaneKind::Bgm, 0}, 0x22, 0}, 1, Rational(1, 4), false,
+        NoteRef{1, Rational(0, 1), Lane{0, LaneKind::Bgm, 0}, 0x22, 0}, 1, Rational(1, 4),
         Lane{0, LaneKind::Key, 3})));
     const auto& notes = s.chart().notes;
     ASSERT_EQ(notes.size(), 3u);

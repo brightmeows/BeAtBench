@@ -199,7 +199,7 @@ TEST(EditCommands, DeleteLnBreaksPair) {
 
 TEST(EditCommands, MoveLnDefaultSingleNoteBreaksPair) {
     // 2026-09 用户最终确认：移动只移动选中 note，ln_pair 保持（不自动重连也不断开）。
-    // 默认（move_ln_pair=false）：只移主 note 到 m3，配对端留原位，互指按伙伴值保持。
+    // 只移主 note 到 m3，配对端留原位，互指按伙伴值保持；LN 整体换轨走 MoveLnPairCommand。
     // ⚠️ n1/n2 须同 sample（rebuild 按 (lane,sample) 分组交替配对）。
     EditorSession s;
     Chart c = make_chart();
@@ -229,50 +229,6 @@ TEST(EditCommands, MoveLnDefaultSingleNoteBreaksPair) {
     EXPECT_TRUE(ln_consistent(s.chart().notes));
     EXPECT_TRUE(s.chart().notes[0].value.ln_pair.has_value());
     EXPECT_TRUE(s.chart().notes[1].value.ln_pair.has_value());
-}
-
-TEST(EditCommands, MoveLnPairModeMovesBothEnds) {
-    // 2026-09 用户最终确认：移动只移动选中 note，ln_pair 保持（不成对随动）。
-    // move_ln_pair=true 参数保留（旧 API），但只移主 note、配对互指按伙伴值保持。
-    EditorSession s;
-    Chart c = make_chart();
-    c.notes[0].value.lane = {0, LaneKind::Key, 1};
-    c.notes[1].value.lane = {0, LaneKind::Key, 1};
-    c.notes[1].value.sample.id = 1;  // 与 n1 同 sample
-    c.notes[0].value.ln_channel = true;
-    c.notes[1].value.ln_channel = true;
-    c.notes[0].value.ln_pair = 1;
-    c.notes[1].value.ln_pair = 0;
-    s.load(std::move(c));
-    ASSERT_TRUE(s.exec(std::make_unique<MoveNoteCommand>(
-        NoteRef{1, Rational(0, 1), Lane{0, LaneKind::Key, 1}, 1}, 3, Rational(0, 1), true)));
-    EXPECT_TRUE(ln_consistent(s.chart().notes));
-    // 头在 m3（pos0），尾留 m1（pos1/2）；两者仍互指
-    bool head_at_m3 = false, tail_at_m1 = false;
-    for (const auto& e : s.chart().notes) {
-        if (e.measure == 3 && e.pos == Rational(0, 1) &&
-            e.value.lane == (Lane{0, LaneKind::Key, 1}))
-            head_at_m3 = true;
-        if (e.measure == 1 && e.pos == Rational(1, 2) &&
-            e.value.lane == (Lane{0, LaneKind::Key, 1}))
-            tail_at_m1 = true;
-    }
-    EXPECT_TRUE(head_at_m3);
-    EXPECT_TRUE(tail_at_m1);
-    // undo → 完全还原（含配对）
-    ASSERT_TRUE(s.undo());
-    EXPECT_TRUE(ln_consistent(s.chart().notes));
-    bool at_m1 = false, at_m2 = false;
-    for (const auto& e : s.chart().notes) {
-        if (e.measure == 1 && e.pos == Rational(0, 1) &&
-            e.value.lane == (Lane{0, LaneKind::Key, 1}))
-            at_m1 = true;
-        if (e.measure == 1 && e.pos == Rational(1, 2) &&
-            e.value.lane == (Lane{0, LaneKind::Key, 1}))
-            at_m2 = true;
-    }
-    EXPECT_TRUE(at_m1);
-    EXPECT_TRUE(at_m2);
 }
 
 // —— 随机序列可逆性 ——

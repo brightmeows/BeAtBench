@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "beatbench/core/ChartMode.hpp"
+#include "beatbench/core/ColumnKey.hpp"
 #include "beatbench/core/edit/EditorSession.hpp"
 #include "beatbench/core/edit/LanePlan.hpp"
 
@@ -34,8 +35,8 @@ NoteRef ref_of(const Event<Note>& e) {
 
 bool target_hidden(const Lane& lane, std::uint32_t sub_line, const std::set<std::string>& hidden) {
     if (lane.kind == LaneKind::Bgm) {
-        if (hidden.count("bgm:all") != 0) return true;
-        if (hidden.count("bgm:sub:" + std::to_string(sub_line)) != 0) return true;
+        if (hidden.count(bgm_column_key(std::nullopt)) != 0) return true;
+        if (hidden.count(bgm_column_key(sub_line)) != 0) return true;
     }
     return hidden.count(lane_key_string(lane)) != 0;
 }
@@ -144,19 +145,19 @@ LanePlan plan_lane_moves(const Chart& chart, const std::vector<NoteGroup>& group
         std::optional<std::size_t> b;
         if (move.group.b) b = find_note_index(chart, *move.group.b);
         if (!a) {
-            move.reason = "not_found";
+            move.reason = LaneMoveReason::NotFound;
             continue;
         }
         if (!lane_target_allowed(mode, move.lane, options)) {
-            move.reason = "invalid_lane";
+            move.reason = LaneMoveReason::InvalidLane;
             continue;
         }
         if (options.require_ln_match && move.group.ln != move.ln) {
-            move.reason = "ln_mismatch";
+            move.reason = LaneMoveReason::LnMismatch;
             continue;
         }
         if (move.group.ln && move.lane.kind == LaneKind::Bgm) {
-            move.reason = "invalid_lane";
+            move.reason = LaneMoveReason::InvalidLane;
             continue;
         }
         indices[i].push_back(*a);
@@ -181,13 +182,13 @@ LanePlan plan_lane_moves(const Chart& chart, const std::vector<NoteGroup>& group
             move.sub_line = 0;
         }
         if (target_hidden(move.lane, move.sub_line, options.hidden_lanes)) {
-            move.reason = "hidden";
+            move.reason = LaneMoveReason::Hidden;
             continue;
         }
         const std::string key =
             lane_target_key(move.group.a.measure, move.group.a.pos, move.lane, move.sub_line);
         if (claimed.count(key) != 0) {
-            move.reason = "duplicate_target";
+            move.reason = LaneMoveReason::DuplicateTarget;
             continue;
         }
         claimed.insert(key);
@@ -209,7 +210,7 @@ LanePlan plan_lane_moves(const Chart& chart, const std::vector<NoteGroup>& group
                 (move.group.b &&
                  collides(chart, *move.group.b, move.lane, move.sub_line, active))) {
                 move.move = false;
-                move.reason = "occupied";
+                move.reason = LaneMoveReason::Occupied;
                 changed = true;
             }
         }
@@ -227,7 +228,7 @@ std::unique_ptr<EditCommand> make_lane_move_command(const LaneMove& move) {
                                                     ? std::optional<std::uint32_t>(move.sub_line)
                                                     : std::nullopt;
     return std::make_unique<MoveNoteCommand>(move.group.a, move.group.a.measure, move.group.a.pos,
-                                             false, move.lane, to_sub);
+                                             move.lane, to_sub);
 }
 
 }  // namespace beatbench::edit
