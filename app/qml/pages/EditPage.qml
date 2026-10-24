@@ -475,39 +475,115 @@ Item {
                     id: viewSplit
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    showChannelIds: root.showChannelIds
-                    bgmExpanded: root.bgmExpanded
-                    noteSampleMode: root.noteSampleMode
-                    lnSelectMode: root.lnSelectMode
-                    showExtras: root.showExtras
-                    showGrid: root.showGrid
-                    editorTool: root.editorTool
+                    orientation: Qt.Horizontal
+                    handle: Rectangle {
+                        implicitWidth: root.dualView ? 4 : 0
+                        color: Theme.border
+                        visible: root.dualView
+                        Rectangle {
+                            anchors.fill: parent
+                            color: splitHover.hovered ? Theme.accent : "transparent"
+                            opacity: 0.35
+                        }
+                        HoverHandler { id: splitHover }
+                    }
+                    ChartView {
+                        id: chartView
+                        SplitView.fillWidth: true
+                        SplitView.minimumWidth: 240
+                        showChannelIds: root.showChannelIds
+                        bgmExpanded: root.bgmExpanded
+                        noteSampleMode: root.noteSampleMode
+                        lnSelectMode: root.lnSelectMode
+                        showExtras: root.showExtras
+                        showGrid: root.showGrid
                     verticalMoveMode: root.verticalMoveMode
-                    // M5.2 播放头跟随：单向绑定（root.followPlayhead = chartView 的值；
-                    // 用户滚动 ChartView 内部改——此处不设值，只让 root 读）
-                    followPlayhead: root.followPlayhead
-                    sampleId: root.sampleId
-                    sampleText: root.sampleText
-                    selection: root.selection
-                    metaSelection: root.metaSelection
-                    snapNum: root.snapNum
-                    snapDen: root.snapDen
-                    zoomToCursor: root.zoomToCursor
-                    perfLog: root.perfLog
-                    onHitPlaceRequested: (hit) => root.hitPlaceRequested(hit)
-                    onSelectionFinished: (refs) => root.selectionFinished(refs)
-                    onNoteClicked: (ref, ctrl) => root.noteClicked(ref, ctrl)
-                    onPlayNoteSample: (ref) => root.playNoteSample(ref)
-                    onCanvasClicked: () => root.canvasClicked()
-                    onNoteRightDeleted: (ref) => root.noteRightDeleted(ref)
-                    onNoteEditRequested: (ref) => root.noteEditRequested(ref)
-                    onMoveSelectionRequested: (deltaF, targetLane, sourceLane, sourceBgmLine) => root.moveSelectionRequested(deltaF, targetLane, sourceLane, sourceBgmLine)
-                    onMetaObjectClicked: (obj, ctrl) => root.metaObjectClicked(obj, ctrl)
-                    onMetaMoveRequested: (kind, obj, deltaF, targetLane) =>
-                        root.metaMoveRequested(kind, obj, deltaF, targetLane)
-                    onMetaRightDeleted: (obj) => root.metaRightDeleted(obj)
-                    onMetaEditRequested: (obj) => root.metaEditRequested(obj)
-                    onEditAreaPressed: root.editAreaPressed()                }
+                        hiddenColumns: root.hiddenColumns1
+                        active: root.activePane === 0
+                        verticalSync: sharedVertical
+                        syncVertical: root.dualView && !root.independentVertical
+                        editorTool: root.editorTool
+                        moveMode: root.moveMode
+                        followPlayhead: root.followPlayhead
+                        sampleId: root.sampleId
+                        sampleText: root.sampleText
+                        selection: root.selection
+                        metaSelection: root.metaSelection
+                        snapNum: root.snapNum
+                        snapDen: root.snapDen
+                        zoomToCursor: root.zoomToCursor
+                        perfLog: root.perfLog
+                        onActivated: root.activePane = 0
+                        onHideColumnRequested: (key) => root.toggleActiveColumn(key)
+                        onLaneSelectRequested: (key, shift, ctrl) => root.laneSelectRequested(key, shift, ctrl)
+                        onHitPlaceRequested: (hit) => root.hitPlaceRequested(hit)
+                        onSelectionFinished: (refs) => root.selectionFinished(refs)
+                        onNoteClicked: (ref, ctrl) => root.noteClicked(ref, ctrl)
+                        onPlayNoteSample: (ref) => root.playNoteSample(ref)
+                        onCanvasClicked: () => root.canvasClicked()
+                        onNoteRightDeleted: (ref) => root.noteRightDeleted(ref)
+                        onNoteEditRequested: (ref) => root.noteEditRequested(ref)
+                        onMoveSelectionRequested: (deltaF, targetLane, sourceLane, sourceBgmLine) => root.moveSelectionRequested(deltaF, targetLane, sourceLane, sourceBgmLine)
+                        onMetaObjectClicked: (obj, ctrl) => root.metaObjectClicked(obj, ctrl)
+                        onMetaMoveRequested: (kind, obj, deltaF, targetLane) =>
+                            root.metaMoveRequested(kind, obj, deltaF, targetLane)
+                        onMetaRightDeleted: (obj) => root.metaRightDeleted(obj)
+                        onMetaEditRequested: (obj) => root.metaEditRequested(obj)
+                        onEditAreaPressed: root.editAreaPressed()
+                    }
+                    Binding {
+                        target: chartView2
+                        property: "measureHeight"
+                        value: chartView.measureHeight
+                        when: root.dualView && !root.independentVertical
+                    }
+                    ChartView {
+                        id: chartView2
+                        visible: root.dualView
+                        SplitView.preferredWidth: Math.max(240, viewSplit.width / 2)
+                        SplitView.minimumWidth: 200
+                        showChannelIds: root.showChannelIds
+                        bgmExpanded: root.bgmExpanded
+                        noteSampleMode: root.noteSampleMode
+                        lnSelectMode: root.lnSelectMode
+                        showExtras: root.showExtras
+                        showGrid: root.showGrid
+                    verticalMoveMode: root.verticalMoveMode
+                        hiddenColumns: root.hiddenColumns2
+                        active: root.activePane === 1
+                        verticalSync: sharedVertical
+                        syncVertical: root.dualView && !root.independentVertical
+                        zoomEnabled: !(root.dualView && !root.independentVertical)
+                        editorTool: root.editorTool
+                        moveMode: root.moveMode
+                        followPlayhead: root.followPlayhead
+                        sampleId: root.sampleId
+                        sampleText: root.sampleText
+                        selection: root.selection
+                        metaSelection: root.metaSelection
+                        snapNum: root.snapNum
+                        snapDen: root.snapDen
+                        zoomToCursor: root.zoomToCursor
+                        perfLog: root.perfLog
+                        onActivated: root.activePane = 1
+                        onHideColumnRequested: (key) => root.toggleActiveColumn(key)
+                        onLaneSelectRequested: (key, shift, ctrl) => root.laneSelectRequested(key, shift, ctrl)
+                        onHitPlaceRequested: (hit) => root.hitPlaceRequested(hit)
+                        onSelectionFinished: (refs) => root.selectionFinished(refs)
+                        onNoteClicked: (ref, ctrl) => root.noteClicked(ref, ctrl)
+                        onPlayNoteSample: (ref) => root.playNoteSample(ref)
+                        onCanvasClicked: () => root.canvasClicked()
+                        onNoteRightDeleted: (ref) => root.noteRightDeleted(ref)
+                        onNoteEditRequested: (ref) => root.noteEditRequested(ref)
+                        onMoveSelectionRequested: (deltaF, targetLane, sourceLane, sourceBgmLine) => root.moveSelectionRequested(deltaF, targetLane, sourceLane, sourceBgmLine)
+                        onMetaObjectClicked: (obj, ctrl) => root.metaObjectClicked(obj, ctrl)
+                        onMetaMoveRequested: (kind, obj, deltaF, targetLane) =>
+                            root.metaMoveRequested(kind, obj, deltaF, targetLane)
+                        onMetaRightDeleted: (obj) => root.metaRightDeleted(obj)
+                        onMetaEditRequested: (obj) => root.metaEditRequested(obj)
+                        onEditAreaPressed: root.editAreaPressed()
+                    }
+                }
             }
         }
 
