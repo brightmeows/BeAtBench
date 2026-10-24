@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "beatbench/core/Chart.hpp"
+#include "beatbench/core/edit/LanePlan.hpp"
 #include "beatbench/core/edit/Selection.hpp"
 
 class QEvent;
@@ -73,12 +74,8 @@ class QuickPlaceController : public QObject {
     void edited();
 
    private:
-    struct Item {
-        edit::NoteRef a;                 ///< 逻辑对象代表端（较早的一端）
-        std::optional<edit::NoteRef> b;  ///< LN 另一端；非 LN 为空
-        bool ln = false;
-    };
-
+    // 队列元素直接复用 edit::NoteGroup（LanePlan 地基的同构类型），
+    // 不再手搓第二份 {a, b, ln}。
     void rebuildFromSelection(const std::vector<edit::NoteRef>& refs);
     void emitSelection();
     void resetQueue();
@@ -97,7 +94,7 @@ class QuickPlaceController : public QObject {
     int m_side = 0;    ///< 0 = 1P；1 = 2P（仅单手 DP/Battle）
     QStringList m_hiddenLanes;
     std::vector<edit::NoteRef> m_selection;
-    std::vector<Item> m_queue;
+    std::vector<edit::NoteGroup> m_queue;
     std::size_t m_index = 0;
     /// 自身回写保护：selectionUpdated 同步环内的 setSelection 直接忽略。
     bool m_muting = false;
