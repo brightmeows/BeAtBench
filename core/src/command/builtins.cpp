@@ -516,8 +516,11 @@ namespace {
 // 统一执行编辑命令：纵向锁拒绝时映射为稳定协议错误码。
 bool exec_or_throw(edit::EditorSession& session, std::unique_ptr<edit::EditCommand> cmd) {
     const bool ok = session.exec(std::move(cmd));
-    if (!ok && session.last_error() == edit::EditError::VerticalLocked) {
-        throw CommandError("vertical_locked", session.last_error_message());
+    if (!ok && session.last_error() == edit::EditError::TimeLocked) {
+        throw CommandError("time_locked", session.last_error_message());
+    }
+    if (!ok && session.last_error() == edit::EditError::LaneLocked) {
+        throw CommandError("lane_locked", session.last_error_message());
     }
     return ok;
 }
@@ -927,8 +930,9 @@ class BgaMoveCommandCmd : public Command {
         comp->add(std::make_unique<edit::BgaDeleteCommand>(fm, fp, fl));
         comp->add(std::make_unique<edit::BgaPutCommand>(tm, tp, tl, sample));
         std::unique_ptr<edit::EditCommand> exec_cmd = std::move(comp);
-        if (tm != fm || tp != fp)
-            exec_cmd = std::make_unique<edit::TimeShiftCommand>(std::move(exec_cmd));
+        if (tm != fm || tp != fp || tl != fl)
+            exec_cmd = std::make_unique<edit::ShiftMarkerCommand>(std::move(exec_cmd),
+                                                                  tm != fm || tp != fp, tl != fl);
         const bool ok = exec_or_throw(session, std::move(exec_cmd));
         Json out = Json::object();
         out.set("ok", ok);
@@ -980,7 +984,7 @@ class TimingMoveCommandCmd : public Command {
         comp->add(std::make_unique<edit::PutTimingCommand>(kind, tm, tp, value));
         std::unique_ptr<edit::EditCommand> exec_cmd = std::move(comp);
         if (tm != fm || tp != fp)
-            exec_cmd = std::make_unique<edit::TimeShiftCommand>(std::move(exec_cmd));
+            exec_cmd = std::make_unique<edit::ShiftMarkerCommand>(std::move(exec_cmd), true, false);
         const bool ok = exec_or_throw(session, std::move(exec_cmd));
         Json out = Json::object();
         out.set("ok", ok);
@@ -1319,7 +1323,8 @@ class ClipboardPasteCommand : public Command {
         }
         const bool has_notes = !parsed.empty();
         std::unique_ptr<edit::EditCommand> exec_cmd = std::move(comp);
-        if (has_notes) exec_cmd = std::make_unique<edit::TimeShiftCommand>(std::move(exec_cmd));
+        if (has_notes)
+            exec_cmd = std::make_unique<edit::ShiftMarkerCommand>(std::move(exec_cmd), true, false);
         const bool ok = exec_or_throw(session, std::move(exec_cmd));
         Json placed = Json::array();
         for (const auto& r : parsed) {

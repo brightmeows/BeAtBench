@@ -938,7 +938,7 @@ ApplicationWindow {
         const v = (mode === 1) ? 1 : (mode === 2 ? 2 : 0)
         window.verticalMoveMode = v
         if (typeof chartSession !== "undefined" && chartSession)
-            chartSession.setVerticalMoveLocked(v === 0)
+            chartSession.setVerticalMoveMode(v)
         if (v === 0)
             setStatus(qsTr("仅横向：只能换轨（Ctrl+L 切到自由）"))
         else if (v === 1)
@@ -946,8 +946,6 @@ ApplicationWindow {
         else
             setStatus(qsTr("自由：时间与轨道都可动（Ctrl+L 回到仅横向）"))
     }
-    /// 兼容旧调用/测试：true → 仅横向，false → 自由。
-    function setVerticalMoveLocked(locked) { setVerticalMoveMode(locked ? 0 : 2) }
     function toggleVerticalMove() {
         setVerticalMoveMode(window.verticalMoveMode === 0 ? 2 : 0)
     }
@@ -1055,12 +1053,9 @@ ApplicationWindow {
     // 活动会话切换：回读该文档的纵向锁（仅横向/自由）；仅纵向保留 GUI 当前选择。
     Connections {
         target: typeof chartSession !== "undefined" ? chartSession : null
-        function onVerticalMoveLockedChanged() {
+        function onVerticalMoveModeChanged() {
             if (typeof chartSession === "undefined" || !chartSession) return
-            if (chartSession.verticalMoveLocked())
-                window.verticalMoveMode = 0
-            else if (window.verticalMoveMode === 0)
-                window.verticalMoveMode = 2
+            window.verticalMoveMode = chartSession.verticalMoveMode()
         }
     }
     // 2026-09「同时铺入编辑区」成功 → 刷新左 dock 采样列表（#WAV 定义新入谱面；
@@ -1655,7 +1650,7 @@ ApplicationWindow {
             // M2 第 5 步：时间轴真数据（ChartSession + TimingEngine，与 info 同源解析）
             chartSession.openChart(path)
             window.verticalMoveMode = 0
-            chartSession.setVerticalMoveLocked(true)  // 每个文档默认仅横向
+            chartSession.setVerticalMoveMode(0)  // 每个文档默认仅横向
             window.pendingLnHead = null  // 换谱面：清除可能的未完成 LN 头
             window.selectionRefs = []
             window.metaSelection = []
@@ -1850,7 +1845,7 @@ ApplicationWindow {
         window.chartMode = mode
         window.chartEncoding = "utf8"
         window.verticalMoveMode = 0
-        chartSession.setVerticalMoveLocked(true)  // 新文档默认仅横向
+        chartSession.setVerticalMoveMode(0)  // 新文档默认仅横向
         // 默认元信息（空谱面面板可编辑；TITLE 等留空让用户填）。
         // ⚠️ 不预设 PLAYER（2026-10 复核）：草稿回填 "1" 会覆盖模式推导——DP/Battle 新建
         // 保存后 PLAYER 由 writer 按 mode_id 推导（dp=3/battle=4），重开不再退回 SP。

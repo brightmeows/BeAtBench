@@ -252,7 +252,8 @@ TEST(LanePlan, ChangesTimeCapability) {
         NoteRef{1, Rational(0, 1), lane1, 1}, 2, Rational(0, 1)));
     EXPECT_TRUE(composite.changes_time());
 
-    beatbench::edit::TimeShiftCommand shift(
-        std::make_unique<beatbench::edit::PutNoteCommand>(NoteRef{1, Rational(0, 1), lane1, 1}));
+    beatbench::edit::ShiftMarkerCommand shift(
+        std::make_unique<beatbench::edit::PutNoteCommand>(NoteRef{1, Rational(0, 1), lane1, 1}),
+        true, false);
     EXPECT_TRUE(shift.changes_time());
 }

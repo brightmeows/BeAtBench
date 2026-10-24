@@ -26,7 +26,9 @@ function makeContext(refs = [], mode = 'pms9k') {
     const statuses = [];
     const context = vm.createContext({
         window: { selectionRefs: structuredClone(refs), snapNum: 1, snapDen: 4,
-                  chartMode: mode, isPmsChart: isPms(mode), verticalMoveLocked: false },
+                  chartMode: mode, isPmsChart: isPms(mode), verticalMoveMode: 2,
+                  // SessionController 读 Main 的派生别名（readonly：mode === 0）
+                  get verticalMoveLocked() { return this.verticalMoveMode === 0; } },
         root: { editPage: null },
         chartSession: { playKeyCount: () => isPms(mode) ? 9 : 7 },
         qsTr: text => text,
@@ -122,7 +124,7 @@ test('pure horizontal playable-note move preserves mixed-lane multi-selection ti
 test('vertical lock zeroes time delta but keeps the target lane', () => {
     const source = ref(1, 8);
     const { context, calls } = makeContext([source]);
-    context.window.verticalMoveLocked = true;
+    context.window.verticalMoveMode = 0;
     context.moveSelection(1 / 8,
                           { valid: true, laneKind: 'key', lanePlayer: 0, laneIndex: 3 },
                           source.lane, 0);

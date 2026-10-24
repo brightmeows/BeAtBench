@@ -57,9 +57,14 @@ class EditCommand {
     /// 必须与 apply 精确互逆（可逆性测试守卫）。
     virtual void invert(Chart& chart) = 0;
 
-    /// 命令是否改变 note/事件的时间坐标（GUI 纵向锁用）。
+    /// 命令是否改变 note/事件的时间坐标（GUI 三态锁「仅横向」用）。
     /// 默认 false；移动/量化/转换等改时间的命令覆写。纯换轨/换图层/改值不算。
     virtual bool changes_time() const { return false; }
+
+    /// 命令是否改变 note/事件的轨道维度（GUI 三态锁「仅纵向」用）。
+    /// 默认 false；换轨/变换/跨轨转换等改轨道的命令覆写。放置/删除/改值/改时间不算
+    /// （放置是新输入，落点即意愿位置，不属“移动现有对象”的锁语义）。
+    virtual bool changes_lane() const { return false; }
 
     /// 尝试与下一个命令合并（连续拖动/滚轮微调 → 一个 undo 步）。
     /// next 尚未应用；若可合并，把 next 并入自身并返回 true（调用方不再单独入栈），
@@ -88,25 +93,30 @@ class CompositeCommand : public EditCommand {
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
     bool changes_time() const override;
+    bool changes_lane() const override;
     std::string describe() const override;
 
    private:
     std::vector<std::unique_ptr<EditCommand>> m_commands;
 };
 
-/// 标记型包装：内部命令整体视为“改变时间”。
-/// 协议层把多个 Put/Delete 组合成一次粘贴/移动时使用（单个 Put 本身只是放置，不是移动）。
-class TimeShiftCommand : public EditCommand {
+/// 维度标记包装：内部命令整体视为“改变时间/轨道维度”中的一个或多个。
+/// 协议层把多个原语组合成一次粘贴/移动时使用（单个 Put 只是放置，不算移动；
+/// 组合后的实际变更维度由标志声明，供三态锁拦截判定）。
+class ShiftMarkerCommand : public EditCommand {
    public:
-    explicit TimeShiftCommand(std::unique_ptr<EditCommand> inner);
+    ShiftMarkerCommand(std::unique_ptr<EditCommand> inner, bool time, bool lane);
     std::string name() const override;
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
-    bool changes_time() const override { return true; }
+    bool changes_time() const override { return m_time; }
+    bool changes_lane() const override { return m_lane; }
     std::string describe() const override;
 
    private:
     std::unique_ptr<EditCommand> m_inner;
+    bool m_time;
+    bool m_lane;
 };
 
 /// 放置/更改时间轴事件（BPM/STOP/节拍 → timing.put，doc/ui-design.md 九、「工具栏值放置」）。
@@ -196,6 +206,7 @@ class ConvertNoteCommand : public EditCommand {
     bool changes_time() const override {
         return m_from.measure != m_to_measure || m_from.pos != m_to_pos;
     }
+    bool changes_lane() const override { return true; }  ///< note 从轨道维度移除
     std::string describe() const override;
 
    private:
