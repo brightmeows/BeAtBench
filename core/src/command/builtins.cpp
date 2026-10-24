@@ -29,6 +29,7 @@
 #include "beatbench/core/command/Midi.hpp"
 #include "beatbench/core/command/Slice.hpp"
 #include "beatbench/core/edit/EditorSession.hpp"
+#include "beatbench/core/edit/LanePlan.hpp"
 #include "beatbench/core/edit/Selection.hpp"
 #include "beatbench/core/edit/SessionRegistry.hpp"
 #include "beatbench/core/io/AtomicWrite.hpp"
@@ -1247,15 +1248,6 @@ std::vector<PatternItem> pattern_items(const std::vector<PatternSlot>& slots) {
     return out;
 }
 
-std::string pattern_lane_key(const Lane& lane) {
-    const char* kind = lane.kind == LaneKind::Scratch ? "scratch"
-                       : lane.kind == LaneKind::Pedal ? "pedal"
-                       : lane.kind == LaneKind::Bgm   ? "bgm"
-                                                      : "key";
-    return "lane:" + std::to_string(static_cast<int>(lane.player)) + ":" + kind + ":" +
-           std::to_string(static_cast<int>(lane.index));
-}
-
 class ClipboardPasteCommand : public Command {
    public:
     std::string_view name() const override { return "clipboard.paste"; }
@@ -1520,7 +1512,6 @@ class ClipboardPasteCommand : public Command {
 class ClipboardApplyPatternCommand : public Command {
    public:
     std::string_view name() const override { return "clipboard.applyPattern"; }
-    // NOLINTNEXTLINE(readability-function-cognitive-complexity)——协议参数/逻辑对象匹配分支表
     Json run(const Json& args) const override {
         auto& session = session_from_args(args);
         if (!session.has_chart()) throw CommandError("no_chart", "未加载谱面（先 session.load）");
@@ -1528,6 +1519,9 @@ class ClipboardApplyPatternCommand : public Command {
         const std::string mode = chart.mode_id.value_or("sp7k");
         const auto refs = selection_from_json(args);
         if (refs.empty()) throw CommandError("empty_selection", "选择集为空（无目标 note）");
+
+        const auto groups = edit::group_selection(chart, refs);
+        if (groups.empty()) throw CommandError("not_found", "目标选择集中的 note 不存在");
 
         std::vector<PatternSlot> slots = pattern_slots_from_json(args);
         if (slots.empty()) {
@@ -1540,158 +1534,61 @@ class ClipboardApplyPatternCommand : public Command {
         const auto pitems = pattern_items(slots);
         if (pitems.empty()) throw CommandError("empty_pattern", "剪贴板没有可用的轨道序列");
 
-        struct Target {
-            edit::NoteRef a;
-            std::optional<edit::NoteRef> b;
-            bool ln = false;
-        };
-        std::set<std::size_t> claimed;
-        std::set<std::size_t> target_ids;
-        std::set<edit::NoteRef> normalized;
-        for (const auto& ref : refs) {
-            std::optional<std::size_t> found;
-            for (std::size_t i = 0; i < chart.notes.size(); ++i) {
-                const auto& e = chart.notes[i];
-                if (claimed.count(i)) continue;
-                if (e.measure == ref.measure && e.pos == ref.pos && e.value.lane == ref.lane &&
-                    e.value.sample.id == ref.sample && e.value.sub_line == ref.sub_line) {
-                    found = i;
-                    claimed.insert(i);
-                    break;
-                }
-            }
-            if (!found) {
-                if (normalized.count(ref)) continue;  // 已作为 LN 伙伴被收进选择集
-                throw CommandError("not_found", "目标选择集中的 note 不存在");
-            }
-            normalized.insert(ref);
-            target_ids.insert(*found);
-            const auto& note = chart.notes[*found].value;
-            if (note.ln_pair && *note.ln_pair < chart.notes.size()) {
-                const auto& p = chart.notes[*note.ln_pair];
-                normalized.insert(edit::NoteRef{p.measure, p.pos, p.value.lane, p.value.sample.id,
-                                                p.value.sub_line});
-                claimed.insert(*note.ln_pair);
-                target_ids.insert(*note.ln_pair);
-            }
-        }
-        std::vector<Target> targets;
-        std::set<edit::NoteRef> used;
-        for (const auto& ref : normalized) {
-            if (used.count(ref)) continue;
-            const auto find = [&](const edit::NoteRef& r) -> std::optional<std::size_t> {
-                for (std::size_t i = 0; i < chart.notes.size(); ++i) {
-                    const auto& e = chart.notes[i];
-                    if (e.measure == r.measure && e.pos == r.pos && e.value.lane == r.lane &&
-                        e.value.sample.id == r.sample && e.value.sub_line == r.sub_line)
-                        return i;
-                }
-                return std::nullopt;
-            };
-            const auto idx = find(ref);
-            if (!idx) continue;
-            Target t;
-            t.a = ref;
-            const auto& note = chart.notes[*idx].value;
-            if (note.ln_pair && *note.ln_pair < chart.notes.size()) {
-                const auto& p = chart.notes[*note.ln_pair];
-                const edit::NoteRef partner{p.measure, p.pos, p.value.lane, p.value.sample.id,
-                                            p.value.sub_line};
-                if (!used.count(partner)) {
-                    t.b = partner;
-                    t.ln = true;
-                    used.insert(partner);
-                }
-            }
-            used.insert(ref);
-            targets.push_back(t);
-        }
-        std::sort(targets.begin(), targets.end(),
-                  [](const Target& a, const Target& b) { return a.a < b.a; });
-        if (targets.empty()) throw CommandError("not_found", "目标选择集中的 note 不存在");
+        std::vector<edit::LaneTarget> targets;
+        targets.reserve(pitems.size());
+        for (const auto& p : pitems) targets.push_back(edit::LaneTarget{p.lane, p.ln});
 
-        std::set<std::string> hidden;
+        edit::LanePlanOptions options;
+        options.allow_bgm = true;  // issue #47：pattern 含 BGM，目标允许 BGM
+        options.require_ln_match = true;
         if (const Json* h = args.find("hidden_lanes"); h && h->is_array()) {
             for (const auto& v : h->as_array())
-                if (v.is_string()) hidden.insert(v.as_str());
+                if (v.is_string()) options.hidden_lanes.insert(v.as_str());
         }
 
-        auto target_lane_valid = [&](const Lane& lane, bool ln) {
-            if (ln && lane.kind == LaneKind::Bgm) return false;
-            if (lane.kind == LaneKind::Key)
-                return lane.player <= 1 && lane.index >= 1 &&
-                       lane.index <= chart_mode_key_count(mode);
-            if (lane.kind == LaneKind::Scratch) return lane.player <= 1 && lane.index == 0;
-            return lane.kind == LaneKind::Bgm && lane.player <= 0 && lane.index == 0;
-        };
-        struct Plan {
-            const Target* target = nullptr;
-            Lane lane;
-            bool move = false;
-        };
-        std::vector<Plan> plans;
-        const std::size_t n = std::min(targets.size(), pitems.size());
-        for (std::size_t i = 0; i < n; ++i) {
-            const auto& t = targets[i];
-            const auto& p = pitems[i];
-            const bool move = t.ln == p.ln && target_lane_valid(p.lane, t.ln);
-            plans.push_back(Plan{&t, p.lane, move});
-        }
-        auto occupied = [&](const edit::NoteRef& ref, const Lane& lane) {
-            const auto key = pattern_lane_key(lane);
-            if (hidden.count(key)) throw CommandError("target_hidden", "目标轨道已隐藏");
-            for (std::size_t i = 0; i < chart.notes.size(); ++i) {
-                if (target_ids.count(i)) continue;
-                const auto& e = chart.notes[i];
-                if (e.measure != ref.measure || e.pos != ref.pos || e.value.lane != lane) continue;
-                if (lane.kind == LaneKind::Bgm && e.value.sub_line != ref.sub_line) continue;
+        const auto plan = edit::plan_lane_moves(chart, groups, targets, options);
+        for (const auto& move : plan.moves) {
+            if (move.move) continue;
+            if (move.reason == "hidden") throw CommandError("target_hidden", "目标轨道已隐藏");
+            if (move.reason == "occupied" || move.reason == "duplicate_target")
                 throw CommandError("target_occupied", "目标位置已有 note");
-            }
-        };
-        for (const auto& plan : plans) {
-            if (!plan.move) continue;
-            occupied(plan.target->a, plan.lane);
-            const auto partner = plan.target->b;
-            if (partner) occupied(*partner, plan.lane);
+            if (move.reason == "not_found") throw CommandError("not_found", "目标 note 不存在");
         }
 
         auto comp = std::make_unique<edit::CompositeCommand>();
         std::vector<edit::NoteRef> out_refs;
         std::int64_t moved = 0;
         std::int64_t skipped = 0;
-        for (const auto& plan : plans) {
-            const auto& t = *plan.target;
-            if (!plan.move) {
-                out_refs.push_back(t.a);
-                if (t.b) out_refs.push_back(*t.b);
+        for (const auto& move : plan.moves) {
+            const auto& group = move.group;
+            if (!move.move) {
+                out_refs.push_back(group.a);
+                if (group.b) out_refs.push_back(*group.b);
                 ++skipped;
                 continue;
             }
-            const Lane& lane = plan.lane;
-            if (t.ln) {
-                comp->add(std::make_unique<edit::MoveLnPairCommand>(
-                    t.a.measure, t.a.pos, t.a.lane, t.a.sample, t.a.sub_line, lane));
-                out_refs.push_back(edit::NoteRef{t.a.measure, t.a.pos, lane, t.a.sample, 0});
-                if (t.b)
-                    out_refs.push_back(edit::NoteRef{t.b->measure, t.b->pos, lane, t.b->sample, 0});
-            } else {
-                const std::optional<std::uint32_t> to_sub =
-                    lane.kind == LaneKind::Bgm ? std::optional<std::uint32_t>(t.a.sub_line)
-                                               : std::nullopt;
-                comp->add(std::make_unique<edit::MoveNoteCommand>(
-                    t.a.measure, t.a.pos, t.a.lane, t.a.sample, t.a.measure, t.a.pos, false, lane,
-                    t.a.sub_line, to_sub));
-                const std::uint32_t sub = lane.kind == LaneKind::Bgm ? t.a.sub_line : 0;
-                out_refs.push_back(edit::NoteRef{t.a.measure, t.a.pos, lane, t.a.sample, sub});
+            auto cmd = edit::make_lane_move_command(move);
+            if (!cmd) {
+                out_refs.push_back(group.a);
+                if (group.b) out_refs.push_back(*group.b);
+                ++skipped;
+                continue;
             }
+            comp->add(std::move(cmd));
+            const std::uint32_t sub = move.lane.kind == LaneKind::Bgm ? move.sub_line : 0;
+            out_refs.push_back(
+                edit::NoteRef{group.a.measure, group.a.pos, move.lane, group.a.sample, sub});
+            if (group.b)
+                out_refs.push_back(
+                    edit::NoteRef{group.b->measure, group.b->pos, move.lane, group.b->sample, 0});
             ++moved;
         }
         // 目标多于 pattern：多余目标保持原样，仍回填 selection。
-        for (std::size_t i = n; i < targets.size(); ++i) {
-            out_refs.push_back(targets[i].a);
-            const auto partner = targets[i].b;
-            if (partner) out_refs.push_back(*partner);
+        for (std::size_t i = plan.moves.size(); i < groups.size(); ++i) {
+            out_refs.push_back(groups[i].a);
+            if (groups[i].b) out_refs.push_back(*groups[i].b);
         }
+
         bool ok = true;
         if (comp->size() > 0) ok = session.exec(std::move(comp));
         Json sel = Json::array();
