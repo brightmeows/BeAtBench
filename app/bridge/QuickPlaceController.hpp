@@ -84,11 +84,6 @@ class QuickPlaceController : public QObject {
     void resetQueue();
     void placeLane(const beatbench::Lane& lane);
     std::optional<beatbench::Lane> laneForKey(int key, int effectiveSide) const;
-    std::optional<std::size_t> findNote(const edit::NoteRef& ref) const;
-    bool collisionAt(const beatbench::Event<beatbench::Note>& source, const beatbench::Lane& target,
-                     std::size_t sourceIndex, const std::optional<std::size_t>& partnerIndex) const;
-    bool targetLaneValid(const beatbench::Lane& lane) const;
-    bool targetHidden(const beatbench::Lane& lane) const;
     QString mode() const;
     bool isPms() const;
     bool isDoublePlay() const;
