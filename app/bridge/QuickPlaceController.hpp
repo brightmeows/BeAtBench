@@ -8,6 +8,8 @@
 // - 目标位置已有其它 note → 阻止且不消耗；目标轨在当前视口隐藏 → 同样阻止。
 // - 每次按键 = 一个 MoveNoteCommand = 一个 undo 步。
 // - 键位预设（单手换边 / 双手固定）在 C++ 表内；QSettings 只持久化预设选择。
+//   单手默认 `B S X D C F V` + `A` 皿：`B` 避开「工具键预留位 Z」（doc/ui-design.md），
+//   其余沿用 LR2 演奏位；PMS9K 变体首键同步为 `B`。
 // - 事件过滤器处理轨键；文本焦点、Ctrl/Alt/Meta、自动重复一律让行。
 #pragma once
 
