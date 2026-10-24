@@ -335,9 +335,14 @@ void AudioEngine::requestSampleWaveform(const QString& file) {
     const QString path = resolveAudioPath(resolved);
     if (path.isEmpty()) return;
     if (m_waveforms.count(path)) return;
+    // 线程模型：m_waveforms 是 UI 线程容器（sampleWaveform/count 在 UI 线程读）——
+    // work（worker 线程）只解码并经槽移交结果，写入与 emit 全在 done（UI 线程）。
+    // 解码失败也缓存空 pyramid：会话内不重试（避免坏文件反复解码）；
+    // 采样重绑定走 invalidateSampleWaveforms 统一清缓存。
+    auto slot = std::make_shared<std::shared_ptr<const beatbench::audio::WaveformPyramid>>();
     m_waveformTasks.submit(
         path,
-        [this, path](AudioTaskRunner::Generation gen) {
+        [this, path, slot](AudioTaskRunner::Generation gen) {
             if (m_waveformTasks.cancelled(gen)) return;
 #ifdef _WIN32
             const beatbench::audio::SampleCacheResult r = m_cache.get_w(path.toStdWString());
@@ -349,11 +354,13 @@ void AudioEngine::requestSampleWaveform(const QString& file) {
                 wf->build(r.sample->pcm().data(), r.sample->frameCount(), 2, r.sample->sampleRate);
                 beatbench::audio::decoded_sample_release(r.sample);
             }
-            if (m_waveformTasks.cancelled(gen)) return;
-            m_waveforms[path] = std::move(wf);
-            emit sampleWaveformReady(path);
+            *slot = std::move(wf);
         },
-        {});
+        [this, path, slot](AudioTaskRunner::Generation) {
+            if (!slot || !*slot) return;  // 旧代际 done 不回调；空槽防御
+            m_waveforms[path] = *slot;
+            emit sampleWaveformReady(path);
+        });
 }
 
 void AudioEngine::invalidateSampleWaveforms() {
