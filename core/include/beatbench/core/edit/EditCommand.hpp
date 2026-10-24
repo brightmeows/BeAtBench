@@ -57,6 +57,10 @@ class EditCommand {
     /// 必须与 apply 精确互逆（可逆性测试守卫）。
     virtual void invert(Chart& chart) = 0;
 
+    /// 命令是否改变 note/事件的时间坐标（GUI 纵向锁用）。
+    /// 默认 false；移动/量化/转换等改时间的命令覆写。纯换轨/换图层/改值不算。
+    virtual bool changes_time() const { return false; }
+
     /// 尝试与下一个命令合并（连续拖动/滚轮微调 → 一个 undo 步）。
     /// next 尚未应用；若可合并，把 next 并入自身并返回 true（调用方不再单独入栈），
     /// 否则返回 false（调用方把 next 作为新栈项）。
@@ -83,10 +87,26 @@ class CompositeCommand : public EditCommand {
     std::string name() const override;
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    bool changes_time() const override;
     std::string describe() const override;
 
    private:
     std::vector<std::unique_ptr<EditCommand>> m_commands;
+};
+
+/// 标记型包装：内部命令整体视为“改变时间”。
+/// 协议层把多个 Put/Delete 组合成一次粘贴/移动时使用（单个 Put 本身只是放置，不是移动）。
+class TimeShiftCommand : public EditCommand {
+   public:
+    explicit TimeShiftCommand(std::unique_ptr<EditCommand> inner);
+    std::string name() const override;
+    void apply(Chart& chart) override;
+    void invert(Chart& chart) override;
+    bool changes_time() const override { return true; }
+    std::string describe() const override;
+
+   private:
+    std::unique_ptr<EditCommand> m_inner;
 };
 
 /// 放置/更改时间轴事件（BPM/STOP/节拍 → timing.put，doc/ui-design.md 九、「工具栏值放置」）。
@@ -173,6 +193,9 @@ class ConvertNoteCommand : public EditCommand {
     std::string name() const override { return "note.convert"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    bool changes_time() const override {
+        return m_from.measure != m_to_measure || m_from.pos != m_to_pos;
+    }
     std::string describe() const override;
 
    private:

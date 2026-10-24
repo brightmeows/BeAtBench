@@ -136,9 +136,9 @@ class PutNoteCommand : public EditCommand {
     std::string describe() const override;
 
    private:
-    NoteRef m_at;              ///< 放置位置五元组
-    bool m_ln_kind;            ///< LN 放置（自动配对）
-    NoteKind m_kind;           ///< Normal / Landmine
+    NoteRef m_at;     ///< 放置位置五元组
+    bool m_ln_kind;   ///< LN 放置（自动配对）
+    NoteKind m_kind;  ///< Normal / Landmine
     /// apply 实际插入的 note 下标（invert 用它精确删除；同 pos 冲突分裂等场景）
     std::optional<std::size_t> m_applied_index;
     /// apply 自动配对到的头下标（invert 恢复：解除该头配对）
@@ -166,6 +166,9 @@ class MoveNoteCommand : public EditCommand {
     std::string name() const override { return "note.move"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    bool changes_time() const override {
+        return m_from.measure != m_to_measure || m_from.pos != m_to_pos;
+    }
     bool merge_with(const EditCommand& next) override;
     std::string describe() const override;
 
@@ -188,6 +191,26 @@ class MoveNoteCommand : public EditCommand {
     std::optional<std::size_t> m_paired_at;
     std::optional<std::size_t> m_paired_with;
     Rational m_last_delta{0, 1};
+};
+
+/// 整体移动 LN 头尾：两端同时改到目标轨道，时间/采样不变。
+/// 与 MoveNoteCommand 的 move_ln_pair 旧参数不同：本命令确实移动两端并保留配对。
+/// 前置条件：源 note 必须已有 ln_pair；否则 apply 无操作。
+/// 单个 undo 步；目标只能是 lane（不提供时间位移）。
+class MoveLnPairCommand : public EditCommand {
+   public:
+    MoveLnPairCommand(NoteRef from, Lane to_lane);
+    std::string name() const override { return "note.moveLnPair"; }
+    void apply(Chart& chart) override;
+    void invert(Chart& chart) override;
+    std::string describe() const override;
+
+   private:
+    NoteRef m_from;
+    Lane m_to_lane;
+    bool m_applied = false;
+    std::optional<Event<Note>> m_a;
+    std::optional<Event<Note>> m_b;
 };
 
 /// 删除 note（doc/ui-design.md 九、「选择集删除」→ note.delete）。
@@ -222,6 +245,7 @@ class QuantizeNoteCommand : public EditCommand {
     std::string name() const override { return "note.quantize"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    bool changes_time() const override { return true; }
     std::string describe() const override;
 
    private:
@@ -370,6 +394,7 @@ class ConvertMetaToNoteCommand : public EditCommand {
     std::string name() const override { return "note.convertBack"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    bool changes_time() const override { return m_measure != m_to_measure || m_pos != m_to_pos; }
     std::string describe() const override;
 
    private:

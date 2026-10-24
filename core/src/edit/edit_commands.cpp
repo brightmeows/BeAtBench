@@ -573,8 +573,7 @@ void MoveNoteCommand::invert(Chart& chart) {
     main_ev.measure = m_from.measure;
     main_ev.pos = m_from.pos;
     if (m_to_lane) main_ev.value.lane = m_from.lane;
-    main_ev.value.sub_line =
-        (main_ev.value.lane.kind == LaneKind::Bgm) ? m_from.sub_line : 0;
+    main_ev.value.sub_line = (main_ev.value.lane.kind == LaneKind::Bgm) ? m_from.sub_line : 0;
     main_ev.value.ln_channel = m_moved->value.ln_channel;  // undo 恢复原 LN 通道标记
     main_ev.value.ln_pair.reset();
     const std::size_t main_at = lower_bound_pos(chart.notes, m_from.measure, m_from.pos);
@@ -628,13 +627,66 @@ std::string MoveNoteCommand::describe() const {
     return s;
 }
 
+// ---------- MoveLnPairCommand（LN 头尾整体换轨） ----------
+
+MoveLnPairCommand::MoveLnPairCommand(NoteRef from, Lane to_lane)
+    : m_from(from), m_to_lane(to_lane) {}
+
+void MoveLnPairCommand::apply(Chart& chart) {
+    const auto idx = find_note(chart.notes, m_from.measure, m_from.pos, m_from.lane, m_from.sample,
+                               m_from.sub_line);
+    if (!idx) return;
+    const auto pair = chart.notes[*idx].value.ln_pair;
+    if (!pair || *pair >= chart.notes.size()) return;  // 无配对：调用方应先拒绝
+    m_a = chart.notes[*idx];
+    m_b = chart.notes[*pair];
+    const std::size_t lo = std::min(*idx, static_cast<std::size_t>(*pair));
+    const std::size_t hi = std::max(*idx, static_cast<std::size_t>(*pair));
+    chart.notes.erase(chart.notes.begin() + static_cast<std::ptrdiff_t>(hi));
+    chart.notes.erase(chart.notes.begin() + static_cast<std::ptrdiff_t>(lo));
+
+    auto move_event = [&](Event<Note> ev) {
+        ev.value.lane = m_to_lane;
+        ev.value.sub_line = 0;
+        const auto at = lower_bound_pos(chart.notes, ev.measure, ev.pos);
+        chart.notes.insert(chart.notes.begin() + static_cast<std::ptrdiff_t>(at), ev);
+    };
+    move_event(*m_a);
+    move_event(*m_b);
+    m_applied = true;
+}
+
+void MoveLnPairCommand::invert(Chart& chart) {
+    if (!m_applied || !m_a || !m_b) return;
+    const auto idx_a =
+        find_note(chart.notes, m_a->measure, m_a->pos, m_to_lane, m_a->value.sample.id, 0);
+    const auto idx_b =
+        find_note(chart.notes, m_b->measure, m_b->pos, m_to_lane, m_b->value.sample.id, 0);
+    if (!idx_a || !idx_b) return;
+    const std::size_t lo = std::min(*idx_a, *idx_b);
+    const std::size_t hi = std::max(*idx_a, *idx_b);
+    chart.notes.erase(chart.notes.begin() + static_cast<std::ptrdiff_t>(hi));
+    chart.notes.erase(chart.notes.begin() + static_cast<std::ptrdiff_t>(lo));
+    auto restore = [&](const Event<Note>& ev) {
+        const auto at = lower_bound_pos(chart.notes, ev.measure, ev.pos);
+        chart.notes.insert(chart.notes.begin() + static_cast<std::ptrdiff_t>(at), ev);
+    };
+    restore(*m_a);
+    restore(*m_b);
+    m_applied = false;
+}
+
+std::string MoveLnPairCommand::describe() const {
+    return "移动 LN（m" + std::to_string(m_from.measure) + "，换轨）";
+}
+
 // ---------- ToggleLnCommand（单点 ↔ LN；只改 ln_channel，rebuild 接管配对） ----------
 
 ToggleLnCommand::ToggleLnCommand(NoteRef ref) : m_ref(std::move(ref)) {}
 
 void ToggleLnCommand::apply(Chart& chart) {
-    const auto idx = find_note(chart.notes, m_ref.measure, m_ref.pos, m_ref.lane, m_ref.sample,
-                               m_ref.sub_line);
+    const auto idx =
+        find_note(chart.notes, m_ref.measure, m_ref.pos, m_ref.lane, m_ref.sample, m_ref.sub_line);
     if (!idx) return;
     // 2026-09 用户最终确认：T-Ln 工具 = **按当前 LNTYPE 切换选中 note 的通道**——
     //   LNTYPE 1：单点→LN = 通道 +40（11→51，模型 = ln_channel=true）；LN→单点 = -40。
@@ -658,8 +710,8 @@ void ToggleLnCommand::apply(Chart& chart) {
 
 void ToggleLnCommand::invert(Chart& chart) {
     if (!m_did_change) return;
-    const auto idx = find_note(chart.notes, m_ref.measure, m_ref.pos, m_ref.lane, m_ref.sample,
-                               m_ref.sub_line);
+    const auto idx =
+        find_note(chart.notes, m_ref.measure, m_ref.pos, m_ref.lane, m_ref.sample, m_ref.sub_line);
     if (!idx) return;
     // 反向：只翻回本 note 的 ln_channel（原伙伴标记逻辑已去——与 apply 对称）
     chart.notes[*idx].value.ln_channel = m_was_ln;
@@ -674,16 +726,13 @@ std::string ToggleLnCommand::describe() const {
 
 // ---------- ConvertNoteCommand（note ↔ BGA/BPM/STOP 跨命名空间转换） ----------
 
-ConvertNoteCommand::ConvertNoteCommand(NoteRef from, ConvertTarget target,
-                                       std::uint32_t to_measure, Rational to_pos)
-    : m_from(std::move(from)),
-      m_target(target),
-      m_to_measure(to_measure),
-      m_to_pos(to_pos) {}
+ConvertNoteCommand::ConvertNoteCommand(NoteRef from, ConvertTarget target, std::uint32_t to_measure,
+                                       Rational to_pos)
+    : m_from(std::move(from)), m_target(target), m_to_measure(to_measure), m_to_pos(to_pos) {}
 
 void ConvertNoteCommand::apply(Chart& chart) {
-    const auto idx =
-        find_note(chart.notes, m_from.measure, m_from.pos, m_from.lane, m_from.sample, m_from.sub_line);
+    const auto idx = find_note(chart.notes, m_from.measure, m_from.pos, m_from.lane, m_from.sample,
+                               m_from.sub_line);
     if (!idx) return;  // 找不到 → 无操作
     m_removed = chart.notes[*idx];
     m_partner.reset();
@@ -844,8 +893,8 @@ std::string ConvertNoteCommand::describe() const {
 DeleteNoteCommand::DeleteNoteCommand(NoteRef ref) : m_ref(std::move(ref)) {}
 
 void DeleteNoteCommand::apply(Chart& chart) {
-    const auto idx = find_note(chart.notes, m_ref.measure, m_ref.pos, m_ref.lane, m_ref.sample,
-                               m_ref.sub_line);
+    const auto idx =
+        find_note(chart.notes, m_ref.measure, m_ref.pos, m_ref.lane, m_ref.sample, m_ref.sub_line);
     if (!idx) return;
     m_removed = chart.notes[*idx];
     m_removed_index = *idx;
@@ -897,6 +946,12 @@ std::string CompositeCommand::name() const {
     return "composite." + m_commands.front()->name();
 }
 
+bool CompositeCommand::changes_time() const {
+    for (const auto& c : m_commands)
+        if (c->changes_time()) return true;
+    return false;
+}
+
 void CompositeCommand::apply(Chart& chart) {
     for (std::size_t begin = 0; begin < m_commands.size();) {
         auto* transform = dynamic_cast<TransformNoteCommand*>(m_commands[begin].get());
@@ -944,6 +999,25 @@ std::string CompositeCommand::describe() const {
     if (m_commands.empty()) return "批量操作";
     if (m_commands.size() == 1) return m_commands.front()->describe();
     return "批量操作（" + std::to_string(m_commands.size()) + " 项）";
+}
+
+// ---------- TimeShiftCommand ----------
+
+TimeShiftCommand::TimeShiftCommand(std::unique_ptr<EditCommand> inner)
+    : m_inner(std::move(inner)) {}
+
+std::string TimeShiftCommand::name() const { return m_inner ? m_inner->name() : "time.shift"; }
+
+void TimeShiftCommand::apply(Chart& chart) {
+    if (m_inner) m_inner->apply(chart);
+}
+
+void TimeShiftCommand::invert(Chart& chart) {
+    if (m_inner) m_inner->invert(chart);
+}
+
+std::string TimeShiftCommand::describe() const {
+    return m_inner ? m_inner->describe() : "时间变更";
 }
 
 // ---------- Selection ----------
@@ -1427,8 +1501,7 @@ QuantizeNoteCommand::QuantizeNoteCommand(NoteRef ref, std::int64_t snap_num, std
 }
 
 void QuantizeNoteCommand::apply(Chart& chart) {
-    const auto idx =
-        find_note(chart.notes, m_ref.measure, m_ref.pos, m_ref.lane, m_ref.sample);
+    const auto idx = find_note(chart.notes, m_ref.measure, m_ref.pos, m_ref.lane, m_ref.sample);
     if (!idx) return;  // 找不到 → 无操作
     // 量化：k = round(pos * snapDen / snapNum)，目标 pos = k*snapNum/snapDen
     // （Rational 构造自动约分，如 2/4 → 1/2；网格上 pos 本身不变）
@@ -1489,9 +1562,8 @@ void TransformNoteCommand::bind_source(const Chart& chart,
     for (; it != chart.notes.end() && it->measure == m_ref.measure; ++it) {
         const auto& e = *it;
         const auto i = static_cast<std::size_t>(it - chart.notes.begin());
-        if (e.pos != m_ref.pos || e.value.lane != m_ref.lane ||
-            e.value.sample.id != m_ref.sample || e.value.sub_line != m_ref.sub_line ||
-            claimed.contains(i))
+        if (e.pos != m_ref.pos || e.value.lane != m_ref.lane || e.value.sample.id != m_ref.sample ||
+            e.value.sub_line != m_ref.sub_line || claimed.contains(i))
             continue;
         // Validate while binding, before any lane in a transform batch is written.
         // PMS retains some legacy 2P LN/mine lanes, but not every nine-key target

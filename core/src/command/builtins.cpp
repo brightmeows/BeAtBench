@@ -544,19 +544,8 @@ Lane lane_from_json(const Json& j) {
     return l;
 }
 
-// Lane → JSON kind 字符串（lane_from_json 的逆；note.transform 返回 selection 用）
-const char* lane_kind_str(LaneKind k) {
-    switch (k) {
-        case LaneKind::Scratch:
-            return "scratch";
-        case LaneKind::Pedal:
-            return "pedal";
-        case LaneKind::Bgm:
-            return "bgm";
-        default:
-            return "key";
-    }
-}
+// Lane → JSON kind 字符串（lane_from_json 的逆；note.transform 返回 selection 用）。
+// 单一实现见 core/include/beatbench/core/Lane.hpp。
 
 // 从 args 读 (measure, pos)（"measure": int, "pos": {"num":n,"den":d} 或 [n,d]）
 Rational pos_from_json(const Json& args) {
@@ -927,7 +916,7 @@ class BgaMoveCommandCmd : public Command {
         auto comp = std::make_unique<edit::CompositeCommand>();
         comp->add(std::make_unique<edit::BgaDeleteCommand>(fm, fp, fl));
         comp->add(std::make_unique<edit::BgaPutCommand>(tm, tp, tl, sample));
-        const bool ok = session.exec(std::move(comp));
+        const bool ok = session.exec(std::make_unique<edit::TimeShiftCommand>(std::move(comp)));
         Json out = Json::object();
         out.set("ok", ok);
         out.set("undo_depth", static_cast<std::int64_t>(session.undo_depth()));
@@ -976,7 +965,7 @@ class TimingMoveCommandCmd : public Command {
         auto comp = std::make_unique<edit::CompositeCommand>();
         comp->add(std::make_unique<edit::DeleteTimingCommand>(kind, fm, fp));
         comp->add(std::make_unique<edit::PutTimingCommand>(kind, tm, tp, value));
-        const bool ok = session.exec(std::move(comp));
+        const bool ok = session.exec(std::make_unique<edit::TimeShiftCommand>(std::move(comp)));
         Json out = Json::object();
         out.set("ok", ok);
         out.set("undo_depth", static_cast<std::int64_t>(session.undo_depth()));
@@ -1307,12 +1296,15 @@ class ClipboardPasteCommand : public Command {
             const bool ln_kind = i < parsed_ln.size() && parsed_ln[i];
             const NoteKind kind = (i < parsed_kind.size()) ? parsed_kind[i] : NoteKind::Normal;
             comp->add(std::make_unique<edit::PutNoteCommand>(
-                edit::NoteRef{static_cast<std::uint32_t>(static_cast<std::int64_t>(r.measure) +
-                                                                 offset),
-                              r.pos, r.lane, r.sample, r.sub_line},
+                edit::NoteRef{
+                    static_cast<std::uint32_t>(static_cast<std::int64_t>(r.measure) + offset),
+                    r.pos, r.lane, r.sample, r.sub_line},
                 ln_kind, kind));
         }
-        const bool ok = session.exec(std::move(comp));
+        const bool has_changes = comp->size() > 0;
+        std::unique_ptr<edit::EditCommand> exec_cmd = std::move(comp);
+        if (has_changes) exec_cmd = std::make_unique<edit::TimeShiftCommand>(std::move(exec_cmd));
+        const bool ok = session.exec(std::move(exec_cmd));
         Json placed = Json::array();
         for (const auto& r : parsed) {
             Json item = Json::object();
@@ -1645,9 +1637,8 @@ class NotePutCommand : public Command {
         if (ln_kind && !lane_can_ln(session.chart(), lane)) {
             throw CommandError("bad_args", "该轨道不能放置 LN（格式映射中无 LN 通道表示）");
         }
-        const bool ok = session.exec(
-            std::make_unique<edit::PutNoteCommand>(edit::NoteRef{measure, pos, lane, sample, sub_line},
-                                                   ln_kind, kind));
+        const bool ok = session.exec(std::make_unique<edit::PutNoteCommand>(
+            edit::NoteRef{measure, pos, lane, sample, sub_line}, ln_kind, kind));
         Json out = Json::object();
         out.set("ok", ok);
         out.set("kind", ln_kind ? "ln" : (kind == NoteKind::Landmine ? "mine" : "normal"));
