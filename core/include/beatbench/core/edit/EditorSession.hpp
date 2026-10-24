@@ -18,7 +18,7 @@
 namespace beatbench::edit {
 
 /// 编辑会话错误（协议层映射为稳定 error code）。
-enum class EditError { None, VerticalLocked };
+enum class EditError : std::uint8_t { None, VerticalLocked };
 
 /// 编辑会话：持有可编辑文档（Chart）+ undo/redo 栈 + 执行编辑命令。
 /// 纯 core 零 Qt；GUI/CLI/测试三方复用（doc/core-model.md 二、「命令对象 = 唯一操作面」的文档侧承载）。
