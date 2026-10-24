@@ -38,6 +38,8 @@ ApplicationWindow {
     property bool metaDraftDirty: false
     /// 菜单/工具条 enabled 绑定重算（uiActions.stateChanged +1）。Shortcut.sequence 直接读 shortcut()。
     property int uiStateTick: 0
+    property int modalDepth: 0
+    readonly property bool modalOpen: modalDepth > 0
     property string statusText: qsTr("就绪")
     property string currentSampleId: ""  // 当前采样（会话状态，M3 放置落点）
     property string currentBmpId: ""     // 当前 #BMP（视口 BGA 列放置用；BGA 面板行点击设置）
@@ -944,7 +946,7 @@ ApplicationWindow {
     function syncQuickPlaceState() {
         if (typeof quickPlace === "undefined" || !quickPlace) return
         quickPlace.setEnabled(currentPage === 0 && chartMeta !== null)
-        quickPlace.setInputBlocked(window.textInputFocused)
+        quickPlace.setInputBlocked(window.textInputFocused || window.modalOpen)
     }
     Connections {
         target: typeof quickPlace !== "undefined" ? quickPlace : null
