@@ -464,6 +464,55 @@ int ChartViewItem::bgmHeaderIndexAt(qreal x) const {
     return -1;
 }
 
+void ChartViewItem::setHiddenColumns(const QStringList& keys) {
+    if (m_hiddenColumns == keys) return;
+    m_hiddenColumns = keys;
+    rebuildColumns();
+    emit hiddenColumnsChanged();
+}
+
+QVariantList ChartViewItem::columnList() const {
+    QVariantList out;
+    for (const auto& c : m_allColumns) {
+        QVariantMap m;
+        m.insert(QStringLiteral("key"), c.key);
+        m.insert(QStringLiteral("label"), c.label);
+        m.insert(QStringLiteral("hidden"), m_hiddenColumns.contains(c.key));
+        const char* kind = c.bpm                                         ? "bpm"
+                           : c.stop                                      ? "stop"
+                           : c.bgaLayer >= 0                             ? "bga"
+                           : c.bgm                                       ? "bgm"
+                           : c.lane.kind == beatbench::LaneKind::Scratch ? "scratch"
+                           : c.lane.kind == beatbench::LaneKind::Pedal   ? "pedal"
+                                                                         : "key";
+        m.insert(QStringLiteral("kind"), QString::fromLatin1(kind));
+        m.insert(QStringLiteral("subLine"), c.subLine);
+        out.push_back(m);
+    }
+    return out;
+}
+
+QVariantMap ChartViewItem::laneHeaderAt(qreal x, qreal y) const {
+    QVariantMap res;
+    if (y < 0 || y > 18) return res;
+    for (std::size_t i = 0; i < m_columns.size() && i < m_colRects.size(); ++i) {
+        const QRectF& r = m_colRects[i];
+        if (x < r.x() || x >= r.right()) continue;
+        const Column& c = m_columns[i];
+        res.insert(QStringLiteral("valid"), true);
+        res.insert(QStringLiteral("key"), c.key);
+        res.insert(QStringLiteral("label"), c.label);
+        if (c.bgm && x < r.x() + 12)
+            res.insert(QStringLiteral("action"), QStringLiteral("expand"));
+        else if (x > r.right() - 12)
+            res.insert(QStringLiteral("action"), QStringLiteral("hide"));
+        else
+            res.insert(QStringLiteral("action"), QStringLiteral("select"));
+        return res;
+    }
+    return res;
+}
+
 QString ChartViewItem::noteRefKey(std::uint32_t measure, const beatbench::Rational& pos,
                                   const beatbench::Lane& lane, std::uint32_t sample,
                                   std::uint32_t sub_line) {
@@ -1593,6 +1642,7 @@ QString ChartViewItem::columnLabel(const beatbench::Lane& lane, const QString& d
 }
 
 void ChartViewItem::rebuildColumns() {
+    m_allColumns.clear();
     m_columns.clear();
     if (const ChartSession* cs = sessionObj()) {
         const beatbench::Chart* chart = cs->chart();
@@ -1644,7 +1694,26 @@ void ChartViewItem::rebuildColumns() {
                                     bool bgmCol = false, bool p2 = false, std::uint32_t bgmId = 0,
                                     int bgaLayer = -1, bool bpm = false, bool stop = false,
                                     int subLine = -1) {
-                m_columns.push_back({lane, label, bgmCol, p2, bgmId, subLine, bgaLayer, bpm, stop});
+                Column c{lane, label, bgmCol, p2, bgmId, subLine, bgaLayer, bpm, stop};
+                if (bpm) {
+                    c.key = QStringLiteral("meta:bpm");
+                } else if (stop) {
+                    c.key = QStringLiteral("meta:stop");
+                } else if (bgaLayer >= 0) {
+                    c.key = QStringLiteral("bga:%1").arg(bgaLayer);
+                } else if (bgmCol) {
+                    c.key = subLine >= 0 ? QStringLiteral("bgm:sub:%1").arg(subLine)
+                                         : QStringLiteral("bgm:all");
+                } else {
+                    const char* kind = lane.kind == beatbench::LaneKind::Scratch ? "scratch"
+                                       : lane.kind == beatbench::LaneKind::Pedal ? "pedal"
+                                                                                 : "key";
+                    c.key = QStringLiteral("lane:%1:%2:%3")
+                                .arg(static_cast<int>(lane.player))
+                                .arg(QString::fromLatin1(kind))
+                                .arg(static_cast<int>(lane.index));
+                }
+                m_allColumns.push_back(std::move(c));
             };
             // 元事件轨（固定置左、轨窄，iBMSC 式）：BPM / STOP——始终显示（无事件也要能看拍位）
             add({0, beatbench::LaneKind::Pedal, 0}, QStringLiteral("BPM"), false, false, 0, -1,
@@ -1730,7 +1799,11 @@ void ChartViewItem::rebuildColumns() {
             }
         }
     }
+    m_columns.clear();
+    for (const auto& c : m_allColumns)
+        if (!m_hiddenColumns.contains(c.key)) m_columns.push_back(c);
     emit columnCountChanged();
+    emit hiddenColumnsChanged();
     emit contentWidthChanged();  // 2026-09：列重建（含 BGM 展开/收起）后列宽变化 → QML 水平滚动条
                                  // visible 绑定重算（此前只发 columnCountChanged，hbar 永不出现在
                                  // 底部——内容超宽时也没有横向滚动条）。
@@ -2366,6 +2439,20 @@ void ChartViewItem::paint(QPainter* p) {
                              : th->textMuted());
         p->drawText(QRectF(m_colRects[i].x(), 0, m_colRects[i].width(), 18), Qt::AlignCenter,
                     col.label);
+        // 列头按钮：BGM 左侧小三角（展开/折叠）；右缘眼睛（隐藏本列）。命中区域与
+        // laneHeaderAt() 一致（左 12px = expand，右 12px = hide）。
+        const QRectF hr = m_colRects[i];
+        p->setBrush(Qt::NoBrush);
+        p->setPen(QPen(col.bgm ? th->accent2() : th->textFaint(), 1.0));
+        if (col.bgm) {
+            const QPointF a(hr.x() + 3, 7), b(hr.x() + 9, 7), c(hr.x() + 6, 11);
+            p->drawLine(a, b);
+            p->drawLine(b, c);
+            p->drawLine(c, a);
+        }
+        const QPointF eye(hr.right() - 7, 9);
+        p->drawEllipse(eye, 4.0, 2.5);
+        p->drawEllipse(eye, 1.2, 1.2);
     }
 
     // ---- M6 编辑预览：放置 / 移动 ghost note（画在最上层，操作前可见落点） ----
