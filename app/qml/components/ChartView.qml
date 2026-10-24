@@ -33,8 +33,9 @@ Item {
     readonly property int zoomPercent: Math.round(root.measureHeight / 96 * 100)
     // ---- 编辑接线（M3） ----
     property string editorTool: "pan" // select/note/ln/mine/pan（Main 会话状态）
-    /// 纵向移动锁（默认开）：拖拽只改轨道；取消勾选才允许自由 2D（时间+通道）。
-    property bool verticalMoveLocked: true
+    /// 纵向移动三态：0=仅横向，1=仅纵向，2=自由；默认仅横向。
+    property int verticalMoveMode: 0
+    readonly property bool verticalMoveLocked: verticalMoveMode === 0
     property int sampleId: -1            // 放置用采样数值 id（chartSession.sampleValueOf）
     property string sampleText: ""       // 当前采样展示（无放置采样时提示）
     property var selection: []           // 选中 note 集合（NoteRef；回填 view.selection 高亮）
@@ -473,9 +474,9 @@ Item {
                             index: laneHit.laneIndex,
                             sub_line: laneHit.sub_line }
                         : ({})
-                    // ghost 与实际释放同源：纵向锁定时只显示横向落点，时间位移归零。
-                    if (root.verticalMoveLocked)
-                        gDeltaF = 0
+                    // ghost 与实际释放同源：仅横向时时间归零，仅纵向时目标轨清空。
+                    if (root.verticalMoveMode === 0) gDeltaF = 0
+                    else if (root.verticalMoveMode === 1) gTargetLane = ({})
                     view.movePreview = true
                     view.moveDeltaF = gDeltaF
                     view.moveTargetLane = gTargetLane
@@ -522,14 +523,17 @@ Item {
             let deltaF = 0
             let targetLane = null
             if (_dragged && moved > 4) {
-                // 纵向锁定 = 只横向换轨；解锁 = 自由 2D（时间+通道都动）。
-                if (root.verticalMoveLocked) {
+                // 三态：仅横向只换轨；仅纵向只改时间；自由两者都动。
+                if (root.verticalMoveMode === 0) {
                     deltaF = 0
                     const laneHit = view.laneAtX(x)
                     targetLane = (laneHit && laneHit.valid &&
                                   !laneHitSameAsSource(laneHit, root._moveSourceLane,
                                                        root._moveSourceSubLine))
                                  ? laneHit : null
+                } else if (root.verticalMoveMode === 1) {
+                    deltaF = _moveDeltaF
+                    targetLane = null
                 } else {
                     deltaF = _moveDeltaF
                     const laneHit = view.laneAtX(x)

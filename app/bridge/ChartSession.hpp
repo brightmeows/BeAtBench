@@ -166,6 +166,8 @@ class ChartSession : public QObject {
     void documentChanged();  ///< 活动会话/文档切换（QML 应重置视图滚动）
     void contentChanged();   ///< 同文档内容变化（QML 保持视图滚动）
     void dirtyChanged();     ///< 未保存状态变化
+    /// 活动会话切换后锁状态可能变化（QML 回读）。
+    void verticalMoveLockedChanged();
     /// M4.3c+ 后台渲染完成（ok + 输出路径 + 时长秒；任何状态栏/波形刷新响应这里）。
     void renderFinished(bool ok, const QString& outPath, double durationSec);
 

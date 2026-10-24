@@ -1078,3 +1078,51 @@ TEST(EditCommands, LoadResetsVerticalMoveLock) {
     s.load(make_chart());
     EXPECT_FALSE(s.vertical_move_locked());
 }
+
+TEST(EditCommands, VerticalMoveLockAllowsBgaLayerButBlocksTime) {
+    Chart c = make_chart();
+    Event<Bga> bga{1, Rational(0, 1), {}};
+    bga.value.layer = 0;
+    bga.value.image.id = 5;
+    c.bga_events.push_back(bga);
+    auto& session = global_editor_session();
+    session.load(std::move(c));
+    session.set_vertical_move_locked(true);
+
+    auto move = [&](int from_layer, std::uint32_t to_measure, int to_layer) {
+        Json args = Json::object();
+        Json from = Json::object();
+        from.set("layer", static_cast<std::int64_t>(from_layer));
+        from.set("measure", static_cast<std::int64_t>(1));
+        Json pos = Json::object();
+        pos.set("num", static_cast<std::int64_t>(0));
+        pos.set("den", static_cast<std::int64_t>(1));
+        from.set("pos", std::move(pos));
+        args.set("from", std::move(from));
+        Json to = Json::object();
+        to.set("layer", static_cast<std::int64_t>(to_layer));
+        to.set("measure", static_cast<std::int64_t>(to_measure));
+        Json tpos = Json::object();
+        tpos.set("num", static_cast<std::int64_t>(0));
+        tpos.set("den", static_cast<std::int64_t>(1));
+        to.set("pos", std::move(tpos));
+        args.set("to", std::move(to));
+        Json req = Json::object();
+        req.set("command", "bga.move");
+        req.set("args", std::move(args));
+        return global_registry().dispatch(req);
+    };
+
+    // 同时间换图层：允许
+    const Json layer_resp = move(0, 1, 1);
+    ASSERT_TRUE(layer_resp.at("ok").as_bool()) << layer_resp.dump();
+    ASSERT_EQ(session.chart().bga_events.size(), 1u);
+    EXPECT_EQ(session.chart().bga_events[0].value.layer, 1);
+
+    // 改时间：拒绝
+    const auto undo_before = session.undo_depth();
+    const Json time_resp = move(1, 2, 2);
+    ASSERT_FALSE(time_resp.at("ok").as_bool()) << time_resp.dump();
+    EXPECT_EQ(time_resp.at("error").at("code").as_str(), "vertical_locked");
+    EXPECT_EQ(session.undo_depth(), undo_before);
+}

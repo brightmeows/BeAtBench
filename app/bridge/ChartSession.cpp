@@ -133,9 +133,11 @@ void ChartSession::refresh() {
     auto& s = reg.active();
     const std::string sid = reg.active_id();
     const beatbench::Chart* c = s.has_chart() ? &s.chart() : nullptr;
-    const bool docChanged = (sid != m_sessionId) || (c != m_chart);
+    const bool sessionChanged = (sid != m_sessionId);
+    const bool docChanged = sessionChanged || (c != m_chart);
     if (docChanged) {
         attachActive(true);
+        if (sessionChanged) emit verticalMoveLockedChanged();
         emit documentChanged();
         emit chartChanged();
         syncDirty();

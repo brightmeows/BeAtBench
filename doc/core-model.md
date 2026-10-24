@@ -140,11 +140,12 @@ bgm `max(0, t0+gap)`。**“塞不下”即来自钳制**（保距刚性平移�
 
 ### 5. ghost 预览 / 后端命令
 
-- **纵向移动锁**：编辑页默认禁止 note / BGA / BPM / STOP 的时间坐标变化，只允许横向换轨/换图层；
-  `Ctrl+L` 或工具条开关解锁。命令层（`EditorSession` 的 `vertical_move_locked`）同时拦截纵向
-  `note.move`、`note.quantize`、`clipboard.paste`、`note.moveRegion`、`note.convert` 与
-  `bga.move`/`timing.move`；`note.transform`、快速摆音、配置复制只改轨道，不受影响。
-  打开/新建谱面重置为锁定；CLI 不设置该标志，保持原有行为。
+- **纵向移动三态**：编辑页默认“仅横向”（只换轨/换图层），可切“仅纵向”（只改时间）或“自由”；
+  `Ctrl+L` 在仅横向与自由之间切换。仅横向时命令层（`EditorSession` 的 `vertical_move_locked`）
+  按 `EditCommand::changes_time()` 统一拦截改时间命令：`note.move`、`note.quantize`、
+  `clipboard.paste`、`note.moveRegion`、`note.convert`、`bga.move`、`timing.move`；
+  纯换轨、换图层、改值、变换、快速摆音、配置复制不受影响。
+  打开/新建谱面重置为仅横向；CLI 不设置该标志，保持原有行为。
 - `ChartViewItem::drawPreview` 与 `moveSelection` 镜像同一套分派分支，拖拽中先见落点。
 - 后端：note 空间内用 `note.move`（逐个 + Composite = 一个 undo 步；`to.sub_line` 显式给，否则按
   `(measure,pos)` 自动分配不冲突行）；跨命名空间用 `note.convert`。
