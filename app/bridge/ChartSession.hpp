@@ -15,9 +15,11 @@
 #include <mutex>
 #include <string>
 
+#include "beatbench/audio/SampleCache.hpp"
 #include "beatbench/audio/WaveformPyramid.hpp"
 #include "beatbench/core/Chart.hpp"
 #include "beatbench/core/timing/TimingEngine.hpp"
+#include "bridge/AudioTaskRunner.hpp"
 
 namespace beatbench::app {
 
@@ -202,7 +204,8 @@ class ChartSession : public QObject {
     /// M4.3c 波形：最近渲染的 min/max 金字塔（渲染线程构建，UI 线程只读查询）。
     std::shared_ptr<const beatbench::audio::WaveformPyramid> m_waveform;
     // —— #50 整轨试听 ——
-    std::atomic<std::uint64_t> m_auditionVersion{0};
+    beatbench::audio::SampleCache m_auditionCache;
+    AudioTaskRunner m_auditionTasks;
     std::shared_ptr<const std::vector<float>> m_auditionPcm;
     double m_auditionRate = 0.0;
     double m_auditionDuration = 0.0;

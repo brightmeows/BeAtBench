@@ -266,34 +266,43 @@ bool ChartSession::renderAudition(const QVariantList& selection, double startSec
         }
     }
     if (filtered.notes.empty()) return false;
-    const std::uint64_t version = ++m_auditionVersion;
+    bool has_after = false;
+    for (const auto& ev : filtered.notes) {
+        if (m_timing &&
+            static_cast<double>(m_timing->time_us(beatbench::Position{ev.measure, ev.pos})) / 1e6 >=
+                startSec) {
+            has_after = true;
+            break;
+        }
+    }
+    if (!has_after) return false;  // 选中 note 全在红线之前（或时间无效）
+
     const std::wstring sourceDir = QFileInfo(m_path).absolutePath().toStdWString();
-    QThreadPool::globalInstance()->start([this, filtered = std::move(filtered), startSec,
-                                          sampleRate, sourceDir, version]() mutable {
-        beatbench::TimingEngine timing;
-        timing.rebuild(filtered);
-        beatbench::audio::SampleCache cache;
-        auto r = beatbench::audio::render_chart_range_w(filtered, timing, cache,
-                                                        static_cast<double>(sampleRate),
-                                                        std::max(0.0, startSec), 0.0, sourceDir);
-        if (version != m_auditionVersion.load(std::memory_order_relaxed)) return;
-        QMetaObject::invokeMethod(
-            this,
-            [this, r = std::move(r), version] {
-                if (version != m_auditionVersion.load(std::memory_order_relaxed)) return;
-                if (!r.ok) {
-                    emit auditionFinished(false, QString::fromStdString(r.message));
-                    return;
-                }
-                m_auditionRate = r.audio.sampleRate;
-                m_auditionDuration = r.audio.durationSeconds();
-                m_auditionPcm = std::make_shared<const std::vector<float>>(
-                    std::move(r.audio.interleavedStereo));
-                emit auditionReady();
-                emit auditionFinished(true, QString());
-            },
-            Qt::QueuedConnection);
-    });
+    auto result = std::make_shared<beatbench::audio::RenderResult>();
+    m_auditionTasks.cancelAll();
+    m_auditionTasks.submit(
+        QStringLiteral("audition"),
+        [this, filtered = std::move(filtered), startSec, sampleRate, sourceDir,
+         result](AudioTaskRunner::Generation gen) mutable {
+            if (m_auditionTasks.cancelled(gen)) return;
+            beatbench::TimingEngine timing;
+            timing.rebuild(filtered);
+            *result = beatbench::audio::render_chart_range_w(
+                filtered, timing, m_auditionCache, static_cast<double>(sampleRate),
+                std::max(0.0, startSec), 0.0, sourceDir);
+        },
+        [this, result](AudioTaskRunner::Generation) {
+            if (!result->ok) {
+                emit auditionFinished(false, QString::fromStdString(result->message));
+                return;
+            }
+            m_auditionRate = result->audio.sampleRate;
+            m_auditionDuration = result->audio.durationSeconds();
+            m_auditionPcm = std::make_shared<const std::vector<float>>(
+                std::move(result->audio.interleavedStereo));
+            emit auditionReady();
+            emit auditionFinished(true, QString());
+        });
     return true;
 }
 
@@ -631,6 +640,10 @@ int ChartSession::decodeId(const QString& idText) const {
 }
 
 void ChartSession::resetRenderState() {
+    m_auditionTasks.cancelAll();
+    m_auditionPcm.reset();
+    m_auditionRate = 0.0;
+    m_auditionDuration = 0.0;
     m_renderVersion.fetch_add(1, std::memory_order_relaxed);
     m_rendered.reset();
     m_waveform.reset();

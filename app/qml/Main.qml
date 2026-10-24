@@ -1709,6 +1709,7 @@ ApplicationWindow {
             if (audioEngine.auditionPlaying && window.selectionRefs.length === 1)
                 audioEngine.auditionStop()
             if (window.selectionRefs.length === 1) {
+                if (audioEngine.playing) audioEngine.pause()
                 session.playNoteSample(window.selectionRefs[0])
                 return
             }
@@ -1722,7 +1723,7 @@ ApplicationWindow {
                     chartSession.renderAudition(window.selectionRefs, window.currentPosSec(), 44100.0)) {
                 setStatus(qsTr("整轨试听：渲染中（选中 %1 个 note）").arg(window.selectionRefs.length))
             } else {
-                setStatus(qsTr("整轨试听失败：选中 note 无有效内容"))
+                setStatus(qsTr("整轨试听失败：选中 note 都在红线之前或无可试听内容"))
             }
             return
         }
