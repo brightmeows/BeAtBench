@@ -21,9 +21,9 @@ from pathlib import Path
 LEADS = list(range(0x81, 0xA0)) + list(range(0xE0, 0xFD))  # 双字节 lead：0x81-0x9F + 0xE0-0xFC
 TRAILS = [b for b in range(0x40, 0xFD) if b != 0x7F]  # 双字节 trail
 
-# lead 字节 → 行号：0x81-0x9F 顺排（0-30），0xE0-0xFC 续排（31-47）。
+# lead 字节 → 行号：0x81-0x9F 顺排（0-30），0xE0-0xFC 续排（31-59）。
 LEAD_ROWS = {b: i for i, b in enumerate(LEADS)}
-N_ROWS = len(LEADS)  # 47
+N_ROWS = len(LEADS)  # 60
 N_COLS = len(TRAILS)  # 188
 TRAIL_BASE = 0x40
 # trail 字节 → 列号：0x40-0x7E 直排，0x80-0xFC 跳过 0x7F 续排（列内不含 0x7F）。
@@ -50,6 +50,11 @@ def load_map(tsv: Path) -> tuple[list[tuple[int, int, int]], list[int]]:
             byte, ucs = line.split("\t")
             single[int(byte, 16)] = int(ucs, 16)
     pairs.sort()
+    seen = set()
+    for lead, trail, _ in pairs:
+        if (lead, trail) in seen:
+            raise SystemExit(f"cp932_map.tsv 重复双字节条目: {lead:02X}{trail:02X}")
+        seen.add((lead, trail))
     return pairs, [single.get(b, 0) for b in range(0x80, 0x100)]
 
 
@@ -62,6 +67,7 @@ def fmt_u16_rows(values: list[int], per_row: int = 12) -> str:
 
 
 def main() -> int:
+    check_only = "--check" in sys.argv[1:]
     tsv = Path(__file__).resolve().parent / "cp932_map.tsv"
     pairs, single = load_map(tsv)
     if len(single) != 128:
@@ -119,7 +125,15 @@ def main() -> int:
     )
     parts.append("")
     parts.append("}  // namespace beatbench::bms")
-    out.write_text("\n".join(parts) + "\n", encoding="utf-8")
+    text = "\n".join(parts) + "\n"
+    if check_only:
+        current = out.read_text(encoding="utf-8") if out.exists() else ""
+        if current != text:
+            print(f"out of date: {out}（运行 tools/gen_sjis_table.py 重新生成）")
+            return 1
+        print(f"checked: {out}")
+        return 0
+    out.write_text(text, encoding="utf-8")
     print(f"generated: {out} (双字节 {len(pairs)} 项, 单字节 {sum(1 for v in single if v)} 项, "
           f"反表 {len(rev_sorted)} 项)")
     return 0

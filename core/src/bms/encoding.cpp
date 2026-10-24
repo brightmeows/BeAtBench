@@ -7,6 +7,10 @@
 
 #include "sjis_table.hpp"
 
+static_assert(sizeof(beatbench::bms::kSjisToUcs) / sizeof(beatbench::bms::kSjisToUcs[0]) ==
+                  beatbench::bms::kSjisLeadRows * beatbench::bms::kSjisTrailCols,
+              "sjis_table.hpp 正表尺寸与生成器常量不一致");
+
 namespace beatbench::bms {
 namespace {
 
