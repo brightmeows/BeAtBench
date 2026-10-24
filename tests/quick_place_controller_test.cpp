@@ -142,6 +142,27 @@ TEST(QuickPlace, TwoHandPresetMapsRightHandTo2P) {
     EXPECT_TRUE(has_lane(global_editor_session().chart(), 1, {1, LaneKind::Scratch, 0}));
 }
 
+TEST(QuickPlace, TwoHandPresetResetsInheritedSide) {
+    Fixture f(make_chart("dp"));
+    // 单手切到 2P 后再切双手：左手键必须回 1P，不能继承 m_side。
+    QKeyEvent g(QEvent::KeyPress, Qt::Key_G, Qt::NoModifier);
+    EXPECT_TRUE(f.place.eventFilter(nullptr, &g));
+    EXPECT_EQ(f.place.side(), 1);
+    f.place.setPreset(1);
+    EXPECT_EQ(f.place.side(), 0);
+    f.place.setSelection(selection_of(global_editor_session().chart(), {0}));
+    QKeyEvent b(QEvent::KeyPress, Qt::Key_B, Qt::NoModifier);
+    EXPECT_TRUE(f.place.eventFilter(nullptr, &b));
+    EXPECT_TRUE(has_lane(global_editor_session().chart(), 1, {0, LaneKind::Key, 1}));
+
+    global_editor_session().load(make_chart("dp"));
+    f.session.refresh();
+    f.place.setSelection(selection_of(global_editor_session().chart(), {0}));
+    QKeyEvent h(QEvent::KeyPress, Qt::Key_H, Qt::NoModifier);
+    EXPECT_TRUE(f.place.eventFilter(nullptr, &h));
+    EXPECT_TRUE(has_lane(global_editor_session().chart(), 1, {1, LaneKind::Key, 1}));
+}
+
 TEST(QuickPlace, Pms9kUsesGAsKeyEight) {
     Fixture f(make_chart("pms9k"));
     f.place.setSelection(selection_of(global_editor_session().chart(), {0}));

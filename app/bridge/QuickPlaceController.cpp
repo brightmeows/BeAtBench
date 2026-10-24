@@ -11,6 +11,7 @@
 
 #include "beatbench/core/ChartMode.hpp"
 #include "beatbench/core/edit/EditorSession.hpp"
+#include "beatbench/core/edit/LanePlan.hpp"
 #include "beatbench/core/edit/SessionRegistry.hpp"
 #include "bridge/ChartSession.hpp"
 
@@ -22,17 +23,6 @@ using beatbench::Lane;
 using beatbench::LaneKind;
 using beatbench::Rational;
 using beatbench::edit::NoteRef;
-
-QString laneKey(const Lane& lane) {
-    const char* kind = lane.kind == LaneKind::Scratch ? "scratch"
-                       : lane.kind == LaneKind::Pedal ? "pedal"
-                       : lane.kind == LaneKind::Bgm   ? "bgm"
-                                                      : "key";
-    return QStringLiteral("lane:%1:%2:%3")
-        .arg(static_cast<int>(lane.player))
-        .arg(QString::fromLatin1(kind))
-        .arg(static_cast<int>(lane.index));
-}
 
 QString laneLabel(const Lane& lane) {
     if (lane.kind == LaneKind::Scratch)
@@ -93,9 +83,11 @@ void QuickPlaceController::setPreset(int preset) {
     const int v = preset == 1 ? 1 : 0;
     if (v == m_preset) return;
     m_preset = v;
+    m_side = 0;  // 双手预设不继承单手切边；左手恒 1P、右手恒 2P
     QSettings settings;
     settings.setValue(QStringLiteral("quickplace/preset"), m_preset);
     emit presetChanged();
+    emit sideChanged();
     emit statusMessage(m_preset == 0 ? tr("摆音键位：单手换边") : tr("摆音键位：双手固定"));
 }
 
@@ -139,18 +131,6 @@ QVariantList QuickPlaceController::toVariant(const std::vector<NoteRef>& refs) c
     return out;
 }
 
-std::optional<std::size_t> QuickPlaceController::findNote(const NoteRef& ref) const {
-    if (!m_session || !m_session->chart()) return std::nullopt;
-    const auto& notes = m_session->chart()->notes;
-    for (std::size_t i = 0; i < notes.size(); ++i) {
-        const auto& e = notes[i];
-        if (e.measure == ref.measure && e.pos == ref.pos && e.value.lane == ref.lane &&
-            e.value.sample.id == ref.sample && e.value.sub_line == ref.sub_line)
-            return i;
-    }
-    return std::nullopt;
-}
-
 void QuickPlaceController::rebuildFromSelection(const std::vector<NoteRef>& input) {
     if (!m_session || !m_session->chart()) {
         cancel();
@@ -161,46 +141,23 @@ void QuickPlaceController::rebuildFromSelection(const std::vector<NoteRef>& inpu
         return;
     }
 
-    std::set<NoteRef> normalized;
-    for (const auto& ref : input) {
-        const auto idx = findNote(ref);
-        if (!idx) continue;
-        normalized.insert(ref);
-        const auto& note = m_session->chart()->notes[*idx].value;
-        if (note.ln_pair && *note.ln_pair < m_session->chart()->notes.size()) {
-            const auto& partnerEv = m_session->chart()->notes[*note.ln_pair];
-            normalized.insert(NoteRef{partnerEv.measure, partnerEv.pos, partnerEv.value.lane,
-                                      partnerEv.value.sample.id, partnerEv.value.sub_line});
-        }
-    }
-
-    std::vector<NoteRef> refs(normalized.begin(), normalized.end());
-    m_selection = refs;
+    const auto groups = beatbench::edit::group_selection(*m_session->chart(), input);
+    m_selection.clear();
     m_queue.clear();
     m_index = 0;
-    std::set<NoteRef> used;
-    for (const auto& ref : refs) {
-        if (used.count(ref)) continue;
-        const auto idx = findNote(ref);
-        if (!idx) continue;
-        const auto& note = m_session->chart()->notes[*idx].value;
+    for (const auto& group : groups) {
+        m_selection.push_back(group.a);
+        if (group.b) m_selection.push_back(*group.b);
         Item item;
-        item.a = ref;
-        if (note.ln_pair && *note.ln_pair < m_session->chart()->notes.size()) {
-            const auto& partnerEv = m_session->chart()->notes[*note.ln_pair];
-            const NoteRef partner{partnerEv.measure, partnerEv.pos, partnerEv.value.lane,
-                                  partnerEv.value.sample.id, partnerEv.value.sub_line};
-            if (!used.count(partner)) {
-                item.b = partner;
-                item.ln = true;
-                used.insert(partner);
-            }
-        }
-        used.insert(ref);
+        item.a = group.a;
+        item.b = group.b;
+        item.ln = group.ln;
         m_queue.push_back(std::move(item));
     }
     emit pendingCountChanged();
-    if (input != refs) emitSelection();  // 回写含 LN 伙伴的补全集
+    const std::set<NoteRef> before(input.begin(), input.end());
+    const std::set<NoteRef> after(m_selection.begin(), m_selection.end());
+    if (before != after) emitSelection();  // 回写含 LN 伙伴的补全集
 }
 
 void QuickPlaceController::emitSelection() {
@@ -216,106 +173,49 @@ void QuickPlaceController::setSelection(const QVariantList& list) {
     rebuildFromSelection(readSelection(list));
 }
 
-bool QuickPlaceController::targetLaneValid(const Lane& lane) const {
-    if (!m_session || !m_session->chart()) return false;
-    const QString m = mode();
-    if (lane.kind == LaneKind::Scratch) return !isPms() && lane.player <= 1 && lane.index == 0;
-    if (lane.kind != LaneKind::Key) return false;
-    if (lane.player > 1) return false;
-    if (isPms() && lane.player != 0) return false;
-    const int maxKey = beatbench::chart_mode_key_count(m.toStdString());
-    return lane.index >= 1 && lane.index <= maxKey;
-}
-
-bool QuickPlaceController::targetHidden(const Lane& lane) const {
-    return m_hiddenLanes.contains(laneKey(lane));
-}
-
-bool QuickPlaceController::collisionAt(const beatbench::Event<beatbench::Note>& source,
-                                       const Lane& target, std::size_t sourceIndex,
-                                       const std::optional<std::size_t>& partnerIndex) const {
-    const auto& notes = m_session->chart()->notes;
-    for (std::size_t i = 0; i < notes.size(); ++i) {
-        if (i == sourceIndex || (partnerIndex && i == *partnerIndex)) continue;
-        const auto& e = notes[i];
-        if (e.measure == source.measure && e.pos == source.pos && e.value.lane == target)
-            return true;
-    }
-    return false;
-}
-
 void QuickPlaceController::placeLane(const Lane& lane) {
     if (!m_session || !m_session->chart() || !hasPending()) {
         emit statusMessage(tr("没有待摆音符：先选中 note"));
         return;
     }
-    if (!targetLaneValid(lane)) {
-        emit statusMessage(tr("目标轨在当前模式不存在：%1").arg(laneLabel(lane)));
-        return;
-    }
-    if (targetHidden(lane)) {
-        emit statusMessage(tr("目标轨已隐藏：先恢复 %1 显示").arg(laneLabel(lane)));
-        return;
-    }
 
     const Item& item = m_queue[m_index];
-    const auto sourceIndex = findNote(item.a);
-    if (!sourceIndex) {
-        cancel();
-        emit statusMessage(tr("选中的 note 已不存在，摆音队列已重置"));
-        return;
-    }
-    const auto& chart = *m_session->chart();
-    const auto& source = chart.notes[*sourceIndex];
-    std::optional<std::size_t> partnerIndex;
-    if (item.ln) {
-        if (!source.value.ln_pair || *source.value.ln_pair >= chart.notes.size()) {
+    beatbench::edit::LanePlanOptions options;
+    options.allow_bgm = false;
+    options.require_ln_match = false;
+    for (const auto& key : m_hiddenLanes) options.hidden_lanes.insert(key.toStdString());
+    const beatbench::edit::NoteGroup group{item.a, item.b, item.ln};
+    const auto plan = beatbench::edit::plan_lane_moves(
+        *m_session->chart(), {group}, {beatbench::edit::LaneTarget{lane, false}}, options);
+    if (plan.moves.empty() || !plan.moves[0].move) {
+        const std::string reason = plan.moves.empty() ? "not_found" : plan.moves[0].reason;
+        if (reason == "hidden")
+            emit statusMessage(tr("目标轨已隐藏：先恢复 %1 显示").arg(laneLabel(lane)));
+        else if (reason == "invalid_lane")
+            emit statusMessage(tr("目标轨在当前模式不存在：%1").arg(laneLabel(lane)));
+        else if (reason == "occupied")
+            emit statusMessage(
+                tr("目标位置已有 note：%1 拍位 %2").arg(laneLabel(lane)).arg(item.a.measure));
+        else {
             cancel();
-            emit statusMessage(tr("LN 配对已失效，摆音队列已重置"));
-            return;
+            emit statusMessage(tr("选中的 note 已不存在，摆音队列已重置"));
         }
-        partnerIndex = *source.value.ln_pair;
-    }
-    if (collisionAt(source, lane, *sourceIndex, partnerIndex)) {
-        emit statusMessage(
-            tr("目标位置已有 note：%1 拍位 %2").arg(laneLabel(lane)).arg(source.measure));
-        return;
-    }
-    if (partnerIndex && collisionAt(chart.notes[*partnerIndex], lane, *sourceIndex, partnerIndex)) {
-        emit statusMessage(tr("目标位置已有 note：%1 拍位 %2")
-                               .arg(laneLabel(lane))
-                               .arg(chart.notes[*partnerIndex].measure));
         return;
     }
 
-    const std::uint32_t sample = source.value.sample.id;
-    const std::uint32_t fromMeasure = source.measure;
-    const Rational fromPos = source.pos;
-    const Lane fromLane = source.value.lane;
-    const std::uint32_t fromSub = source.value.sub_line;
-    std::optional<beatbench::Event<beatbench::Note>> partnerSnapshot;
-    if (partnerIndex) partnerSnapshot = chart.notes[*partnerIndex];
-    std::unique_ptr<beatbench::edit::EditCommand> cmd;
-    if (item.ln)
-        cmd = std::make_unique<beatbench::edit::MoveLnPairCommand>(fromMeasure, fromPos, fromLane,
-                                                                   sample, fromSub, lane);
-    else
-        cmd = std::make_unique<beatbench::edit::MoveNoteCommand>(
-            fromMeasure, fromPos, fromLane, sample, fromMeasure, fromPos, false, lane, fromSub,
-            std::nullopt);
+    const auto& move = plan.moves[0];
+    auto cmd = beatbench::edit::make_lane_move_command(move);
     auto& session = beatbench::edit::session_registry().active();
-    if (!session.exec(std::move(cmd))) {
+    if (!cmd || !session.exec(std::move(cmd))) {
         emit statusMessage(tr("摆音失败：命令未应用"));
         return;
     }
 
     std::erase_if(m_selection,
                   [&](const NoteRef& r) { return r == item.a || (item.b && r == *item.b); });
-    m_selection.push_back(NoteRef{fromMeasure, fromPos, lane, sample, 0});
-    if (partnerSnapshot) {
-        m_selection.push_back(NoteRef{partnerSnapshot->measure, partnerSnapshot->pos, lane,
-                                      partnerSnapshot->value.sample.id, 0});
-    }
+    m_selection.push_back(NoteRef{item.a.measure, item.a.pos, lane, item.a.sample, 0});
+    if (item.b)
+        m_selection.push_back(NoteRef{item.b->measure, item.b->pos, lane, item.b->sample, 0});
     std::sort(m_selection.begin(), m_selection.end());
     m_selection.erase(std::unique(m_selection.begin(), m_selection.end()), m_selection.end());
     ++m_index;
@@ -323,8 +223,10 @@ void QuickPlaceController::placeLane(const Lane& lane) {
     emitSelection();
     if (m_session) m_session->refresh();
     emit edited();
-    emit statusMessage(
-        tr("已摆 #WAV%1 → %2（剩余 %3）").arg(sample).arg(laneLabel(lane)).arg(pendingCount()));
+    emit statusMessage(tr("已摆 #WAV%1 → %2（剩余 %3）")
+                           .arg(item.a.sample)
+                           .arg(laneLabel(lane))
+                           .arg(pendingCount()));
 }
 
 std::optional<Lane> QuickPlaceController::laneForKey(int key, int effectiveSide) const {
@@ -346,13 +248,13 @@ std::optional<Lane> QuickPlaceController::laneForKey(int key, int effectiveSide)
         return std::nullopt;
     }
 
+    const int side = m_preset == 1 ? 0 : effectiveSide;
     for (int i = 0; i < 7; ++i) {
         if (key == kRow7[i])
-            return Lane{static_cast<std::uint8_t>(effectiveSide), LaneKind::Key,
+            return Lane{static_cast<std::uint8_t>(side), LaneKind::Key,
                         static_cast<std::uint8_t>(i + 1)};
     }
-    if (key == Qt::Key_A)
-        return Lane{static_cast<std::uint8_t>(effectiveSide), LaneKind::Scratch, 0};
+    if (key == Qt::Key_A) return Lane{static_cast<std::uint8_t>(side), LaneKind::Scratch, 0};
 
     if (m_preset == 1 && isDoublePlay()) {
         for (int i = 0; i < 7; ++i) {
@@ -379,8 +281,9 @@ bool QuickPlaceController::eventFilter(QObject* watched, QEvent* event) {
         emit statusMessage(m_side == 0 ? tr("摆音目标：1P") : tr("摆音目标：2P"));
         return true;
     }
-    const int effectiveSide =
-        (m_preset == 0 && dp && (ke->modifiers() & Qt::ShiftModifier)) ? 1 - m_side : m_side;
+    const int effectiveSide = (m_preset == 1)                                 ? 0
+                              : (dp && (ke->modifiers() & Qt::ShiftModifier)) ? 1 - m_side
+                                                                              : m_side;
     const auto lane = laneForKey(ke->key(), effectiveSide);
     if (!lane) return false;
     if (!hasPending()) return false;
