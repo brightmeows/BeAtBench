@@ -361,7 +361,7 @@ std::string EditorSession::redo_label() const {
 // ---------- PutNoteCommand ----------
 
 PutNoteCommand::PutNoteCommand(NoteRef at, bool ln_kind, NoteKind kind)
-    : m_at(std::move(at)), m_ln_kind(ln_kind), m_kind(kind) {}
+    : m_at(at), m_ln_kind(ln_kind), m_kind(kind) {}
 
 void PutNoteCommand::apply(Chart& chart) {
     const std::size_t at = lower_bound_pos(chart.notes, m_at.measure, m_at.pos);
@@ -408,7 +408,7 @@ std::string PutNoteCommand::describe() const {
 MoveNoteCommand::MoveNoteCommand(NoteRef from, std::uint32_t to_measure, Rational to_pos,
                                  bool move_ln_pair, std::optional<Lane> to_lane,
                                  std::optional<std::uint32_t> to_sub_line)
-    : m_from(std::move(from)),
+    : m_from(from),
       m_to_measure(to_measure),
       m_to_pos(to_pos),
       m_move_ln_pair(move_ln_pair),
@@ -682,7 +682,7 @@ std::string MoveLnPairCommand::describe() const {
 
 // ---------- ToggleLnCommand（单点 ↔ LN；只改 ln_channel，rebuild 接管配对） ----------
 
-ToggleLnCommand::ToggleLnCommand(NoteRef ref) : m_ref(std::move(ref)) {}
+ToggleLnCommand::ToggleLnCommand(NoteRef ref) : m_ref(ref) {}
 
 void ToggleLnCommand::apply(Chart& chart) {
     const auto idx =
@@ -728,7 +728,7 @@ std::string ToggleLnCommand::describe() const {
 
 ConvertNoteCommand::ConvertNoteCommand(NoteRef from, ConvertTarget target, std::uint32_t to_measure,
                                        Rational to_pos)
-    : m_from(std::move(from)), m_target(target), m_to_measure(to_measure), m_to_pos(to_pos) {}
+    : m_from(from), m_target(target), m_to_measure(to_measure), m_to_pos(to_pos) {}
 
 void ConvertNoteCommand::apply(Chart& chart) {
     const auto idx = find_note(chart.notes, m_from.measure, m_from.pos, m_from.lane, m_from.sample,
@@ -890,7 +890,7 @@ std::string ConvertNoteCommand::describe() const {
 
 // ---------- DeleteNoteCommand ----------
 
-DeleteNoteCommand::DeleteNoteCommand(NoteRef ref) : m_ref(std::move(ref)) {}
+DeleteNoteCommand::DeleteNoteCommand(NoteRef ref) : m_ref(ref) {}
 
 void DeleteNoteCommand::apply(Chart& chart) {
     const auto idx =
@@ -1495,7 +1495,7 @@ std::string ConvertMetaToNoteCommand::describe() const {
 // ---------- QuantizeNoteCommand ----------
 
 QuantizeNoteCommand::QuantizeNoteCommand(NoteRef ref, std::int64_t snap_num, std::int64_t snap_den)
-    : m_ref(std::move(ref)), m_snap_num(snap_num), m_snap_den(snap_den) {
+    : m_ref(ref), m_snap_num(snap_num), m_snap_den(snap_den) {
     if (m_snap_num <= 0) m_snap_num = 1;
     if (m_snap_den <= 0) m_snap_den = 1;
 }
@@ -1549,7 +1549,7 @@ Lane transform_lane(const Lane& lane, bool mirror, int rotate, int max_key) {
 }
 
 TransformNoteCommand::TransformNoteCommand(NoteRef ref, bool mirror, int rotate)
-    : m_ref(std::move(ref)), m_mirror(mirror), m_rotate(rotate) {}
+    : m_ref(ref), m_mirror(mirror), m_rotate(rotate) {}
 
 void TransformNoteCommand::bind_source(const Chart& chart,
                                        std::unordered_set<std::size_t>& claimed) {
@@ -1926,8 +1926,7 @@ std::string DeleteSampleCommand::describe() const {
     return "删除定义表 id（" + std::to_string(m_id) + "）";
 }
 
-SetNoteSampleCommand::SetNoteSampleCommand(NoteRef ref, std::uint32_t to)
-    : m_ref(std::move(ref)), m_to(to) {}
+SetNoteSampleCommand::SetNoteSampleCommand(NoteRef ref, std::uint32_t to) : m_ref(ref), m_to(to) {}
 
 void SetNoteSampleCommand::apply(Chart& chart) {
     const auto idx =

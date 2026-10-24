@@ -115,11 +115,12 @@ std::vector<NoteGroup> group_selection(const Chart& chart, const std::vector<Not
                 used.insert(partner);
             }
         }
-        groups.push_back(std::move(group));
+        groups.push_back(group);
     }
     return groups;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)——规划分支表：模式/隐藏/占用/plan 冲突
 LanePlan plan_lane_moves(const Chart& chart, const std::vector<NoteGroup>& groups,
                          const std::vector<LaneTarget>& targets, const LanePlanOptions& options) {
     LanePlan plan;
