@@ -188,17 +188,25 @@ void QuickPlaceController::placeLane(const Lane& lane) {
     const auto plan = beatbench::edit::plan_lane_moves(
         *m_session->chart(), {group}, {beatbench::edit::LaneTarget{lane, false}}, options);
     if (plan.moves.empty() || !plan.moves[0].move) {
-        const std::string reason = plan.moves.empty() ? "not_found" : plan.moves[0].reason;
-        if (reason == "hidden")
-            emit statusMessage(tr("目标轨已隐藏：先恢复 %1 显示").arg(laneLabel(lane)));
-        else if (reason == "invalid_lane")
-            emit statusMessage(tr("目标轨在当前模式不存在：%1").arg(laneLabel(lane)));
-        else if (reason == "occupied")
-            emit statusMessage(
-                tr("目标位置已有 note：%1 拍位 %2").arg(laneLabel(lane)).arg(item.a.measure));
-        else {
-            cancel();
-            emit statusMessage(tr("选中的 note 已不存在，摆音队列已重置"));
+        const auto reason =
+            plan.moves.empty() ? beatbench::edit::LaneMoveReason::NotFound : plan.moves[0].reason;
+        using R = beatbench::edit::LaneMoveReason;
+        switch (reason) {
+            case R::Hidden:
+                emit statusMessage(tr("目标轨已隐藏：先恢复 %1 显示").arg(laneLabel(lane)));
+                break;
+            case R::InvalidLane:
+                emit statusMessage(tr("目标轨在当前模式不存在：%1").arg(laneLabel(lane)));
+                break;
+            case R::Occupied:
+            case R::DuplicateTarget:
+                emit statusMessage(
+                    tr("目标位置已有 note：%1 拍位 %2").arg(laneLabel(lane)).arg(item.a.measure));
+                break;
+            default:
+                cancel();
+                emit statusMessage(tr("选中的 note 已不存在，摆音队列已重置"));
+                break;
         }
         return;
     }
@@ -286,7 +294,11 @@ bool QuickPlaceController::eventFilter(QObject* watched, QEvent* event) {
                                                                               : m_side;
     const auto lane = laneForKey(ke->key(), effectiveSide);
     if (!lane) return false;
-    if (!hasPending()) return false;
+    if (!hasPending()) {
+        // issue #46：队列耗尽后按键提示而非静默；消费事件防穿透。
+        emit statusMessage(tr("没有待摆音符：先选中 note"));
+        return true;
+    }
     placeLane(*lane);
     return true;
 }
