@@ -233,6 +233,70 @@ static QString noteSnapKey(const beatbench::Event<beatbench::Note>& n) {
 /// 区间外已渲染 PCM 保持不变，其尾音延伸进脏区间的部分由区间重混按倒推衔接处理）。
 static constexpr double kTailSec = 8.0;
 
+bool ChartSession::renderAudition(const QVariantList& selection, double startSec,
+                                  qreal sampleRate) {
+    if (!m_chart || !m_timing || selection.isEmpty()) return false;
+    Chart filtered = *m_chart;
+    filtered.notes.clear();
+    for (const auto& item : selection) {
+        const QVariantMap m = item.toMap();
+        if (m.isEmpty()) continue;
+        const int measure = m.value(QStringLiteral("measure")).toInt();
+        const QVariantMap pos = m.value(QStringLiteral("pos")).toMap();
+        const QVariantMap laneMap = m.value(QStringLiteral("lane")).toMap();
+        const int sample = m.value(QStringLiteral("sample")).toInt();
+        const int sub = m.value(QStringLiteral("sub_line")).toInt();
+        const QString kind = laneMap.value(QStringLiteral("kind")).toString();
+        beatbench::Lane lane;
+        lane.player = static_cast<std::uint8_t>(laneMap.value(QStringLiteral("player")).toInt());
+        lane.kind = kind == QStringLiteral("scratch") ? beatbench::LaneKind::Scratch
+                    : kind == QStringLiteral("pedal") ? beatbench::LaneKind::Pedal
+                    : kind == QStringLiteral("bgm")   ? beatbench::LaneKind::Bgm
+                                                      : beatbench::LaneKind::Key;
+        lane.index = static_cast<std::uint8_t>(laneMap.value(QStringLiteral("index")).toInt());
+        const beatbench::Rational rp(pos.value(QStringLiteral("num")).toLongLong(),
+                                     pos.value(QStringLiteral("den")).toLongLong());
+        for (const auto& ev : m_chart->notes) {
+            if (static_cast<int>(ev.measure) == measure && ev.pos == rp && ev.value.lane == lane &&
+                static_cast<int>(ev.value.sample.id) == sample &&
+                static_cast<int>(ev.value.sub_line) == sub) {
+                filtered.notes.push_back(ev);
+                break;
+            }
+        }
+    }
+    if (filtered.notes.empty()) return false;
+    const std::uint64_t version = ++m_auditionVersion;
+    const std::wstring sourceDir = QFileInfo(m_path).absolutePath().toStdWString();
+    QThreadPool::globalInstance()->start([this, filtered = std::move(filtered), startSec,
+                                          sampleRate, sourceDir, version]() mutable {
+        beatbench::TimingEngine timing;
+        timing.rebuild(filtered);
+        beatbench::audio::SampleCache cache;
+        auto r = beatbench::audio::render_chart_range_w(filtered, timing, cache,
+                                                        static_cast<double>(sampleRate),
+                                                        std::max(0.0, startSec), 0.0, sourceDir);
+        if (version != m_auditionVersion.load(std::memory_order_relaxed)) return;
+        QMetaObject::invokeMethod(
+            this,
+            [this, r = std::move(r), version] {
+                if (version != m_auditionVersion.load(std::memory_order_relaxed)) return;
+                if (!r.ok) {
+                    emit auditionFinished(false, QString::fromStdString(r.message));
+                    return;
+                }
+                m_auditionRate = r.audio.sampleRate;
+                m_auditionDuration = r.audio.durationSeconds();
+                m_auditionPcm = std::make_shared<const std::vector<float>>(
+                    std::move(r.audio.interleavedStereo));
+                emit auditionReady();
+                emit auditionFinished(true, QString());
+            },
+            Qt::QueuedConnection);
+    });
+    return true;
+}
+
 bool ChartSession::renderAsync(qreal sampleRate, bool saveWav) {
     if (!m_chart || !m_timing) return false;
     // 去重：渲染中忽略（完成信号回 UI；再次触发等 finish）

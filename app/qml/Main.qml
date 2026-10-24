@@ -927,6 +927,17 @@ ApplicationWindow {
         window.statusText = msg
         statusClearTimer.restart()
     }
+    Connections {
+        target: typeof chartSession !== "undefined" ? chartSession : null
+        function onAuditionFinished(ok, error) {
+            if (ok) {
+                if (typeof audioEngine !== "undefined" && audioEngine) audioEngine.auditionPlay()
+                setStatus(qsTr("整轨试听：选中 %1 个 note").arg(window.selectionRefs.length))
+            } else {
+                setStatus(qsTr("整轨试听失败：%1").arg(error))
+            }
+        }
+    }
     /// LN 放置提示是否该显示（当前为 LN 工具 + 已打开谱面）。
     function lnHintActive() { return window.editorTool === "ln" && window.chartMeta !== null }
     /// LN 放置提示文本（LNTYPE 2 = 头尾状态机；其余 = 连点两次自动配对）。
@@ -1693,6 +1704,29 @@ ApplicationWindow {
     // 「没有 A 点则从播放线开始播放」）。点击 A/B 的 setLoopA/B 也传入当前红线位置（编辑处即循环点）。
     function togglePlayback() {
         if (typeof audioEngine === "undefined" || !audioEngine) return
+        // #50：有选中 → 试听选中集；无选中 → 现有谱面播放。
+        if (window.selectionRefs && window.selectionRefs.length > 0) {
+            if (audioEngine.auditionPlaying && window.selectionRefs.length === 1)
+                audioEngine.auditionStop()
+            if (window.selectionRefs.length === 1) {
+                session.playNoteSample(window.selectionRefs[0])
+                return
+            }
+            if (audioEngine.auditionPlaying) {
+                audioEngine.auditionStop()
+                setStatus(qsTr("已停止整轨试听"))
+                return
+            }
+            if (audioEngine.playing) audioEngine.pause()
+            if (typeof chartSession !== "undefined" && chartSession &&
+                    chartSession.renderAudition(window.selectionRefs, window.currentPosSec(), 44100.0)) {
+                setStatus(qsTr("整轨试听：渲染中（选中 %1 个 note）").arg(window.selectionRefs.length))
+            } else {
+                setStatus(qsTr("整轨试听失败：选中 note 无有效内容"))
+            }
+            return
+        }
+        if (audioEngine.auditionPlaying) audioEngine.auditionStop()
         if (audioEngine.playing) { audioEngine.pause(); return }
         var start = (audioEngine.loopA >= 0) ? audioEngine.loopA : window.currentPosSec()
         if (audioEngine.hasPcm) audioEngine.seekSeconds(start)
