@@ -339,7 +339,6 @@ class SetChartModeCommand : public EditCommand {
    private:
     std::string m_mode;
     std::optional<std::string> m_old;
-    bool m_had_player = false;
     std::optional<std::string> m_old_player;
 };
 
