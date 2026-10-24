@@ -92,7 +92,6 @@ class QuickPlaceController : public QObject {
     QString mode() const;
     bool isPms() const;
     bool isDoublePlay() const;
-    QString signature(const std::vector<edit::NoteRef>& refs) const;
     std::vector<edit::NoteRef> readSelection(const QVariantList& refs) const;
     QVariantList toVariant(const std::vector<edit::NoteRef>& refs) const;
 
@@ -105,7 +104,8 @@ class QuickPlaceController : public QObject {
     std::vector<edit::NoteRef> m_selection;
     std::vector<Item> m_queue;
     std::size_t m_index = 0;
-    QString m_lastSignature;
+    /// 自身回写保护：selectionUpdated 同步环内的 setSelection 直接忽略。
+    bool m_muting = false;
 };
 
 }  // namespace beatbench::app
