@@ -347,9 +347,9 @@ void QuickPlaceController::placeLane(const Lane& lane) {
 }
 
 std::optional<Lane> QuickPlaceController::laneForKey(int key, int effectiveSide) const {
-    static constexpr int kRow7[7] = {Qt::Key_Z, Qt::Key_S, Qt::Key_X, Qt::Key_D,
+    static constexpr int kRow7[7] = {Qt::Key_B, Qt::Key_S, Qt::Key_X, Qt::Key_D,
                                      Qt::Key_C, Qt::Key_F, Qt::Key_V};
-    static constexpr int kPms9[9] = {Qt::Key_Z, Qt::Key_S, Qt::Key_X, Qt::Key_D, Qt::Key_C,
+    static constexpr int kPms9[9] = {Qt::Key_B, Qt::Key_S, Qt::Key_X, Qt::Key_D, Qt::Key_C,
                                      Qt::Key_F, Qt::Key_V, Qt::Key_G, Qt::Key_H};
     static constexpr int kPms9Two[9] = {Qt::Key_A, Qt::Key_S, Qt::Key_D, Qt::Key_F, Qt::Key_G,
                                         Qt::Key_H, Qt::Key_J, Qt::Key_K, Qt::Key_L};
