@@ -119,13 +119,32 @@ int ChartSession::playKeyCount() const {
     return beatbench::chart_mode_key_count(m_chart->mode_id.value_or("sp7k")).value_or(7);
 }
 
-void ChartSession::setVerticalMoveLocked(bool locked) {
+void ChartSession::setVerticalMoveMode(int mode) {
     auto& s = beatbench::edit::session_registry().active();
-    if (s.has_chart()) s.set_vertical_move_locked(locked);
+    if (!s.has_chart()) return;
+    switch (mode) {
+        case 1:
+            s.set_vertical_move_mode(beatbench::edit::VerticalMoveMode::TimeOnly);
+            break;
+        case 2:
+            s.set_vertical_move_mode(beatbench::edit::VerticalMoveMode::Free);
+            break;
+        default:
+            s.set_vertical_move_mode(beatbench::edit::VerticalMoveMode::LaneOnly);
+            break;
+    }
 }
 
-bool ChartSession::verticalMoveLocked() const {
-    return beatbench::edit::session_registry().active().vertical_move_locked();
+int ChartSession::verticalMoveMode() const {
+    switch (beatbench::edit::session_registry().active().vertical_move_mode()) {
+        case beatbench::edit::VerticalMoveMode::TimeOnly:
+            return 1;
+        case beatbench::edit::VerticalMoveMode::Free:
+            return 2;
+        case beatbench::edit::VerticalMoveMode::LaneOnly:
+            break;
+    }
+    return 0;
 }
 
 void ChartSession::refresh() {
@@ -137,7 +156,7 @@ void ChartSession::refresh() {
     const bool docChanged = sessionChanged || (c != m_chart);
     if (docChanged) {
         attachActive(true);
-        if (sessionChanged) emit verticalMoveLockedChanged();
+        if (sessionChanged) emit verticalMoveModeChanged();
         emit documentChanged();
         emit chartChanged();
         syncDirty();

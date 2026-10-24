@@ -262,7 +262,8 @@ void EditorSession::load(Chart chart) {
     m_redo.clear();
     m_selection.clear();
     m_path.clear();
-    m_vertical_move_locked = false;  // 新文档默认不锁；GUI 在 load 后显式置 true
+    m_vertical_move_mode = beatbench::edit::VerticalMoveMode::
+        Free;  // 新文档 core 默认自由（CLI 兼容）；GUI 在 openChart/new 后置 LaneOnly
     m_generation = 0;
     m_next_generation = 1;
     m_clean_generation = 0;
@@ -279,9 +280,15 @@ bool EditorSession::exec(std::unique_ptr<EditCommand> cmd) {
     m_last_error = EditError::None;
     m_last_error_message.clear();
     if (!m_chart || !cmd) return false;
-    if (m_vertical_move_locked && cmd->changes_time()) {
-        m_last_error = EditError::VerticalLocked;
-        m_last_error_message = "纵向移动已锁定：先解锁（Ctrl+L）";
+    // 三态方向锁：仅横向拦改时间，仅纵向拦截换轨；自由不拦。
+    if (m_vertical_move_mode == VerticalMoveMode::LaneOnly && cmd->changes_time()) {
+        m_last_error = EditError::TimeLocked;
+        m_last_error_message = "仅横向：时间不可改（Ctrl+L 切换三态）";
+        return false;
+    }
+    if (m_vertical_move_mode == VerticalMoveMode::TimeOnly && cmd->changes_lane()) {
+        m_last_error = EditError::LaneLocked;
+        m_last_error_message = "仅纵向：轨道不可改（Ctrl+L 切换三态）";
         return false;
     }
     Chart before = *m_chart;  // 失败回滚快照（防御性；命令应极少失败）
@@ -956,6 +963,12 @@ bool CompositeCommand::changes_time() const {
     return false;
 }
 
+bool CompositeCommand::changes_lane() const {
+    for (const auto& c : m_commands)
+        if (c->changes_lane()) return true;
+    return false;
+}
+
 void CompositeCommand::apply(Chart& chart) {
     for (std::size_t begin = 0; begin < m_commands.size();) {
         auto* transform = dynamic_cast<TransformNoteCommand*>(m_commands[begin].get());
@@ -1005,23 +1018,23 @@ std::string CompositeCommand::describe() const {
     return "批量操作（" + std::to_string(m_commands.size()) + " 项）";
 }
 
-// ---------- TimeShiftCommand ----------
+// ---------- ShiftMarkerCommand ----------
 
-TimeShiftCommand::TimeShiftCommand(std::unique_ptr<EditCommand> inner)
-    : m_inner(std::move(inner)) {}
+ShiftMarkerCommand::ShiftMarkerCommand(std::unique_ptr<EditCommand> inner, bool time, bool lane)
+    : m_inner(std::move(inner)), m_time(time), m_lane(lane) {}
 
-std::string TimeShiftCommand::name() const { return m_inner ? m_inner->name() : "time.shift"; }
+std::string ShiftMarkerCommand::name() const { return m_inner ? m_inner->name() : "shift.marker"; }
 
-void TimeShiftCommand::apply(Chart& chart) {
+void ShiftMarkerCommand::apply(Chart& chart) {
     if (m_inner) m_inner->apply(chart);
 }
 
-void TimeShiftCommand::invert(Chart& chart) {
+void ShiftMarkerCommand::invert(Chart& chart) {
     if (m_inner) m_inner->invert(chart);
 }
 
-std::string TimeShiftCommand::describe() const {
-    return m_inner ? m_inner->describe() : "时间变更";
+std::string ShiftMarkerCommand::describe() const {
+    return m_inner ? m_inner->describe() : "维度变更";
 }
 
 // ---------- Selection ----------

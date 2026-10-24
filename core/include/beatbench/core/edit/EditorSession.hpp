@@ -18,7 +18,12 @@
 namespace beatbench::edit {
 
 /// 编辑会话错误（协议层映射为稳定 error code）。
-enum class EditError : std::uint8_t { None, VerticalLocked };
+enum class EditError : std::uint8_t { None, TimeLocked, LaneLocked };
+
+/// 纵向移动三态（GUI 编辑策略；会话状态不入 undo）。
+/// LaneOnly（默认）= 只换轨（拦 changes_time）；TimeOnly = 只改时间（拦 changes_lane）；
+/// Free = 自由。两把方向锁都落在 core 命令层，QML 只做拖拽预览。
+enum class VerticalMoveMode : std::uint8_t { LaneOnly, TimeOnly, Free };
 
 /// 编辑会话：持有可编辑文档（Chart）+ undo/redo 栈 + 执行编辑命令。
 /// 纯 core 零 Qt；GUI/CLI/测试三方复用（doc/core-model.md 二、「命令对象 = 唯一操作面」的文档侧承载）。
@@ -73,11 +78,11 @@ class EditorSession {
     Selection& selection_mut() { return m_selection; }
     void set_selection(Selection sel) { m_selection = std::move(sel); }
 
-    /// 纵向移动锁（GUI 编辑策略；默认 false = CLI/脚本保持原行为）。
-    /// 命令层只拦“时间坐标发生变化”的移动；纯换轨/换图层/改值不受影响。
-    /// 该标志属于会话状态，不入 undo 栈；GUI 打开/新建谱面时重新置 true。
-    bool vertical_move_locked() const { return m_vertical_move_locked; }
-    void set_vertical_move_locked(bool locked) { m_vertical_move_locked = locked; }
+    /// 纵向移动三态（GUI 编辑策略；默认 LaneOnly，CLI/脚本不受影响——协议层
+    /// 不设置该状态时保持原行为）。两把方向锁都由 exec 按 changes_time/changes_lane
+    /// 统一拦截；会话状态不入 undo 栈；GUI 打开/新建谱面时重置 LaneOnly。
+    VerticalMoveMode vertical_move_mode() const { return m_vertical_move_mode; }
+    void set_vertical_move_mode(VerticalMoveMode mode) { m_vertical_move_mode = mode; }
 
     /// 最近一次 exec 的错误（成功/普通失败 = None）。
     EditError last_error() const { return m_last_error; }
@@ -121,7 +126,8 @@ class EditorSession {
     std::vector<std::uint64_t> m_undo_generation;  ///< 与 m_undo 平行：该命令 apply 后的代际
     std::vector<std::uint64_t> m_redo_generation;  ///< 与 m_redo 平行
     PersistHook m_persist_hook;
-    bool m_vertical_move_locked = false;  ///< GUI 纵向移动锁（见上）
+    VerticalMoveMode m_vertical_move_mode =
+        VerticalMoveMode::Free;  ///< core 默认自由（CLI/脚本兼容）；GUI 打开/新建谱面时置 LaneOnly
     EditError m_last_error = EditError::None;
     std::string m_last_error_message;
     bool m_backup = true;
@@ -181,6 +187,7 @@ class MoveNoteCommand : public EditCommand {
     bool changes_time() const override {
         return m_from.measure != m_to_measure || m_from.pos != m_to_pos;
     }
+    bool changes_lane() const override { return m_to_lane && *m_to_lane != m_from.lane; }
     bool merge_with(const EditCommand& next) override;
     std::string describe() const override;
 
@@ -206,6 +213,7 @@ class MoveLnPairCommand : public EditCommand {
     std::string name() const override { return "note.moveLnPair"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    bool changes_lane() const override { return true; }
     std::string describe() const override;
 
    private:
@@ -277,6 +285,7 @@ class TransformNoteCommand : public EditCommand {
     std::string name() const override { return "note.transform"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    bool changes_lane() const override { return true; }  ///< 镜像/旋转移键轨，锁「仅纵向」时拒绝
     std::string describe() const override;
 
    private:
@@ -398,6 +407,7 @@ class ConvertMetaToNoteCommand : public EditCommand {
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
     bool changes_time() const override { return m_measure != m_to_measure || m_pos != m_to_pos; }
+    bool changes_lane() const override { return true; }  ///< 元事件落为 note，轨道维度新增
     std::string describe() const override;
 
    private:
