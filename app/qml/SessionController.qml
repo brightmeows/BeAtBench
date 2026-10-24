@@ -400,7 +400,7 @@ QtObject {
                 layer = targetLane.bgaLayer
             if (m === 0 && delta.pos.num === 0 && layer === obj.layer) {
                 if (window.verticalMoveLocked)
-                    setStatus(qsTr("纵向锁定：BGA 只能换图层（Ctrl+L 解锁改时间）"))
+                    setStatus(qsTr("仅横向：BGA 只能换图层（Ctrl+L 切到自由）"))
                 return
             }
             const r = sessionCmd("bga.move", {
@@ -415,7 +415,7 @@ QtObject {
         } else if (kind === "bpm" || kind === "stop") {
             if (m === 0 && delta.pos.num === 0) {
                 if (window.verticalMoveLocked)
-                    setStatus(qsTr("纵向锁定：BPM/STOP 只能改值（Ctrl+L 解锁移动）"))
+                    setStatus(qsTr("仅横向：BPM/STOP 只能改值（Ctrl+L 切到自由）"))
                 return
             }
             const r = sessionCmd("timing.move", {
@@ -626,7 +626,7 @@ QtObject {
             return
         }
         if (window.verticalMoveLocked) {
-            setStatus(qsTr("纵向锁定：量化会改时间；先按 Ctrl+L 解锁"))
+            setStatus(qsTr("仅横向：量化会改时间；先按 Ctrl+L 切到自由"))
             return
         }
         const sn = window.snapNum, sd = window.snapDen
@@ -699,7 +699,7 @@ QtObject {
     /// 系统剪贴板 BMS 文本 → 谱面（Ctrl+V 与 Base62 确认对话框共用落点；2026-09）。
     function pasteRawText(sysText, target) {
         if (window.verticalMoveLocked) {
-            setStatus(qsTr("纵向锁定：粘贴会按目标小节放置；先按 Ctrl+L 解锁"))
+            setStatus(qsTr("仅横向：粘贴会按目标小节放置；先按 Ctrl+L 切到自由"))
             return
         }
         var r = sessionCmd("clipboard.paste", {
@@ -721,7 +721,7 @@ QtObject {
     }
     function pasteClipboard() {
         if (window.verticalMoveLocked) {
-            setStatus(qsTr("纵向锁定：粘贴会按目标小节放置；先按 Ctrl+L 解锁"))
+            setStatus(qsTr("仅横向：粘贴会按目标小节放置；先按 Ctrl+L 切到自由"))
             return
         }
         // 2026-09 修复：编辑页 Ctrl+V 先读系统剪贴板（切音页「复制 raw」/手写/外部工具复制的

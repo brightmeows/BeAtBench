@@ -17,6 +17,9 @@
 
 namespace beatbench::edit {
 
+/// 编辑会话错误（协议层映射为稳定 error code）。
+enum class EditError { None, VerticalLocked };
+
 /// 编辑会话：持有可编辑文档（Chart）+ undo/redo 栈 + 执行编辑命令。
 /// 纯 core 零 Qt；GUI/CLI/测试三方复用（doc/core-model.md 二、「命令对象 = 唯一操作面」的文档侧承载）。
 /// 会话状态（Selection/Viewport/Playhead）不入 undo 栈——由调用方自持。
@@ -76,6 +79,10 @@ class EditorSession {
     bool vertical_move_locked() const { return m_vertical_move_locked; }
     void set_vertical_move_locked(bool locked) { m_vertical_move_locked = locked; }
 
+    /// 最近一次 exec 的错误（成功/普通失败 = None）。
+    EditError last_error() const { return m_last_error; }
+    const std::string& last_error_message() const { return m_last_error_message; }
+
     // —— 崩溃备份 / 自动保存（2026-09，用户决策：默认关自动保存，以手动保存 + 崩溃备份为主） ——
     // 机制：每次 exec/undo/redo 修改文档后调用 maybe_persist()：
     //   - backup（默认开）：把「修改后」chart 写到 path + ".bak"（崩溃时 .bak = 内存最新，
@@ -115,6 +122,8 @@ class EditorSession {
     std::vector<std::uint64_t> m_redo_generation;  ///< 与 m_redo 平行
     PersistHook m_persist_hook;
     bool m_vertical_move_locked = false;  ///< GUI 纵向移动锁（见上）
+    EditError m_last_error = EditError::None;
+    std::string m_last_error_message;
     bool m_backup = true;
     bool m_autosave = false;
     std::string m_last_backup_error;

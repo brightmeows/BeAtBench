@@ -276,7 +276,14 @@ void EditorSession::load(Chart chart, std::string path) {
 }
 
 bool EditorSession::exec(std::unique_ptr<EditCommand> cmd) {
+    m_last_error = EditError::None;
+    m_last_error_message.clear();
     if (!m_chart || !cmd) return false;
+    if (m_vertical_move_locked && cmd->changes_time()) {
+        m_last_error = EditError::VerticalLocked;
+        m_last_error_message = "纵向移动已锁定：先解锁（Ctrl+L）";
+        return false;
+    }
     Chart before = *m_chart;  // 失败回滚快照（防御性；命令应极少失败）
     try {
         cmd->apply(*m_chart);
@@ -306,6 +313,8 @@ bool EditorSession::exec(std::unique_ptr<EditCommand> cmd) {
 }
 
 bool EditorSession::undo() {
+    m_last_error = EditError::None;
+    m_last_error_message.clear();
     if (m_undo.empty() || !m_chart || m_undo.size() != m_undo_generation.size()) return false;
     auto cmd = std::move(m_undo.back());
     const std::uint64_t gen_after = m_undo_generation.back();
@@ -321,6 +330,8 @@ bool EditorSession::undo() {
 }
 
 bool EditorSession::redo() {
+    m_last_error = EditError::None;
+    m_last_error_message.clear();
     if (m_redo.empty() || !m_chart || m_redo.size() != m_redo_generation.size()) return false;
     auto cmd = std::move(m_redo.back());
     const std::uint64_t gen_after = m_redo_generation.back();
