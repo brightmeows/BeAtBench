@@ -502,7 +502,7 @@ QVariantMap ChartViewItem::laneHeaderAt(qreal x, qreal y) const {
         res.insert(QStringLiteral("valid"), true);
         res.insert(QStringLiteral("key"), c.key);
         res.insert(QStringLiteral("label"), c.label);
-        if (c.bgm && x < r.x() + 12)
+        if (c.bgm && c.subLine < 0 && x < r.x() + 12)
             res.insert(QStringLiteral("action"), QStringLiteral("expand"));
         else if (x > r.right() - 12)
             res.insert(QStringLiteral("action"), QStringLiteral("hide"));

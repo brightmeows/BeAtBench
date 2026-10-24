@@ -120,9 +120,7 @@ Item {
         selection: root.selection
         metaSelection: root.metaSelection
         perfLog: root.perfLog
-        // M5.2 播放头跟随（单向：root.followPlayhead → view；用户滚动改 root
-        // （EditPage.followPlayhead 绑定 root → 工具条 checkbox 自动更新）
-        // ⚠️ 不写 onFollowPlayheadChanged 回写——双向回写 QML 会断绑定（2026-09 实测）
+        // M5.2 播放头跟随：EditPage 单一源，pane 只读绑定。
         followPlayhead: root.followPlayhead
         // Ctrl 临时切换已在状态层完成（Main.qml Connections → checkbox.toggle()），
         // 此处纯透传（不 XOR）——checkbox 视觉/视图状态始终一致（2026-09 用户）
@@ -874,14 +872,6 @@ Item {
     }
     /// 当前视口全量列（含隐藏）：工具条“轨道”弹层用。
     function columnList() { return view.columnList() }
-    /// 切换隐藏列（本视口）。
-    function toggleHiddenColumn(key) {
-        const arr = (root.hiddenColumns || []).slice()
-        const i = arr.indexOf(key)
-        if (i >= 0) arr.splice(i, 1)
-        else arr.push(key)
-        root.hiddenColumns = arr
-    }
     /// 列下标 → 演出轨道（转发 ChartViewItem.laneAtColumn；演出轨连续平移用，2026-09 用户）。
     function laneAtColumn(col) {
         if (!view) return ({ valid: false })

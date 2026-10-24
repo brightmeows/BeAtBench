@@ -57,15 +57,10 @@ Item {
             mouse.accepted = false
         }
     }
-    /// M5.2 播放头跟随（默认开——用户拍板；**单向绑定**：Main checkbox ↔ 本属性；
-    /// 用户滚动 ChartView 内部 root.followPlayhead=false → 本属性自动跟随（绑定）
-    /// ——无需回写，避免 QML 绑定循环断绑（2026-09 实测：双向回写断绑定 → 默认关+无效果））。
-    /// ⚠️ 写入口 = setFollowPlayhead（checkbox onToggled 走它；直接赋值会断绑定）。
-    property bool followPlayhead: activeView ? activeView.followPlayhead : true
-    function setFollowPlayhead(v) {
-        if (chartView) chartView.followPlayhead = v
-        if (chartView2) chartView2.followPlayhead = v
-    }
+    /// M5.2 播放头跟随（默认开——用户拍板）：EditPage 单一源，两个 pane 只读绑定。
+    /// 工具条 checkbox 只改本属性；pane 内不反向写，避免 QML 绑定环。
+    property bool followPlayhead: true
+    function setFollowPlayhead(v) { root.followPlayhead = !!v }
     /// 编辑工具（select/note/ln/mine/pan；Main 会话状态）
     property string editorTool: "pan"
     property int verticalMoveMode: 0
@@ -290,7 +285,6 @@ Item {
         else arr.push(key)
         if (root.activePane === 0) root.hiddenColumns1 = arr
         else root.hiddenColumns2 = arr
-        root.columnListTick++
     }
     onDualViewChanged: {
         if (root.dualView) {
@@ -303,6 +297,23 @@ Item {
     onIndependentVerticalChanged: {
         if (!root.independentVertical && root.activeView)
             sharedVertical.scrollY = root.activeView.scrollY
+    }
+    /// 切谱/新建：视口回到默认单 pane，清空每 pane 隐藏列（#48 会话态）。
+    function resetViewportState() {
+        root.dualView = false
+        root.independentVertical = false
+        root.activePane = 0
+        root.hiddenColumns1 = []
+        root.hiddenColumns2 = []
+        root.columnListTick++
+    }
+    Connections {
+        target: chartView
+        function onHiddenColumnsChanged() { root.columnListTick++ }
+    }
+    Connections {
+        target: chartView2
+        function onHiddenColumnsChanged() { root.columnListTick++ }
     }
     /// 当前缩放百分比（工具条显示）。
     readonly property int zoomPercent: activeView ? activeView.zoomPercent : 100
