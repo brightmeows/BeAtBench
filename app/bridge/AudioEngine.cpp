@@ -314,11 +314,58 @@ void AudioEngine::setSourceDir(const QString& dir) { m_sourceDir = dir; }
 
 /// 设置谱面路径（AudioEngine 内部解析目录；QML 传 r.result.path）。
 void AudioEngine::setChartPath(const QString& path) {
+    m_waveformTasks.cancelAll();
+    m_waveforms.clear();
     if (path.isEmpty()) {
         m_sourceDir.clear();
         return;
     }
     m_sourceDir = QFileInfo(path).absoluteDir().path();
+}
+
+void AudioEngine::requestSampleWaveform(const QString& file) {
+    if (file.isEmpty()) return;
+    QString resolved = file;
+    if (QDir::isRelativePath(file) && !m_sourceDir.isEmpty())
+        resolved = QDir(m_sourceDir).filePath(file);
+    const QString path = resolveAudioPath(resolved);
+    if (path.isEmpty()) return;
+    if (m_waveforms.count(path)) return;
+    m_waveformTasks.submit(
+        path,
+        [this, path](AudioTaskRunner::Generation gen) {
+            if (m_waveformTasks.cancelled(gen)) return;
+#ifdef _WIN32
+            const beatbench::audio::SampleCacheResult r = m_cache.get_w(path.toStdWString());
+#else
+            const beatbench::audio::SampleCacheResult r = m_cache.get(path.toStdString());
+#endif
+            auto wf = std::make_shared<beatbench::audio::WaveformPyramid>();
+            if (r.ok && r.sample) {
+                wf->build(r.sample->pcm().data(), r.sample->frameCount(), 2, r.sample->sampleRate);
+                beatbench::audio::decoded_sample_release(r.sample);
+            }
+            if (m_waveformTasks.cancelled(gen)) return;
+            m_waveforms[path] = std::move(wf);
+            emit sampleWaveformReady(path);
+        },
+        {});
+}
+
+void AudioEngine::invalidateSampleWaveforms() {
+    m_waveformTasks.cancelAll();
+    m_waveforms.clear();
+}
+
+std::shared_ptr<const beatbench::audio::WaveformPyramid> AudioEngine::sampleWaveform(
+    const QString& file) const {
+    QString resolved = file;
+    if (QDir::isRelativePath(file) && !m_sourceDir.isEmpty())
+        resolved = QDir(m_sourceDir).filePath(file);
+    const QString path = resolveAudioPath(resolved);
+    if (path.isEmpty()) return nullptr;
+    const auto it = m_waveforms.find(path);
+    return it == m_waveforms.end() ? nullptr : it->second;
 }
 
 // —— M5 播放（PCM 渲染代理；零拷贝经 SamplePlayer 播出） ——
