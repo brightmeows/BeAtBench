@@ -1535,6 +1535,7 @@ class ClipboardPasteCommand : public Command {
 class ClipboardApplyPatternCommand : public Command {
    public:
     std::string_view name() const override { return "clipboard.applyPattern"; }
+    // NOLINTNEXTLINE(readability-function-cognitive-complexity)——协议参数/计划分支表
     Json run(const Json& args) const override {
         auto& session = session_from_args(args);
         if (!session.has_chart()) throw CommandError("no_chart", "未加载谱面（先 session.load）");
@@ -1601,15 +1602,15 @@ class ClipboardApplyPatternCommand : public Command {
             const std::uint32_t sub = move.lane.kind == LaneKind::Bgm ? move.sub_line : 0;
             out_refs.push_back(
                 edit::NoteRef{group.a.measure, group.a.pos, move.lane, group.a.sample, sub});
-            if (group.b)
+            if (const auto partner = group.b; partner)
                 out_refs.push_back(
-                    edit::NoteRef{group.b->measure, group.b->pos, move.lane, group.b->sample, 0});
+                    edit::NoteRef{partner->measure, partner->pos, move.lane, partner->sample, 0});
             ++moved;
         }
         // 目标多于 pattern：多余目标保持原样，仍回填 selection。
         for (std::size_t i = plan.moves.size(); i < groups.size(); ++i) {
             out_refs.push_back(groups[i].a);
-            if (groups[i].b) out_refs.push_back(*groups[i].b);
+            if (const auto partner = groups[i].b; partner) out_refs.push_back(*partner);
         }
 
         bool ok = true;
