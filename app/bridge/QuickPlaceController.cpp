@@ -148,11 +148,7 @@ void QuickPlaceController::rebuildFromSelection(const std::vector<NoteRef>& inpu
     for (const auto& group : groups) {
         m_selection.push_back(group.a);
         if (group.b) m_selection.push_back(*group.b);
-        Item item;
-        item.a = group.a;
-        item.b = group.b;
-        item.ln = group.ln;
-        m_queue.push_back(std::move(item));
+        m_queue.push_back(group);
     }
     emit pendingCountChanged();
     const std::set<NoteRef> before(input.begin(), input.end());
@@ -179,14 +175,13 @@ void QuickPlaceController::placeLane(const Lane& lane) {
         return;
     }
 
-    const Item& item = m_queue[m_index];
+    const auto& item = m_queue[m_index];
     beatbench::edit::LanePlanOptions options;
     options.allow_bgm = false;
     options.require_ln_match = false;
     for (const auto& key : m_hiddenLanes) options.hidden_lanes.insert(key.toStdString());
-    const beatbench::edit::NoteGroup group{item.a, item.b, item.ln};
     const auto plan = beatbench::edit::plan_lane_moves(
-        *m_session->chart(), {group}, {beatbench::edit::LaneTarget{lane, false}}, options);
+        *m_session->chart(), {item}, {beatbench::edit::LaneTarget{lane, false}}, options);
     if (plan.moves.empty() || !plan.moves[0].move) {
         const auto reason =
             plan.moves.empty() ? beatbench::edit::LaneMoveReason::NotFound : plan.moves[0].reason;
