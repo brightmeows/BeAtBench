@@ -83,6 +83,7 @@ GUI = **QML 声明式表现层 + C++ 桥接引擎**。本稿回答三件事：�
   `B S X D C F V` + `A` 皿（`B` 避开工具键预留位 `Z`，其余沿用 LR2 演奏位），DP 用 `G` 换边、
   按住 Shift 临时换边；双手预设与 PMS9K 键位见 `app/bridge/QuickPlaceController.hpp`。
   工具键预留 `V N M H` 中 `V` 已被切音页复制切分点占用；编辑页字母键 `N/M/H` 继续预留。
+- 配置复制：`Ctrl+C` 复制一段摆键，选中目标 note 后 `Ctrl+Shift+V` 按轨道序列重排；不新建、不改时间。
 - 鼠标：点放（`note.put`）/ 框选（会话状态）/ 拖动（`note.move`，`merge_with` 合并 undo）/ 滚轮微调。
 - 鼠标：点放（`note.put`）/ 框选（会话状态）/ 拖动（`note.move`，`merge_with` 合并 undo）/ 滚轮微调；
   默认仅横向（只能换轨），可切仅纵向或自由；`Ctrl+L` 在仅横向与自由之间切换。
