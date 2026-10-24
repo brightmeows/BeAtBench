@@ -142,6 +142,8 @@ if (Qt6Core_FOUND)
         ${CMAKE_SOURCE_DIR}/app/bridge/ChartSession.hpp
         ${CMAKE_SOURCE_DIR}/app/bridge/AudioEngine.cpp
         ${CMAKE_SOURCE_DIR}/app/bridge/AudioEngine.hpp
+        ${CMAKE_SOURCE_DIR}/app/bridge/AudioTaskRunner.cpp
+        ${CMAKE_SOURCE_DIR}/app/bridge/AudioTaskRunner.hpp
         ${CMAKE_SOURCE_DIR}/audio/src/onset_detector.cpp)
     target_include_directories(slice_workspace_test PRIVATE ${CMAKE_SOURCE_DIR}/app)
     target_link_libraries(slice_workspace_test PRIVATE
