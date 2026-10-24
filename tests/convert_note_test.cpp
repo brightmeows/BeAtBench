@@ -50,8 +50,7 @@ TEST(ConvertNote, ToBgaIdSame) {
     s.load(make_chart());
     // n2（m1 pos1/2 key2 sample=0x22 #WAV22）→ BGA base，#BMP22 同文本 id
     ASSERT_TRUE(s.exec(
-        std::make_unique<ConvertNoteCommand>(1, Rational(1, 2), Lane{0, LaneKind::Key, 2}, 0x22, 0,
-                                             ConvertTarget::BgaBase, 1, Rational(1, 2))));
+        std::make_unique<ConvertNoteCommand>(NoteRef{1, Rational(1, 2), Lane{0, LaneKind::Key, 2}, 0x22, 0}, ConvertTarget::BgaBase, 1, Rational(1, 2))));
     // note 剩 n1，bga_events 有一个 (m1 pos1/2, image.id=0x22, layer=0)
     ASSERT_EQ(s.chart().notes.size(), 1u);
     ASSERT_EQ(s.chart().bga_events.size(), 1u);
@@ -79,8 +78,7 @@ TEST(ConvertNote, ToBpmRefIdKept) {
     s.load(make_chart());
     // n1（m1 pos0 key1 sample=1 #WAV01）→ #BPM01 引用
     ASSERT_TRUE(
-        s.exec(std::make_unique<ConvertNoteCommand>(1, Rational(0, 1), Lane{0, LaneKind::Key, 1}, 1,
-                                                    0, ConvertTarget::Bpm, 1, Rational(0, 1))));
+        s.exec(std::make_unique<ConvertNoteCommand>(NoteRef{1, Rational(0, 1), Lane{0, LaneKind::Key, 1}, 1, 0}, ConvertTarget::Bpm, 1, Rational(0, 1))));
     ASSERT_EQ(s.chart().notes.size(), 1u);
     ASSERT_EQ(s.chart().bpm_events.size(), 1u);
     EXPECT_EQ(s.chart().bpm_events[0].measure, 1u);
@@ -99,8 +97,7 @@ TEST(ConvertNote, ToStopRefIdKept) {
     EditorSession s;
     s.load(make_chart());
     ASSERT_TRUE(
-        s.exec(std::make_unique<ConvertNoteCommand>(1, Rational(0, 1), Lane{0, LaneKind::Key, 1}, 1,
-                                                    0, ConvertTarget::Stop, 1, Rational(0, 1))));
+        s.exec(std::make_unique<ConvertNoteCommand>(NoteRef{1, Rational(0, 1), Lane{0, LaneKind::Key, 1}, 1, 0}, ConvertTarget::Stop, 1, Rational(0, 1))));
     ASSERT_EQ(s.chart().notes.size(), 1u);
     ASSERT_EQ(s.chart().stop_events.size(), 1u);
     EXPECT_EQ(s.chart().stop_events[0].value.count, 96);
@@ -234,7 +231,7 @@ Chart make_dangling_chart(std::uint32_t bad_pair) {
 
 TEST(ConvertNote, DanglingPairEqualToSizeIsSafe) {
     Chart c = make_dangling_chart(2);  // ln_pair == notes.size()
-    ConvertNoteCommand cmd(0, Rational(0, 1), Lane{0, LaneKind::Key, 1}, 1, 0,
+    ConvertNoteCommand cmd(edit::NoteRef{0, Rational(0, 1), Lane{0, LaneKind::Key, 1}, 1, 0},
                            ConvertTarget::BgaBase, 0, Rational(0, 1));
     EXPECT_NO_THROW(cmd.apply(c));
     EXPECT_EQ(c.notes.size(), 1u);
@@ -243,7 +240,7 @@ TEST(ConvertNote, DanglingPairEqualToSizeIsSafe) {
 
 TEST(ConvertNote, DanglingPairBeyondSizeIsSafe) {
     Chart c = make_dangling_chart(7);  // ln_pair > notes.size()
-    ConvertNoteCommand cmd(0, Rational(0, 1), Lane{0, LaneKind::Key, 1}, 1, 0,
+    ConvertNoteCommand cmd(edit::NoteRef{0, Rational(0, 1), Lane{0, LaneKind::Key, 1}, 1, 0},
                            ConvertTarget::BgaBase, 0, Rational(0, 1));
     EXPECT_NO_THROW(cmd.apply(c));
     EXPECT_EQ(c.notes.size(), 1u);
@@ -252,7 +249,7 @@ TEST(ConvertNote, DanglingPairBeyondSizeIsSafe) {
 
 TEST(ConvertNote, ValidPairStillDisconnectsPartner) {
     Chart c = make_dangling_chart(1);  // 合法互指（head→tail）
-    ConvertNoteCommand cmd(0, Rational(0, 1), Lane{0, LaneKind::Key, 1}, 1, 0,
+    ConvertNoteCommand cmd(edit::NoteRef{0, Rational(0, 1), Lane{0, LaneKind::Key, 1}, 1, 0},
                            ConvertTarget::BgaBase, 0, Rational(0, 1));
     cmd.apply(c);
     ASSERT_EQ(c.notes.size(), 1u);

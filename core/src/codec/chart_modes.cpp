@@ -92,4 +92,14 @@ int chart_mode_key_count(std::string_view id) {
     return max_key;
 }
 
+bool chart_mode_has_lane(std::string_view id, const Lane& lane) {
+    // 写回 profile 不是新建模式选项；BME-SP 变体沿用 PMS 的九键布局。
+    if (id == "pms9k-bmesp") id = "pms9k";
+    const auto m = chart_mode_by_id(id);
+    if (!m) return false;
+    for (const auto& l : m->lanes)
+        if (l == lane) return true;
+    return false;
+}
+
 }  // namespace beatbench

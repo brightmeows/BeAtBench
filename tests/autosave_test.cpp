@@ -64,7 +64,7 @@ TEST(Autosave, BackupWrittenOnEdit) {
 
     // 编辑 → 写 .bak（崩溃备份），不写原路径（autosave 关）
     ASSERT_TRUE(
-        s.exec(std::make_unique<PutNoteCommand>(2, Rational(0, 1), Lane{0, LaneKind::Key, 2}, 2)));
+        s.exec(std::make_unique<PutNoteCommand>(NoteRef{2, Rational(0, 1), Lane{0, LaneKind::Key, 2}, 2})));
     EXPECT_TRUE(std::filesystem::exists(path + ".bak"));
     EXPECT_FALSE(std::filesystem::exists(path));  // autosave 关 → 原文件不写
 
@@ -96,7 +96,7 @@ TEST(Autosave, AutosaveWritesOriginalPath) {
     s.set_autosave_enabled(true);
 
     ASSERT_TRUE(
-        s.exec(std::make_unique<PutNoteCommand>(2, Rational(0, 1), Lane{0, LaneKind::Key, 2}, 2)));
+        s.exec(std::make_unique<PutNoteCommand>(NoteRef{2, Rational(0, 1), Lane{0, LaneKind::Key, 2}, 2})));
     EXPECT_TRUE(std::filesystem::exists(path));           // 自动保存 → 写原路径
     EXPECT_TRUE(std::filesystem::exists(path + ".bak"));  // 备份也写
     const auto content = read_file(path);
@@ -119,7 +119,7 @@ TEST(Autosave, BackupFailureIsVisible) {
         return false;
     });
     ASSERT_TRUE(
-        s.exec(std::make_unique<PutNoteCommand>(2, Rational(0, 1), Lane{0, LaneKind::Key, 2}, 2)));
+        s.exec(std::make_unique<PutNoteCommand>(NoteRef{2, Rational(0, 1), Lane{0, LaneKind::Key, 2}, 2})));
     EXPECT_EQ(s.last_backup_error(), "磁盘满（测试注入）");
     std::filesystem::remove_all(dir);
 }
@@ -130,7 +130,7 @@ TEST(Autosave, NoHookNoPathNoWrite) {
     s.load(make_chart());         // 无 path
     s.set_persist_hook(nullptr);  // 显式无 hook
     ASSERT_TRUE(
-        s.exec(std::make_unique<PutNoteCommand>(2, Rational(0, 1), Lane{0, LaneKind::Key, 2}, 2)));
+        s.exec(std::make_unique<PutNoteCommand>(NoteRef{2, Rational(0, 1), Lane{0, LaneKind::Key, 2}, 2})));
     // 无异常即可；backup 需要 hook + path 才生效
     EXPECT_TRUE(s.backup_enabled());
 }

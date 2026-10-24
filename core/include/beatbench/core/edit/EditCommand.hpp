@@ -9,6 +9,7 @@
 #include "beatbench/core/Chart.hpp"
 #include "beatbench/core/Payloads.hpp"
 #include "beatbench/core/Rational.hpp"
+#include "beatbench/core/edit/Selection.hpp"
 
 namespace beatbench::edit {
 
@@ -167,8 +168,7 @@ class DeleteTimingCommand : public EditCommand {
 /// 单个 undo 步；批量 = CompositeCommand（与 note.move 同族）。
 class ConvertNoteCommand : public EditCommand {
    public:
-    ConvertNoteCommand(std::uint32_t measure, Rational pos, Lane lane, std::uint32_t sample,
-                       std::uint32_t sub_line, ConvertTarget target, std::uint32_t to_measure = 0,
+    ConvertNoteCommand(NoteRef from, ConvertTarget target, std::uint32_t to_measure = 0,
                        Rational to_pos = Rational(0, 1));
     std::string name() const override { return "note.convert"; }
     void apply(Chart& chart) override;
@@ -176,11 +176,7 @@ class ConvertNoteCommand : public EditCommand {
     std::string describe() const override;
 
    private:
-    std::uint32_t m_measure;  ///< 源 (measure, pos)
-    Rational m_pos;
-    Lane m_lane;
-    std::uint32_t m_sample;
-    std::uint32_t m_sub_line;
+    NoteRef m_from;  ///< 源 note 五元组
     ConvertTarget m_target;
     std::uint32_t m_to_measure;  ///< 目标位置（转换后事件落点；可同一 position）
     Rational m_to_pos;
@@ -208,19 +204,14 @@ class ConvertNoteCommand : public EditCommand {
 /// 批量 = CompositeCommand（一个 undo 步）；单选 = 本命令。
 class ToggleLnCommand : public EditCommand {
    public:
-    ToggleLnCommand(std::uint32_t measure, Rational pos, Lane lane, std::uint32_t sample,
-                    std::uint32_t sub_line = 0);
+    explicit ToggleLnCommand(NoteRef ref);
     std::string name() const override { return "note.toggleLn"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
     std::string describe() const override;
 
    private:
-    std::uint32_t m_measure;
-    Rational m_pos;
-    Lane m_lane;
-    std::uint32_t m_sample;
-    std::uint32_t m_sub_line;
+    NoteRef m_ref;
     /// apply 前本 note 是否在 LN 通道（invert 恢复原值）
     bool m_was_ln = false;
     /// 单点→LN 时被标记的伙伴下标（invert 清除标记）
@@ -312,19 +303,14 @@ class SetSampleValueCommand : public EditCommand {
 /// 逆操作：恢复原 sample 引用。单个 undo 步。
 class SetNoteSampleCommand : public EditCommand {
    public:
-    SetNoteSampleCommand(std::uint32_t measure, Rational pos, Lane lane, std::uint32_t sample,
-                         std::uint32_t sub_line, std::uint32_t to);
+    SetNoteSampleCommand(NoteRef ref, std::uint32_t to);
     std::string name() const override { return "note.setSample"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
     std::string describe() const override;
 
    private:
-    std::uint32_t m_measure;
-    Rational m_pos;
-    Lane m_lane;
-    std::uint32_t m_sample;
-    std::uint32_t m_sub_line;
+    NoteRef m_ref;
     std::uint32_t m_to;
     std::optional<std::size_t> m_applied_index;  ///< 命中的 note 下标（invert 定位）
     bool m_did_change = false;

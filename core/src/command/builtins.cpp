@@ -118,7 +118,7 @@ std::string mode_arg(const Json& args) {
 /// mode 从会话 chart 取；非 BMS 格式各自映射（格式无关原则：值域检查在格式层）。
 bool lane_can_ln(const Chart& chart, const Lane& lane) {
     const auto mode = chart.mode_id.value_or("sp7k");
-    return !bms::bms_channel_for_mode(mode, lane, true, NoteKind::Normal).empty();
+    return bms::bms_can_represent(mode, lane, true, NoteKind::Normal);
 }
 
 std::string severity_str(beatbench::codec::Severity s) {
@@ -1307,8 +1307,10 @@ class ClipboardPasteCommand : public Command {
             const bool ln_kind = i < parsed_ln.size() && parsed_ln[i];
             const NoteKind kind = (i < parsed_kind.size()) ? parsed_kind[i] : NoteKind::Normal;
             comp->add(std::make_unique<edit::PutNoteCommand>(
-                static_cast<std::uint32_t>(static_cast<std::int64_t>(r.measure) + offset), r.pos,
-                r.lane, r.sample, ln_kind, kind, r.sub_line));
+                edit::NoteRef{static_cast<std::uint32_t>(static_cast<std::int64_t>(r.measure) +
+                                                                 offset),
+                              r.pos, r.lane, r.sample, r.sub_line},
+                ln_kind, kind));
         }
         const bool ok = session.exec(std::move(comp));
         Json placed = Json::array();
@@ -1636,15 +1638,16 @@ class NotePutCommand : public Command {
         // 2026-09 用户：LN 只能放在「游玩轨/LN 轨」（具体通道由文件格式决定）；
         // BMS 中 BGM（ch01）无 LN 表示——映射层 bms_channel_for(..., ln) 为空。
         // 前端已阻止，此处协议层兜底（避免生成写出时被丢弃/降级的脏数据）。
-        if (bms::bms_channel_for_mode(session.chart().mode_id.value_or("sp7k"), lane, ln_kind, kind)
-                .empty()) {
+        if (!bms::bms_can_represent(session.chart().mode_id.value_or("sp7k"), lane, ln_kind,
+                                    kind)) {
             throw CommandError("bad_args", "该轨道/音符类型无法表示为当前模式的 BMS 通道");
         }
         if (ln_kind && !lane_can_ln(session.chart(), lane)) {
             throw CommandError("bad_args", "该轨道不能放置 LN（格式映射中无 LN 通道表示）");
         }
-        const bool ok = session.exec(std::make_unique<edit::PutNoteCommand>(
-            measure, pos, lane, sample, ln_kind, kind, sub_line));
+        const bool ok = session.exec(
+            std::make_unique<edit::PutNoteCommand>(edit::NoteRef{measure, pos, lane, sample, sub_line},
+                                                   ln_kind, kind));
         Json out = Json::object();
         out.set("ok", ok);
         out.set("kind", ln_kind ? "ln" : (kind == NoteKind::Landmine ? "mine" : "normal"));
@@ -1700,8 +1703,9 @@ class NoteMoveCommand : public Command {
             if (!bl->is_int()) throw CommandError("bad_args", "to.sub_line 应为整数");
             to_sub_line = static_cast<std::uint32_t>(bl->as_i64());
         }
-        return std::make_unique<edit::MoveNoteCommand>(from_m, from_pos, lane, sample, to_m, to_pos,
-                                                       false, to_lane, from_sub_line, to_sub_line);
+        return std::make_unique<edit::MoveNoteCommand>(
+            edit::NoteRef{from_m, from_pos, lane, sample, from_sub_line}, to_m, to_pos, false,
+            to_lane, to_sub_line);
     }
 
     Json run(const Json& args) const override {
@@ -1765,7 +1769,8 @@ class NoteDeleteCommand : public Command {
                 if (!bl->is_int()) throw CommandError("bad_args", "sub_line 应为整数");
                 sub_line = static_cast<std::uint32_t>(bl->as_i64());
             }
-            return std::make_unique<edit::DeleteNoteCommand>(measure, pos, lane, sample, sub_line);
+            return std::make_unique<edit::DeleteNoteCommand>(
+                edit::NoteRef{measure, pos, lane, sample, sub_line});
         };
         // selection 数组 = 批量删除（一个 CompositeCommand / 一次备份）；单对象路径保持兼容。
         if (args.find("selection")) {
@@ -1823,8 +1828,7 @@ class NoteQuantizeCommand : public Command {
         }
         auto comp = std::make_unique<edit::CompositeCommand>();
         for (const auto& r : refs) {
-            comp->add(std::make_unique<edit::QuantizeNoteCommand>(r.measure, r.pos, r.lane,
-                                                                  r.sample, snap_num, snap_den));
+            comp->add(std::make_unique<edit::QuantizeNoteCommand>(r, snap_num, snap_den));
         }
         const bool ok = session.exec(std::move(comp));
         Json out = Json::object();
@@ -1857,8 +1861,7 @@ class NoteTransformCommand : public Command {
         auto comp = std::make_unique<edit::CompositeCommand>();
         std::unordered_set<std::size_t> claimed;
         for (const auto& r : refs) {
-            auto command = std::make_unique<edit::TransformNoteCommand>(
-                r.measure, r.pos, r.lane, r.sample, mirror, rotate, r.sub_line);
+            auto command = std::make_unique<edit::TransformNoteCommand>(r, mirror, rotate);
             // Preflight against the unchanged chart. Invalid targets must return
             // a protocol error, not success with a replacement selection.
             try {
@@ -1925,8 +1928,7 @@ class NoteToggleLnCommand : public Command {
         }
         auto comp = std::make_unique<edit::CompositeCommand>();
         for (const auto& r : refs) {
-            comp->add(std::make_unique<edit::ToggleLnCommand>(r.measure, r.pos, r.lane, r.sample,
-                                                              r.sub_line));
+            comp->add(std::make_unique<edit::ToggleLnCommand>(r));
         }
         const bool ok = session.exec(std::move(comp));
         Json out = Json::object();
@@ -2013,8 +2015,7 @@ class NoteConvertCommand : public Command {
                 tm = r.measure;
                 tp = r.pos;
             }
-            comp->add(std::make_unique<edit::ConvertNoteCommand>(r.measure, r.pos, r.lane, r.sample,
-                                                                 r.sub_line, target, tm, tp));
+            comp->add(std::make_unique<edit::ConvertNoteCommand>(r, target, tm, tp));
         }
         if (comp->size() == 0)
             throw CommandError("bad_args", "转换后无有效 note（全部移到负小节）");
@@ -2134,12 +2135,10 @@ class NoteMoveRegionCommand : public Command {
             if (to_m < 0) continue;  // 移到负小节 → 跳过
             if (convert_target) {
                 comp->add(std::make_unique<edit::ConvertNoteCommand>(
-                    r.measure, r.pos, r.lane, r.sample, r.sub_line, *convert_target,
-                    static_cast<std::uint32_t>(to_m), to_pos));
+                    r, *convert_target, static_cast<std::uint32_t>(to_m), to_pos));
             } else {
                 comp->add(std::make_unique<edit::MoveNoteCommand>(
-                    r.measure, r.pos, r.lane, r.sample, static_cast<std::uint32_t>(to_m), to_pos,
-                    false, to_lane, r.sub_line, to_sub_line));
+                    r, static_cast<std::uint32_t>(to_m), to_pos, false, to_lane, to_sub_line));
             }
         }
         if (comp->size() == 0) {
@@ -2503,7 +2502,7 @@ class NoteSetSampleCommand : public Command {
         };
         const std::uint32_t to_id = decode(to);
         const bool ok = session.exec(std::make_unique<edit::SetNoteSampleCommand>(
-            measure, pos, lane, sample, sub_line, to_id));
+            edit::NoteRef{measure, pos, lane, sample, sub_line}, to_id));
         Json out = Json::object();
         out.set("ok", ok);
         out.set("to", static_cast<std::int64_t>(to_id));
