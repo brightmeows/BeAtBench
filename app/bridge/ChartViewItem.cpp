@@ -14,6 +14,7 @@
 #include <unordered_set>
 
 #include "beatbench/core/ChartMode.hpp"
+#include "beatbench/core/ColumnKey.hpp"
 #include "beatbench/core/bms/BmsUtil.hpp"
 #include "beatbench/core/bms/ChannelMap.hpp"
 #include "beatbench/core/codec/BmsChannelMaps.hpp"
@@ -1695,23 +1696,21 @@ void ChartViewItem::rebuildColumns() {
                                     int bgaLayer = -1, bool bpm = false, bool stop = false,
                                     int subLine = -1) {
                 Column c{lane, label, bgmCol, p2, bgmId, subLine, bgaLayer, bpm, stop};
+                // 列 key 全部来自 core 单一格式源（ColumnKey.hpp / Lane.hpp），
+                // 与 lane_plan 预检、协议 hidden_lanes 共用同一生成点。
                 if (bpm) {
-                    c.key = QStringLiteral("meta:bpm");
+                    c.key = QString::fromStdString(beatbench::meta_column_key("bpm"));
                 } else if (stop) {
-                    c.key = QStringLiteral("meta:stop");
+                    c.key = QString::fromStdString(beatbench::meta_column_key("stop"));
                 } else if (bgaLayer >= 0) {
-                    c.key = QStringLiteral("bga:%1").arg(bgaLayer);
+                    c.key = QString::fromStdString(beatbench::bga_column_key(bgaLayer));
                 } else if (bgmCol) {
-                    c.key = subLine >= 0 ? QStringLiteral("bgm:sub:%1").arg(subLine)
-                                         : QStringLiteral("bgm:all");
+                    c.key = QString::fromStdString(beatbench::bgm_column_key(
+                        subLine >= 0
+                            ? std::optional<std::uint32_t>(static_cast<std::uint32_t>(subLine))
+                            : std::nullopt));
                 } else {
-                    const char* kind = lane.kind == beatbench::LaneKind::Scratch ? "scratch"
-                                       : lane.kind == beatbench::LaneKind::Pedal ? "pedal"
-                                                                                 : "key";
-                    c.key = QStringLiteral("lane:%1:%2:%3")
-                                .arg(static_cast<int>(lane.player))
-                                .arg(QString::fromLatin1(kind))
-                                .arg(static_cast<int>(lane.index));
+                    c.key = QString::fromStdString(beatbench::lane_key_string(lane));
                 }
                 m_allColumns.push_back(std::move(c));
             };
