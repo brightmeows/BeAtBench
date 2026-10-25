@@ -198,9 +198,8 @@ TEST(ClipboardPattern, ExternalTextLnObjImplicitTailPairsCorrectly) {
     global_editor_session().load(ln_chart(1));
     Json args = Json::object();
     args.set("selection", selection_for(global_editor_session().chart(), {0, 1}));
-    // 5x 通道头 + LNOBJ 定义；parser 把 1100 视为普通单点、1101 也为单点时退化为两槽——
-    // 这里直接用 5x/6x 显式头尾行验证配对（LNOBJ 场景等价：parser 已配成 ln_pair）
-    args.set("text", "#00151:1100\n#00161:0000\n#00251:1101\n#00261:0000");
+    // 普通通道两个同 sample 物件 + #LNOBJ 01：第二个物件是前一个的尾。
+    args.set("text", std::string("#LNOBJ 01\n#00111:0100\n#00211:0100"));
     const Json resp =
         global_registry().dispatch(request("clipboard.applyPattern", std::move(args)));
     ASSERT_TRUE(resp.at("ok").as_bool()) << resp.dump();
@@ -312,4 +311,18 @@ TEST(ClipboardPattern, LnMismatchSkipsWithoutMoving) {
     EXPECT_EQ(resp.at("result").at("moved").as_i64(), 0);
     EXPECT_EQ(resp.at("result").at("skipped").as_i64(), 1);
     EXPECT_EQ(global_editor_session().chart().notes[0].value.lane.index, 3);
+}
+
+TEST(ClipboardPattern, OddLnPatternRejectsAtomically) {
+    global_editor_session().load(target_chart());
+    const auto before = global_editor_session().chart().notes.size();
+    Json args = Json::object();
+    args.set("selection", selection_for(global_editor_session().chart(), {0}));
+    // 3 个 LN 槽：头、尾、孤立头 → 无法成组，必须整批拒绝。
+    args.set("text", std::string("#00151:01\n#00251:01\n#00351:01"));
+    const Json resp =
+        global_registry().dispatch(request("clipboard.applyPattern", std::move(args)));
+    ASSERT_FALSE(resp.at("ok").as_bool()) << resp.dump();
+    EXPECT_EQ(resp.at("error").at("code").as_str(), std::string("incomplete_ln"));
+    EXPECT_EQ(global_editor_session().chart().notes.size(), before);
 }

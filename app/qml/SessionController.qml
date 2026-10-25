@@ -705,16 +705,20 @@ QtObject {
         var sysText = ""
         if (typeof clipboard !== "undefined" && clipboard)
             sysText = clipboard.text()
-        if (window.clipboardPattern && window.clipboardPattern.length > 0)
-            args.pattern = window.clipboardPattern
-        else if (sysText && looksLikeBmsText(sysText))
+        if (sysText && looksLikeBmsText(sysText))
             args.text = sysText
+        else if (window.clipboardPattern && window.clipboardPattern.length > 0)
+            args.pattern = window.clipboardPattern
         else {
             setStatus(qsTr("剪贴板没有可用的轨道序列（先 Ctrl+C 复制一段摆键）"))
             return
         }
-        // 当前视口隐藏轨由 #48 接入；先传空数组，core 仍做 lane/占用/LN 原子预检。
-        args.hidden_lanes = []
+        // #48 合入后 activeView 才有 hiddenColumns；未合入时保持空数组。
+        if (typeof editPage !== "undefined" && editPage && editPage.activeView &&
+                editPage.activeView.hiddenColumns)
+            args.hidden_lanes = editPage.activeView.hiddenColumns
+        else
+            args.hidden_lanes = []
         var r = sessionCmd("clipboard.applyPattern", args)
         if (r) {
             if (r.ok === false) { setStatus(qsTr("配置复制失败：谱面未修改")); return }
