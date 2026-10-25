@@ -84,8 +84,10 @@ void QuickPlaceController::setPreset(int preset) {
     if (v == m_preset) return;
     m_preset = v;
     m_side = 0;  // 双手预设不继承单手切边；左手恒 1P、右手恒 2P
-    QSettings settings;
-    settings.setValue(QStringLiteral("quickplace/preset"), m_preset);
+    if (m_persist) {
+        QSettings settings;
+        settings.setValue(QStringLiteral("quickplace/preset"), m_preset);
+    }
     emit presetChanged();
     emit sideChanged();
     emit statusMessage(m_preset == 0 ? tr("摆音键位：单手换边") : tr("摆音键位：双手固定"));
