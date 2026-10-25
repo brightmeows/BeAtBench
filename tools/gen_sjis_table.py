@@ -4,8 +4,8 @@
 
 数据源 = tools/cp932_map.tsv（权威映射，来源见该文件头注释）；本脚本只做形态
 生成，不重新枚举 codec——Python/.NET 对 NEC 选中区与 IBM 重复区的规范侧选择
-不同，从 codec 再枚举会改变读取行为。新增编码（GBK/Big5/CP949）各自固化一份
-<encoding>_map.tsv，复用本脚本的紧凑形状。
+不同，从 codec 再枚举会改变读取行为。当前脚本只处理 CP932：lead/trail 范围与
+输出路径均硬编码；GBK/Big5/CP949 的泛化随 issue #42，不要直接复用本脚本。
 
 输出形状：
 - 双字节正表 kSjisToUcs：按 (lead, trail) 直接索引的 uint16 平铺数组（0 = 无映射），
@@ -14,6 +14,7 @@
   二分查找。表变化会反映在 encoding.cpp；重新生成后需重编译 core。
 """
 
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -30,14 +31,26 @@ TRAIL_BASE = 0x40
 TRAIL_COLS = {b: b - TRAIL_BASE - (1 if b > 0x7F else 0) for b in TRAILS}
 
 
-def load_map(tsv: Path) -> tuple[list[tuple[int, int, int]], list[int]]:
-    """读权威映射：返回 (双字节 (lead,trail,ucs) 升序表, 单字节 128 项)。"""
+def load_map(tsv: Path) -> tuple[list[tuple[int, int, int]], list[int], int, int, int]:
+    """读权威映射：返回 (双字节表, 单字节 128 项, 声明双字节数, 声明单字节数, 实际单字节数)。"""
     pairs: list[tuple[int, int, int]] = []
     single: dict[int, int] = {}
+    declared_double = -1
+    declared_single = -1
     section = None
     for raw in tsv.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
+            m = re.match(r"#\s*double_byte\s+(\d+)", line)
+            if m:
+                declared_double = int(m.group(1))
+                section = "double"
+                continue
+            m = re.match(r"#\s*single_byte\s+(\d+)", line)
+            if m:
+                declared_single = int(m.group(1))
+                section = "single"
+                continue
             if line.startswith("# double_byte"):
                 section = "double"
             elif line.startswith("# single_byte"):
@@ -55,7 +68,8 @@ def load_map(tsv: Path) -> tuple[list[tuple[int, int, int]], list[int]]:
         if (lead, trail) in seen:
             raise SystemExit(f"cp932_map.tsv 重复双字节条目: {lead:02X}{trail:02X}")
         seen.add((lead, trail))
-    return pairs, [single.get(b, 0) for b in range(0x80, 0x100)]
+    return (pairs, [single.get(b, 0) for b in range(0x80, 0x100)], declared_double,
+            declared_single, len(single))
 
 
 def fmt_u16_rows(values: list[int], per_row: int = 12) -> str:
@@ -69,11 +83,17 @@ def fmt_u16_rows(values: list[int], per_row: int = 12) -> str:
 def main() -> int:
     check_only = "--check" in sys.argv[1:]
     tsv = Path(__file__).resolve().parent / "cp932_map.tsv"
-    pairs, single = load_map(tsv)
+    pairs, single, declared_double, declared_single, single_count = load_map(tsv)
+    if declared_double >= 0 and len(pairs) != declared_double:
+        raise SystemExit(
+            f"cp932_map.tsv 双字节条目数异常: 实际 {len(pairs)} != 声明 {declared_double}")
+    if declared_single >= 0 and single_count != declared_single:
+        raise SystemExit(
+            f"cp932_map.tsv 单字节条目数异常: 实际 {single_count} != 声明 {declared_single}")
     if len(single) != 128:
-        raise SystemExit(f"cp932_map.tsv 单字节段异常: {len(single)} != 128")
+        raise SystemExit(f"cp932_map.tsv 单字节段异常: 生成数组 {len(single)} != 128")
 
-    # 正表平铺：行 = lead（47），列 = trail（188）；0 = 无映射。
+    # 正表平铺：行 = lead（60），列 = trail（188）；0 = 无映射。
     fwd = [0] * (N_ROWS * N_COLS)
     for lead, trail, cp in pairs:
         fwd[LEAD_ROWS[lead] * N_COLS + TRAIL_COLS[trail]] = cp
