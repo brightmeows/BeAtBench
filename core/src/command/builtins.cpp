@@ -931,8 +931,8 @@ class BgaMoveCommandCmd : public Command {
         comp->add(std::make_unique<edit::BgaPutCommand>(tm, tp, tl, sample));
         std::unique_ptr<edit::EditCommand> exec_cmd = std::move(comp);
         if (tm != fm || tp != fp || tl != fl)
-            exec_cmd = std::make_unique<edit::ShiftMarkerCommand>(std::move(exec_cmd),
-                                                                  tm != fm || tp != fp, tl != fl);
+            exec_cmd = std::make_unique<edit::ShiftMarkerCommand>(
+                std::move(exec_cmd), edit::ChangeSet{tm != fm || tp != fp, tl != fl, false});
         const bool ok = exec_or_throw(session, std::move(exec_cmd));
         Json out = Json::object();
         out.set("ok", ok);
@@ -984,7 +984,8 @@ class TimingMoveCommandCmd : public Command {
         comp->add(std::make_unique<edit::PutTimingCommand>(kind, tm, tp, value));
         std::unique_ptr<edit::EditCommand> exec_cmd = std::move(comp);
         if (tm != fm || tp != fp)
-            exec_cmd = std::make_unique<edit::ShiftMarkerCommand>(std::move(exec_cmd), true, false);
+            exec_cmd = std::make_unique<edit::ShiftMarkerCommand>(
+                std::move(exec_cmd), edit::ChangeSet{true, false, false});
         const bool ok = exec_or_throw(session, std::move(exec_cmd));
         Json out = Json::object();
         out.set("ok", ok);
@@ -1324,7 +1325,8 @@ class ClipboardPasteCommand : public Command {
         const bool has_notes = !parsed.empty();  // 空解析已在上方抛 bad_args，恒与 comp 同空
         std::unique_ptr<edit::EditCommand> exec_cmd = std::move(comp);
         if (has_notes)
-            exec_cmd = std::make_unique<edit::ShiftMarkerCommand>(std::move(exec_cmd), true, false);
+            exec_cmd = std::make_unique<edit::ShiftMarkerCommand>(
+                std::move(exec_cmd), edit::ChangeSet{true, true, false});
         const bool ok = exec_or_throw(session, std::move(exec_cmd));
         Json placed = Json::array();
         for (const auto& r : parsed) {

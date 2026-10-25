@@ -38,6 +38,19 @@ std::string_view timing_kind_name(TimingKind kind);
 /// 协议字符串 → TimingKind。未知 → nullopt。
 std::optional<TimingKind> timing_kind_from_name(std::string_view name);
 
+/// 命令的变更维度。锁只消费 moves_time/moves_lane；changes_content 表示
+/// note 图/顺序/身份发生变化（LN 重建的触发条件），不表示 meta/BGA/timing 变更。
+struct ChangeSet {
+    bool moves_time = false;
+    bool moves_lane = false;
+    bool changes_content = false;
+
+    friend constexpr ChangeSet operator|(ChangeSet a, ChangeSet b) {
+        return {a.moves_time || b.moves_time, a.moves_lane || b.moves_lane,
+                a.changes_content || b.changes_content};
+    }
+};
+
 /// 编辑命令（doc/core-model.md 二、）：文档变更的唯一操作面，可逆、可合并。
 /// 与协议命令（cmd::Command，一次性 run→Json）平行：编辑命令有状态
 /// （作用在 Chart& 上，apply/invert 配对保证可逆）；协议命令无状态。
@@ -57,14 +70,8 @@ class EditCommand {
     /// 必须与 apply 精确互逆（可逆性测试守卫）。
     virtual void invert(Chart& chart) = 0;
 
-    /// 命令是否改变 note/事件的时间坐标（GUI 三态锁「仅横向」用）。
-    /// 默认 false；移动/量化/转换等改时间的命令覆写。纯换轨/换图层/改值不算。
-    virtual bool changes_time() const { return false; }
-
-    /// 命令是否改变 note/事件的轨道维度（GUI 三态锁「仅纵向」用）。
-    /// 默认 false；换轨/变换/跨轨转换等改轨道的命令覆写。放置/删除/改值/改时间不算
-    /// （放置是新输入，落点即意愿位置，不属“移动现有对象”的锁语义）。
-    virtual bool changes_lane() const { return false; }
+    /// 命令的变更维度。纯虚：新命令不实现就编译失败，避免默认 false 的 fail-open。
+    virtual ChangeSet changes() const = 0;
 
     /// 尝试与下一个命令合并（连续拖动/滚轮微调 → 一个 undo 步）。
     /// next 尚未应用；若可合并，把 next 并入自身并返回 true（调用方不再单独入栈），
@@ -92,8 +99,7 @@ class CompositeCommand : public EditCommand {
     std::string name() const override;
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
-    bool changes_time() const override;
-    bool changes_lane() const override;
+    ChangeSet changes() const override;
     std::string describe() const override;
 
    private:
@@ -105,18 +111,16 @@ class CompositeCommand : public EditCommand {
 /// 组合后的实际变更维度由标志声明，供三态锁拦截判定）。
 class ShiftMarkerCommand : public EditCommand {
    public:
-    ShiftMarkerCommand(std::unique_ptr<EditCommand> inner, bool time, bool lane);
+    ShiftMarkerCommand(std::unique_ptr<EditCommand> inner, ChangeSet changes);
     std::string name() const override;
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
-    bool changes_time() const override { return m_time; }
-    bool changes_lane() const override { return m_lane; }
+    ChangeSet changes() const override;
     std::string describe() const override;
 
    private:
     std::unique_ptr<EditCommand> m_inner;
-    bool m_time;
-    bool m_lane;
+    ChangeSet m_changes;
 };
 
 /// 放置/更改时间轴事件（BPM/STOP/节拍 → timing.put，doc/ui-design.md 九、「工具栏值放置」）。
@@ -135,6 +139,7 @@ class PutTimingCommand : public EditCommand {
     std::string name() const override { return "timing.put"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    ChangeSet changes() const override { return {false, false, false}; }
     std::string describe() const override;
 
    private:
@@ -171,6 +176,7 @@ class DeleteTimingCommand : public EditCommand {
     std::string name() const override { return "timing.delete"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    ChangeSet changes() const override { return {false, false, false}; }
     std::string describe() const override;
 
    private:
@@ -203,10 +209,9 @@ class ConvertNoteCommand : public EditCommand {
     std::string name() const override { return "note.convert"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
-    bool changes_time() const override {
-        return m_from.measure != m_to_measure || m_from.pos != m_to_pos;
+    ChangeSet changes() const override {
+        return {m_from.measure != m_to_measure || m_from.pos != m_to_pos, true, true};
     }
-    bool changes_lane() const override { return true; }  ///< note 从轨道维度移除
     std::string describe() const override;
 
    private:
@@ -242,6 +247,7 @@ class ToggleLnCommand : public EditCommand {
     std::string name() const override { return "note.toggleLn"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    ChangeSet changes() const override { return {false, false, true}; }
     std::string describe() const override;
 
    private:
@@ -266,6 +272,7 @@ class RenameSampleCommand : public EditCommand {
     std::string name() const override { return "sample.rename"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    ChangeSet changes() const override { return {false, false, false}; }
     std::string describe() const override;
 
    private:
@@ -294,6 +301,7 @@ class SetSampleFileCommand : public EditCommand {
     std::string name() const override { return "sample.setFile"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    ChangeSet changes() const override { return {false, false, false}; }
     std::string describe() const override;
 
    private:
@@ -316,6 +324,7 @@ class SetSampleValueCommand : public EditCommand {
     std::string name() const override { return "sample.setValue"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    ChangeSet changes() const override { return {false, false, false}; }
     std::string describe() const override;
 
    private:
@@ -341,6 +350,7 @@ class SetNoteSampleCommand : public EditCommand {
     std::string name() const override { return "note.setSample"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    ChangeSet changes() const override { return {false, false, true}; }
     std::string describe() const override;
 
    private:
@@ -360,6 +370,7 @@ class DeleteSampleCommand : public EditCommand {
     std::string name() const override { return "sample.delete"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    ChangeSet changes() const override { return {false, false, false}; }
     std::string describe() const override;
 
    private:

@@ -21,8 +21,8 @@ namespace beatbench::edit {
 enum class EditError : std::uint8_t { None, TimeLocked, LaneLocked };
 
 /// 纵向移动三态（GUI 编辑策略；会话状态不入 undo）。
-/// LaneOnly（默认）= 只换轨（拦 changes_time）；TimeOnly = 只改时间（拦 changes_lane）；
-/// Free = 自由。两把方向锁都落在 core 命令层，QML 只做拖拽预览。
+/// LaneOnly = 只换轨（拦 moves_time）；TimeOnly = 只改时间（拦 moves_lane）；
+/// Free = 自由。core 默认 Free 保证 CLI/脚本兼容；GUI 打开/新建后置 LaneOnly。
 enum class VerticalMoveMode : std::uint8_t { LaneOnly, TimeOnly, Free };
 
 /// 编辑会话：持有可编辑文档（Chart）+ undo/redo 栈 + 执行编辑命令。
@@ -78,9 +78,9 @@ class EditorSession {
     Selection& selection_mut() { return m_selection; }
     void set_selection(Selection sel) { m_selection = std::move(sel); }
 
-    /// 纵向移动三态（GUI 编辑策略；默认 LaneOnly，CLI/脚本不受影响——协议层
-    /// 不设置该状态时保持原行为）。两把方向锁都由 exec 按 changes_time/changes_lane
-    /// 统一拦截；会话状态不入 undo 栈；GUI 打开/新建谱面时重置 LaneOnly。
+    /// 纵向移动三态（GUI 编辑策略；core 默认 Free 保证 CLI/脚本兼容，GUI 打开/新建后
+    /// 置 LaneOnly）。两把方向锁都由 exec 按 ChangeSet 的移动维度统一拦截；
+    /// 会话状态不入 undo 栈。
     VerticalMoveMode vertical_move_mode() const { return m_vertical_move_mode; }
     void set_vertical_move_mode(VerticalMoveMode mode) { m_vertical_move_mode = mode; }
 
@@ -155,6 +155,7 @@ class PutNoteCommand : public EditCommand {
     std::string name() const override { return "note.put"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    ChangeSet changes() const override { return {false, false, true}; }
     std::string describe() const override;
 
    private:
@@ -184,10 +185,10 @@ class MoveNoteCommand : public EditCommand {
     std::string name() const override { return "note.move"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
-    bool changes_time() const override {
-        return m_from.measure != m_to_measure || m_from.pos != m_to_pos;
+    ChangeSet changes() const override {
+        return {m_from.measure != m_to_measure || m_from.pos != m_to_pos,
+                m_to_lane && *m_to_lane != m_from.lane, true};
     }
-    bool changes_lane() const override { return m_to_lane && *m_to_lane != m_from.lane; }
     bool merge_with(const EditCommand& next) override;
     std::string describe() const override;
 
@@ -213,7 +214,7 @@ class MoveLnPairCommand : public EditCommand {
     std::string name() const override { return "note.moveLnPair"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
-    bool changes_lane() const override { return true; }
+    ChangeSet changes() const override { return {false, true, true}; }
     std::string describe() const override;
 
    private:
@@ -233,6 +234,7 @@ class DeleteNoteCommand : public EditCommand {
     std::string name() const override { return "note.delete"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    ChangeSet changes() const override { return {false, false, true}; }
     std::string describe() const override;
 
    private:
@@ -256,7 +258,7 @@ class QuantizeNoteCommand : public EditCommand {
     std::string name() const override { return "note.quantize"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
-    bool changes_time() const override { return true; }
+    ChangeSet changes() const override { return {true, false, true}; }
     std::string describe() const override;
 
    private:
@@ -285,7 +287,9 @@ class TransformNoteCommand : public EditCommand {
     std::string name() const override { return "note.transform"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
-    bool changes_lane() const override { return true; }  ///< 镜像/旋转移键轨，锁「仅纵向」时拒绝
+    ChangeSet changes() const override {
+        return {false, true, true};
+    }  ///< 镜像/旋转移键轨，锁「仅纵向」时拒绝
     std::string describe() const override;
 
    private:
@@ -320,6 +324,7 @@ class MetaEditCommand : public EditCommand {
     std::string name() const override { return "meta.edit"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    ChangeSet changes() const override { return {false, false, false}; }
     std::string describe() const override;
 
    private:
@@ -346,6 +351,7 @@ class RawLinesEditCommand : public EditCommand {
     std::string name() const override { return "meta.rawEdit"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    ChangeSet changes() const override { return {true, true, true}; }
     std::string describe() const override;
 
    private:
@@ -364,6 +370,7 @@ class BgaPutCommand : public EditCommand {
     std::string name() const override { return "bga.put"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    ChangeSet changes() const override { return {false, false, false}; }
     std::string describe() const override;
 
    private:
@@ -385,6 +392,7 @@ class BgaDeleteCommand : public EditCommand {
     std::string name() const override { return "bga.delete"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
+    ChangeSet changes() const override { return {false, false, false}; }
     std::string describe() const override;
 
    private:
@@ -406,8 +414,9 @@ class ConvertMetaToNoteCommand : public EditCommand {
     std::string name() const override { return "note.convertBack"; }
     void apply(Chart& chart) override;
     void invert(Chart& chart) override;
-    bool changes_time() const override { return m_measure != m_to_measure || m_pos != m_to_pos; }
-    bool changes_lane() const override { return true; }  ///< 元事件落为 note，轨道维度新增
+    ChangeSet changes() const override {
+        return {m_measure != m_to_measure || m_pos != m_to_pos, true, true};
+    }
     std::string describe() const override;
 
    private:
