@@ -1327,7 +1327,18 @@ class ClipboardPasteCommand : public Command {
         if (has_notes)
             exec_cmd = std::make_unique<edit::ShiftMarkerCommand>(
                 std::move(exec_cmd), edit::ChangeSet{true, true, false});
-        const bool ok = exec_or_throw(session, std::move(exec_cmd));
+        // bypass_vertical_lock：程序化铺放（切音「铺入编辑区」等）不受编辑页拖拽方向锁约束。
+        // 锁的语义是限制手工拖拽，不是禁止功能入口；调用方显式声明才旁路。
+        bool ok = false;
+        if (const Json* bypass = args.find("bypass_vertical_lock");
+            bypass && bypass->is_bool() && bypass->as_bool()) {
+            const auto saved = session.vertical_move_mode();
+            session.set_vertical_move_mode(edit::VerticalMoveMode::Free);
+            ok = exec_or_throw(session, std::move(exec_cmd));
+            session.set_vertical_move_mode(saved);
+        } else {
+            ok = exec_or_throw(session, std::move(exec_cmd));
+        }
         Json placed = Json::array();
         for (const auto& r : parsed) {
             Json item = Json::object();
