@@ -150,33 +150,53 @@ Item {
     Connections {
         target: root.verticalSync
         function onScrollYChanged() {
-            if (root.syncVertical && root.verticalSync &&
-                    Math.abs(view.scrollY - root.verticalSync.scrollY) > 0.01)
+            if (root.syncVertical && root.verticalSync && !root.verticalSync.syncing &&
+                    Math.abs(view.scrollY - root.verticalSync.scrollY) > 0.01) {
+                root.verticalSync.syncing = true
                 view.scrollY = root.verticalSync.scrollY
+                root.verticalSync.syncing = false
+            }
         }
         function onMeasureHeightChanged() {
-            if (root.syncVertical && root.verticalSync &&
-                    Math.abs(view.measureHeight - root.verticalSync.measureHeight) > 0.5)
+            if (root.syncVertical && root.verticalSync && !root.verticalSync.syncing &&
+                    Math.abs(view.measureHeight - root.verticalSync.measureHeight) > 0.5) {
+                root.verticalSync.syncing = true
                 view.measureHeight = root.verticalSync.measureHeight
+                root.verticalSync.syncing = false
+            }
         }
     }
     Connections {
         target: view
         function onScrollYChanged() {
-            if (root.syncVertical && root.verticalSync &&
-                    Math.abs(view.scrollY - root.verticalSync.scrollY) > 0.01)
+            if (root.syncVertical && root.verticalSync && !root.verticalSync.syncing &&
+                    Math.abs(view.scrollY - root.verticalSync.scrollY) > 0.01) {
+                root.verticalSync.syncing = true
                 root.verticalSync.scrollY = view.scrollY
+                root.verticalSync.syncing = false
+            }
         }
         function onMeasureHeightChanged() {
-            if (root.syncVertical && root.verticalSync &&
-                    Math.abs(view.measureHeight - root.verticalSync.measureHeight) > 0.5)
+            if (root.syncVertical && root.verticalSync && !root.verticalSync.syncing &&
+                    Math.abs(view.measureHeight - root.verticalSync.measureHeight) > 0.5) {
+                root.verticalSync.syncing = true
                 root.verticalSync.measureHeight = view.measureHeight
+                root.verticalSync.syncing = false
+            }
         }
     }
     onHiddenColumnsChanged: view.hiddenColumns = root.hiddenColumns
     onSyncVerticalChanged: if (syncVertical && verticalSync) {
-        verticalSync.scrollY = view.scrollY
-        verticalSync.measureHeight = view.measureHeight
+        // 打开共享时只让活动 pane 初始化；另一 pane 应用共享值，避免双向写入覆盖。
+        if (root.active) {
+            verticalSync.syncing = true
+            verticalSync.scrollY = view.scrollY
+            verticalSync.measureHeight = view.measureHeight
+            verticalSync.syncing = false
+        } else {
+            view.scrollY = verticalSync.scrollY
+            view.measureHeight = verticalSync.measureHeight
+        }
     }
 
     // ---- M5.2 播放头叠层（性能拆层 2026-09）：红线 + A/B 标记只重绘本层（<1ms），

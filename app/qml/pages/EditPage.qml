@@ -77,7 +77,12 @@ Item {
     readonly property var activeView: activePane === 0 ? chartView : chartView2
     /// 共享纵向滚动（QtObject 动态属性；ChartView 内做双向同步）。
     // 共享纵向状态单一载体：滚动与缩放同源（双 pane 收敛机制对称）
-    QtObject { id: sharedVertical; property real scrollY: 0; property real measureHeight: 96 }
+    QtObject {
+        id: sharedVertical
+        property real scrollY: 0
+        property real measureHeight: 96
+        property bool syncing: false
+    }
     /// 放置用采样数值 id（chartSession.sampleValueOf；-1 = 未选）
     property int sampleId: -1
     /// 当前采样展示文本（提示用）
@@ -251,7 +256,8 @@ Item {
     }
     /// 键盘缩放一步（视口中心；与滚轮同档，不跟光标以免无鼠标位置）。
     function zoomStep(up) {
-        if (activeView) activeView.zoomStep(activeView.height / 2, up)
+        const target = (root.dualView && !root.independentVertical) ? chartView : root.activeView
+        if (target) target.zoomStep(target.height / 2, up)
     }
 
     /// 2026-09「加一小节」：透传到 ChartView → ChartViewItem.extendMeasures()。
@@ -299,8 +305,12 @@ Item {
         }
     }
     onIndependentVerticalChanged: {
-        if (!root.independentVertical && root.activeView)
+        if (!root.independentVertical && root.activeView) {
+            sharedVertical.syncing = true
             sharedVertical.scrollY = root.activeView.scrollY
+            sharedVertical.measureHeight = root.activeView.measureHeight
+            sharedVertical.syncing = false
+        }
     }
     /// 切谱/新建：视口回到默认单 pane，清空每 pane 隐藏列（#48 会话态）。
     function resetViewportState() {

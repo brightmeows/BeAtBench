@@ -693,6 +693,7 @@ ApplicationWindow {
                 }
                 Menu {
                     id: columnMenu
+                    onOpened: editPage.columnListTick++  // 每次打开重取当前列布局
                     Repeater {
                         model: editPage.columnListTick >= 0 ? editPage.activeColumnList() : []
                         MenuItem {
