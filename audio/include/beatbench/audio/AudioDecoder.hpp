@@ -27,11 +27,9 @@ struct DecodeResult {
 /// 返回的 sample 引用计数 = 1（调用方负责 SampleRef 包装或传给
 /// SamplePlayer::play（其内部 ref +1 供 voice 生命周期]）。
 /// 失败时 sample = nullptr、message 有值。
-/// 解码音频文件。path 原生形态直接喂 miniaudio（Windows = UTF-16、POSIX = UTF-8），
+/// path 原生形态直接喂 miniaudio（Windows = UTF-16、POSIX = UTF-8），
 /// 调用方不再区分窄宽；core 层 UTF-8 窄串经 std::filesystem::u8path 构造后传入。
 DecodeResult decode_audio_file(const std::filesystem::path& path);
-
-/// Windows 宽字符（UTF-16）版本：含非 ASCII 路径必须走它（ma_decoder_init_file_w）。
 
 /// 文件扩展名是否受支持（wav/ogg/oga/mp3/flac；不查内容）。
 bool audio_extension_supported(const std::string& ext);

@@ -26,7 +26,7 @@ std::optional<std::filesystem::path> resolve_audio_path(const std::filesystem::p
     for (const auto& ext : fallback_exts()) {
         std::filesystem::path name = stem;
         name += std::filesystem::path(ext);
-        const std::filesystem::path cand = parent / name;
+        std::filesystem::path cand = parent / name;
         if (std::filesystem::exists(cand)) return cand;
     }
     return std::nullopt;
