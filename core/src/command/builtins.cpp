@@ -1527,6 +1527,15 @@ class ClipboardApplyPatternCommand : public Command {
             slots = pattern_slots_from_text(mode, t->as_str());
         }
         if (slots.empty()) throw CommandError("empty_pattern", "剪贴板没有可用的轨道序列");
+        // 奇数个 LN 槽无法成组：整批拒绝，避免丢最后一槽后目标整体错位。
+        std::map<Lane, std::size_t> ln_counts;
+        for (const auto& slot : slots)
+            if (slot.ln) ++ln_counts[slot.lane];
+        for (const auto& [lane, count] : ln_counts) {
+            (void)lane;
+            if (count % 2 != 0)
+                throw CommandError("incomplete_ln", "pattern 中的 LN 头尾不成组（未修改谱面）");
+        }
         const auto pitems = pattern_items(slots);
         if (pitems.empty()) throw CommandError("empty_pattern", "剪贴板没有可用的轨道序列");
 
@@ -1554,6 +1563,9 @@ class ClipboardApplyPatternCommand : public Command {
                     throw CommandError("target_occupied", "目标位置已有 note");
                 case R::NotFound:
                     throw CommandError("not_found", "目标 note 不存在");
+                case R::AmbiguousSource:
+                    throw CommandError("ambiguous_source",
+                                       "目标 note 有重复值，无法确定移动哪一个");
                 default:
                     break;  // ln_mismatch：跳过该组（协议返回 skipped），不阻断整批
             }
