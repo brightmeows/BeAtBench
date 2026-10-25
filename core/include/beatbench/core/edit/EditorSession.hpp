@@ -174,18 +174,10 @@ class MoveNoteCommand : public EditCommand {
     Rational m_to_pos;
     /// 目标轨道（可选；nullopt = 纯时间移动，不换轨）
     std::optional<Lane> m_to_lane;
-    /// 源 BGM 行序号（消歧：同 (measure,pos,lane,sample) 的 Bgm note 靠它定位）
-    std::uint32_t m_from_sub_line = 0;
     /// 目标 BGM 行序号（nullopt = 不指定：按目标小节 ch01 行数自动分配；非 BGM 目标忽略）
     std::optional<std::uint32_t> m_to_sub_line;
     /// apply 快照（invert 恢复；找不到 note 时为空）
     std::optional<Event<Note>> m_moved;
-    std::optional<Event<Note>> m_partner;
-    /// 单 note 模式 apply 后移动端重连的新伙伴（m_paired_at = 移动端新下标，m_paired_with = 伙伴）；
-    /// invert 时用于清理该临时配对（否则新伙伴会悬挂指向已移回主 note 的旧下标）。
-    std::optional<std::size_t> m_paired_at;
-    std::optional<std::size_t> m_paired_with;
-    Rational m_last_delta{0, 1};
 };
 
 /// 整体移动 LN 头尾：两端同时改到目标轨道，时间/采样不变。

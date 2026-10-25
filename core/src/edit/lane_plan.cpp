@@ -33,6 +33,20 @@ NoteRef ref_of(const Event<Note>& e) {
     return NoteRef{e.measure, e.pos, e.value.lane, e.value.sample.id, e.value.sub_line};
 }
 
+/// 同值 note 数量（别名/重复原始行会让一个 ref 匹配多条）。
+std::size_t count_note_matches(const Chart& chart, const NoteRef& ref) {
+    const auto begin =
+        std::lower_bound(chart.notes.begin(), chart.notes.end(), ref.measure,
+                         [](const Event<Note>& e, std::uint32_t m) { return e.measure < m; });
+    std::size_t count = 0;
+    for (auto it = begin; it != chart.notes.end() && it->measure == ref.measure; ++it) {
+        if (it->pos == ref.pos && it->value.lane == ref.lane && it->value.sample.id == ref.sample &&
+            it->value.sub_line == ref.sub_line)
+            ++count;
+    }
+    return count;
+}
+
 bool target_hidden(const Lane& lane, std::uint32_t sub_line, const std::set<std::string>& hidden) {
     if (lane.kind == LaneKind::Bgm) {
         if (hidden.count(bgm_column_key(std::nullopt)) != 0) return true;
@@ -106,6 +120,7 @@ std::vector<NoteGroup> group_selection(const Chart& chart, const std::vector<Not
         if (!idx) continue;
         NoteGroup group;
         group.a = ref;
+        group.ambiguous = count_note_matches(chart, ref) > 1;
         used.insert(ref);
         const auto pair = chart.notes[*idx].value.ln_pair;
         if (pair && *pair < chart.notes.size() && *pair != *idx) {
@@ -113,6 +128,7 @@ std::vector<NoteGroup> group_selection(const Chart& chart, const std::vector<Not
             if (used.count(partner) == 0) {
                 group.b = partner;
                 group.ln = true;
+                group.ambiguous = group.ambiguous || count_note_matches(chart, partner) > 1;
                 used.insert(partner);
             }
         }
@@ -141,6 +157,10 @@ LanePlan plan_lane_moves(const Chart& chart, const std::vector<NoteGroup>& group
         move.ln = targets[i].ln;
         move.lane = targets[i].lane;
 
+        if (move.group.ambiguous) {
+            move.reason = LaneMoveReason::AmbiguousSource;
+            continue;
+        }
         const auto a = find_note_index(chart, move.group.a);
         std::optional<std::size_t> b;
         if (move.group.b) b = find_note_index(chart, *move.group.b);

@@ -420,9 +420,6 @@ void MoveNoteCommand::apply(Chart& chart) {
                                m_from.sub_line);
     if (!idx) return;             // 找不到 → 无操作
     m_moved = chart.notes[*idx];  // 快照（invert 恢复）
-    m_partner.reset();
-    m_paired_at.reset();
-    m_paired_with.reset();
 
     // LN 语义（2026-09 用户最终确认）：移动**只移动选中的 note**，不移动伙伴、
     // **不自动重连**（前几版「成对移动/向前找最近重连」导致串 note，已删除）。
@@ -516,7 +513,6 @@ void MoveNoteCommand::apply(Chart& chart) {
     // 配对：编辑命令不维护 ln_pair——EditorSession 的 rebuild_ln_pairs 统一推导
     // （按 ln_channel 分组、时间序交替）。跨通道后本 note+伙伴 ln_channel 已在上面
     // 置 false → rebuild 不会配；同通道时间移动保持 ln_channel → rebuild 仍配。
-    m_last_delta = (m_to_pos - m_from.pos);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)——逆操作精确回滚分支
@@ -598,9 +594,6 @@ void MoveNoteCommand::invert(Chart& chart) {
         }
     }
     m_moved.reset();
-    m_partner.reset();
-    m_paired_at.reset();
-    m_paired_with.reset();
 }
 
 bool MoveNoteCommand::merge_with(const EditCommand& next) {
@@ -609,7 +602,7 @@ bool MoveNoteCommand::merge_with(const EditCommand& next) {
     if (!mv) return false;
     if (mv->m_from.measure == m_to_measure && mv->m_from.pos == m_to_pos &&
         mv->m_from.lane == m_from.lane && mv->m_from.sample == m_from.sample &&
-        mv->m_to_lane == m_to_lane) {
+        mv->m_from.sub_line == m_from.sub_line && mv->m_to_lane == m_to_lane) {
         m_to_measure = mv->m_to_measure;
         m_to_pos = mv->m_to_pos;
         m_to_lane = mv->m_to_lane;

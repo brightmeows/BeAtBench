@@ -23,6 +23,7 @@ struct NoteGroup {
     NoteRef a;
     std::optional<NoteRef> b;
     bool ln = false;
+    bool ambiguous = false;  ///< 源 ref 在谱面中匹配到多个同值 note（别名/重复行）
 };
 
 /// 目标轨：lane + 是否要求目标也是 LN（配置复制的 pattern 槽）。
@@ -40,6 +41,7 @@ enum class LaneMoveReason : std::uint8_t {
     LnMismatch,       ///< pattern 槽 LN 标记与源组不一致
     Occupied,         ///< 目标位置已有其它 note（含动态冲突收敛）
     DuplicateTarget,  ///< 多个组套用同一目标槽
+    AmbiguousSource,  ///< 源 ref 匹配到多个同值 note，无法确定移动哪一个
 };
 
 struct LanePlanOptions {

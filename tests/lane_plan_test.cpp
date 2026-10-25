@@ -41,6 +41,8 @@ inline const char* reason_name(LaneMoveReason r) {
             return "occupied";
         case LaneMoveReason::DuplicateTarget:
             return "duplicate_target";
+        case LaneMoveReason::AmbiguousSource:
+            return "ambiguous_source";
     }
     return "?";
 }
@@ -227,6 +229,32 @@ TEST(LanePlan, LnPairMovesTogetherAndUndoRestores) {
     ASSERT_TRUE(s.undo());
     EXPECT_EQ(s.chart().notes[0].value.lane.index, 1u);
     EXPECT_EQ(s.chart().notes[1].value.lane.index, 1u);
+}
+
+TEST(LanePlan, AmbiguousSourceIsRejected) {
+    Chart c = make_chart();
+    // 与 notes[0] 完全同值（别名/重复原始行）：不能猜测移动哪一个。
+    c.notes.push_back(note(1, Rational(0, 1), {0, LaneKind::Key, 1}, 1));
+    auto groups = beatbench::edit::group_selection(c, {ref(c.notes[0])});
+    ASSERT_EQ(groups.size(), 1u);
+    EXPECT_TRUE(groups[0].ambiguous);
+    auto plan = beatbench::edit::plan_lane_moves(
+        c, groups, {LaneTarget{{0, LaneKind::Key, 2}, false}}, options());
+    ASSERT_EQ(plan.moves.size(), 1u);
+    EXPECT_FALSE(plan.moves[0].move);
+    EXPECT_EQ(plan.moves[0].reason, LaneMoveReason::AmbiguousSource);
+}
+
+TEST(LanePlan, MoveMergeRespectsBgmSubLine) {
+    const Lane bgm{0, LaneKind::Bgm, 0};
+    beatbench::edit::MoveNoteCommand first(NoteRef{1, Rational(0, 1), bgm, 7, 0}, 2, Rational(0, 1),
+                                           bgm, 2);
+    beatbench::edit::MoveNoteCommand other_line(NoteRef{2, Rational(0, 1), bgm, 7, 1}, 3,
+                                                Rational(0, 1), bgm, 3);
+    EXPECT_FALSE(first.merge_with(other_line));
+    beatbench::edit::MoveNoteCommand same_line(NoteRef{2, Rational(0, 1), bgm, 7, 0}, 3,
+                                               Rational(0, 1), bgm, 3);
+    EXPECT_TRUE(first.merge_with(same_line));
 }
 
 TEST(LanePlan, ChangesTimeCapability) {
