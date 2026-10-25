@@ -12,6 +12,7 @@
 #include <optional>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -113,9 +114,11 @@ inline std::string fmt_id(const Chart& chart, std::uint32_t id) {
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)——BMS 写回通道聚合状态机
-std::string write_bms(const Chart& chart, const BmsWriteOptions& opts) {
+BmsWriteResult write_bms_checked(const Chart& chart, const BmsWriteOptions& opts) {
     std::string out;
     out.reserve(4096);
+    std::vector<Diagnostic> write_diagnostics;
+    bool failed = false;
 
     // ---- 1. 头部字段 ----
     emit_section_comment(out, detail::kSectionHeaderLine);
@@ -392,7 +395,16 @@ std::string write_bms(const Chart& chart, const BmsWriteOptions& opts) {
         // 不能降级成会读成1P的普通通道，更不能因缺少配对而静默丢弃。
         if (channel.empty() && n.ln_channel)
             channel = bms_channel_for_mode(mode, n.lane, true, n.kind);
-        if (channel.empty()) continue;  // 无法表示的 Lane（罕见）→ 丢弃并依赖诊断
+        if (channel.empty()) {
+            failed = true;
+            Diagnostic d;
+            d.severity = Severity::Error;
+            d.message = "无法在模式 " + mode + " 表示 note：measure " + std::to_string(ev.measure) +
+                        " pos " + std::to_string(ev.pos.num) + "/" + std::to_string(ev.pos.den) +
+                        " lane index " + std::to_string(static_cast<int>(n.lane.index));
+            write_diagnostics.push_back(std::move(d));
+            continue;  // 继续扫描，收集全部不可表示项
+        }
         std::string slot_text;
         const auto output_rule = bms_channel_rule_for(mode, channel);
         const bool rdm_channel = output_rule && output_rule->ln_channel;
@@ -613,10 +625,21 @@ std::string write_bms(const Chart& chart, const BmsWriteOptions& opts) {
         out.push_back('\n');
     }
 
-    if (opts.encoding == BmsEncoding::ShiftJis) {
-        return utf8_to_shiftjis(out);
+    std::string text = opts.encoding == BmsEncoding::ShiftJis ? utf8_to_shiftjis(out) : out;
+    if (failed) {
+        return BmsWriteResult{
+            false,
+            {},
+            "有 " + std::to_string(write_diagnostics.size()) + " 个 note 无法在当前模式表示",
+            std::move(write_diagnostics)};
     }
-    return out;
+    return BmsWriteResult{true, std::move(text), {}, std::move(write_diagnostics)};
+}
+
+std::string write_bms(const Chart& chart, const BmsWriteOptions& opts) {
+    BmsWriteResult r = write_bms_checked(chart, opts);
+    if (!r.ok) throw std::runtime_error(r.error);
+    return std::move(r.text);
 }
 
 }  // namespace beatbench::bms

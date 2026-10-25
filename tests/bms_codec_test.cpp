@@ -1193,3 +1193,18 @@ TEST(BmsRealCharts, RoundTripAllLocalCharts) {
     ASSERT_GT(verified, 0u) << "local/chart 下未找到任何谱面样本";
     std::printf("验证谱面 %zu 个（跳过 %zu 个）\n", verified, skipped);
 }
+
+TEST(BmsWriter, UnrepresentableNoteFailsInsteadOfDropping) {
+    Chart c;
+    c.mode_id = "sp7k";
+    c.meta["BPM"] = "130";
+    Event<Note> n{1, Rational(0, 1), {}};
+    n.value.lane = {0, LaneKind::Key, 9};  // sp7k 无键9
+    n.value.sample.id = 1;
+    c.notes.push_back(n);
+    const auto r = write_bms_checked(c);
+    EXPECT_FALSE(r.ok);
+    EXPECT_TRUE(r.text.empty());
+    EXPECT_FALSE(r.diagnostics.empty());
+    EXPECT_THROW(write_bms(c), std::runtime_error);
+}
