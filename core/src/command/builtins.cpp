@@ -1204,7 +1204,7 @@ std::vector<PatternSlot> pattern_slots_from_text(std::string_view mode, const st
         ps.sub_line = ev.value.sub_line;
         ps.ln = (ev.value.ln_channel || ev.value.ln_pair.has_value()) &&
                 ev.value.lane.kind != LaneKind::Bgm;
-        out.push_back(std::move(ps));
+        out.push_back(ps);
     }
     // parser 输出按 (measure,pos) 升序；lane/sub_line 维度由调用方统一排序。
     std::sort(out.begin(), out.end(), [](const PatternSlot& a, const PatternSlot& b) {
