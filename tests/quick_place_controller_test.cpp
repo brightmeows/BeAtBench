@@ -85,6 +85,7 @@ struct Fixture {
         session.refresh();
         place.setChartSession(&session);
         place.setEnabled(true);
+        place.setPersistEnabled(false);  // 单测不写用户 QSettings
         place.setPreset(0);
     }
 };

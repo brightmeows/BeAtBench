@@ -45,6 +45,8 @@ class QuickPlaceController : public QObject {
     /// QML 门控：编辑页 + 已打开谱面 / 文本输入焦点。
     Q_INVOKABLE void setEnabled(bool enabled);
     Q_INVOKABLE void setInputBlocked(bool blocked);
+    /// 测试隔离：关闭 QSettings 写入，避免单测污染用户偏好。
+    void setPersistEnabled(bool enabled) { m_persist = enabled; }
 
     /// 当前活动视口的隐藏列 key（#48 接入；单视口时为空）。
     /// 格式：lane:<player>:<kind>:<index>（如 lane:0:key:1、lane:1:scratch:0）。
@@ -98,6 +100,7 @@ class QuickPlaceController : public QObject {
     std::size_t m_index = 0;
     /// 自身回写保护：selectionUpdated 同步环内的 setSelection 直接忽略。
     bool m_muting = false;
+    bool m_persist = true;
 };
 
 }  // namespace beatbench::app

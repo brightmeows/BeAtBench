@@ -40,6 +40,15 @@ ApplicationWindow {
     property int uiStateTick: 0
     property int modalDepth: 0
     readonly property bool modalOpen: modalDepth > 0
+    property int popupDepth: 0
+    readonly property bool popupOpen: popupDepth > 0
+    /// 输入门控单一条件源：文本焦点、模态框、弹层菜单任一存在即阻断轨键。
+    QtObject {
+        id: inputGate
+        readonly property bool blocked: window.textInputFocused || window.modalOpen ||
+                                         window.popupOpen
+        onBlockedChanged: window.syncQuickPlaceState()
+    }
     property string statusText: qsTr("就绪")
     property string currentSampleId: ""  // 当前采样（会话状态，M3 放置落点）
     property string currentBmpId: ""     // 当前 #BMP（视口 BGA 列放置用；BGA 面板行点击设置）
@@ -977,7 +986,12 @@ ApplicationWindow {
     function syncQuickPlaceState() {
         if (typeof quickPlace === "undefined" || !quickPlace) return
         quickPlace.setEnabled(currentPage === 0 && chartMeta !== null)
-        quickPlace.setInputBlocked(window.textInputFocused || window.modalOpen)
+        quickPlace.setInputBlocked(inputGate.blocked)
+        if (typeof editPage !== "undefined" && editPage && editPage.activeView &&
+                editPage.activeView.hiddenColumns)
+            quickPlace.setHiddenLanes(editPage.activeView.hiddenColumns)
+        else
+            quickPlace.setHiddenLanes([])
     }
     Connections {
         target: typeof quickPlace !== "undefined" ? quickPlace : null
