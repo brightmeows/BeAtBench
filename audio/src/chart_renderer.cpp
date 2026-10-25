@@ -224,9 +224,10 @@ RenderResult render_chart_range(const beatbench::Chart& chart,
         const std::filesystem::path& dirFs = sourceDir;  // path 原生形态，直用
         const std::filesystem::path fileFs = std::filesystem::u8path(ev.file);
         std::filesystem::path rawPath = fileFs.is_absolute() ? fileFs : (dirFs / fileFs);
-        const std::filesystem::path resPath = beatbench::audio::resolve_audio_path(rawPath);
-        if (resPath.empty()) continue;  // 原样与回退全无 → 静音（lint 已报）
-        const auto c = cache.get(resPath);
+        const auto resPath = beatbench::audio::resolve_audio_path(rawPath);
+        // 无磁盘文件也把原路径交给解码器：测试注入解码器/诊断路径依赖这一行为，
+        // 生产解码器自行做存在性检查并返回失败（lint 已报缺失）。
+        const auto c = cache.get(resPath ? *resPath : rawPath);
         if (!c.ok) {
             continue;  // 缺失/解码失败：静音（lint 已报）
         }

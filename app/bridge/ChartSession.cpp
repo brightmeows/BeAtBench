@@ -21,6 +21,7 @@
 #include "beatbench/core/command/Command.hpp"
 #include "beatbench/core/edit/SessionRegistry.hpp"
 #include "beatbench/core/json/Json.hpp"
+#include "bridge/PathUtils.hpp"
 
 namespace beatbench::app {
 
@@ -197,7 +198,7 @@ bool ChartSession::renderToFile(const QString& outPath, qreal sampleRate) {
     // 采样相对路径基准 = 谱面目录（chart.path 有目录部分）
     // path 原生形态（Windows UTF-16）：QFileInfo → path，免窄 string ACP 中转
     const QFileInfo fi(m_path);
-    const std::filesystem::path sourceDir = fi.absolutePath().toStdWString();
+    const std::filesystem::path sourceDir = path_from_qstring(fi.absolutePath());
     // 渲染器用独立缓存（不占 AudioEngine 的试听缓存；渲染是全量顺序解码，
     // 帧内无并发——简单 SampleCache 即可）
     beatbench::audio::SampleCache cache;
@@ -209,7 +210,7 @@ bool ChartSession::renderToFile(const QString& outPath, qreal sampleRate) {
     }
     std::string err;
     // path 原生形态直写（Windows 日文路径；窄 fopen ACP 旧坑已随 _w 退役）
-    if (!beatbench::audio::write_wav_file(outPath.toStdWString(), r.audio, &err)) {
+    if (!beatbench::audio::write_wav_file(path_from_qstring(outPath), r.audio, &err)) {
         m_error = QString::fromStdString(err);
         return false;
     }
@@ -249,7 +250,7 @@ bool ChartSession::renderAsync(qreal sampleRate, bool saveWav) {
                             QStringLiteral(".render.wav");
     const QString basePath = m_path;
     const double sr = static_cast<double>(sampleRate);
-    const std::filesystem::path sourceDir = QFileInfo(basePath).absolutePath().toStdWString();
+    const std::filesystem::path sourceDir = path_from_qstring(QFileInfo(basePath).absolutePath());
     const std::uint64_t version = m_renderVersion.load();  // 本次渲染的版本（唯一）
     // 是否增量：已有渲染结果 + 无 timing 变化（BPM/STOP/节拍编辑 → 全量正确性优先）
     const bool incremental = (m_rendered != nullptr) && !m_timingDirty;
@@ -334,7 +335,7 @@ bool ChartSession::renderAsync(qreal sampleRate, bool saveWav) {
             // M5：saveWav 手动（Ctrl+R）才写 .wav（debug 验证产物）；载入自动/增量只内存
             if (rPtr->ok && saveWav) {
                 std::string werr;
-                beatbench::audio::write_wav_file(outPath.toStdWString(), rPtr->audio, &werr);
+                beatbench::audio::write_wav_file(path_from_qstring(outPath), rPtr->audio, &werr);
             }
             // M4.3c 波形：渲染线程建 min/max 金字塔（不占 UI 线程；PCM 消费后即释，
             // 金字塔常驻供波形组件查询——RenderedAudio 大 PCM 由 UI 线程显式释放）。

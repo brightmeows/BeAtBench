@@ -16,22 +16,20 @@ const std::vector<std::string>& fallback_exts() {
 }
 }  // namespace
 
-std::filesystem::path resolve_audio_path(const std::filesystem::path& path) {
+std::optional<std::filesystem::path> resolve_audio_path(const std::filesystem::path& path) {
     // 原样存在 → 用它
     if (std::filesystem::exists(path)) return path;
     // 拆 stem + 原扩展名；按 basename 试其它音频扩展名。
-    // ⚠️ 宽字符拼接（stem.wstring() + ext）——`path.string()` 对 Unicode 字符
-    // 走 ACP（GBK 无法编码日文）→ 抛 system_error（2026-09 CLI 日文渲染异常）。
+    // 用 path::operator+= 拼接，避免 POSIX 上 wstring 往返或 Windows 上 string() 走 ACP。
     const std::filesystem::path stem = path.stem();
     const std::filesystem::path parent = path.parent_path();
     for (const auto& ext : fallback_exts()) {
-        const std::filesystem::path cand =
-            parent / (stem.wstring() + std::wstring(ext.begin(), ext.end()));
+        std::filesystem::path name = stem;
+        name += std::filesystem::path(ext);
+        const std::filesystem::path cand = parent / name;
         if (std::filesystem::exists(cand)) return cand;
     }
-    // 全无存在 → 返回原路径（解码器尝试；失败由 cache 报错，调用方跳过——
-    // 测试注入解码器按路径分派、文件不存在但可解码的场景依赖此行为）
-    return path;
+    return std::nullopt;
 }
 
 }  // namespace beatbench::audio

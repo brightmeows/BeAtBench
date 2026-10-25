@@ -37,7 +37,7 @@ PlaybackPlan PlaybackPlan::build(const beatbench::Chart& chart,
             std::filesystem::path raw = fileFs.is_absolute() ? fileFs : (dirFs / fileFs);
             const auto res = resolve_audio_path(raw);
             // u8_string 而非 string()：Windows 上 string() 走 ACP（日文路径抛异常）
-            p.resolvedPath = res.empty() ? std::string() : u8_string(res);
+            p.resolvedPath = res ? u8_string(*res) : std::string();
         }
         plan.m_notes.push_back(std::move(p));
     }
