@@ -344,11 +344,7 @@ void AudioEngine::requestSampleWaveform(const QString& file) {
             const QString path = AudioEngine::resolveAudioPath(resolved);
             auto wf = std::make_shared<beatbench::audio::WaveformPyramid>();
             if (!path.isEmpty()) {
-#ifdef _WIN32
-                const beatbench::audio::SampleCacheResult r = m_cache.get_w(path.toStdWString());
-#else
                 const beatbench::audio::SampleCacheResult r = m_cache.get(path.toStdString());
-#endif
                 if (r.ok && r.sample) {
                     wf->build(r.sample->pcm().data(), r.sample->frameCount(), 2,
                               r.sample->sampleRate);
