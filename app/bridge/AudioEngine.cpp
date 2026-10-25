@@ -17,6 +17,7 @@
 #include <QVariant>
 #include <QVariantList>
 #include <cmath>
+#include <exception>
 
 #include "beatbench/audio/AudioDecoder.hpp"
 #include "beatbench/audio/SampleCache.hpp"
@@ -316,6 +317,7 @@ void AudioEngine::setSourceDir(const QString& dir) { m_sourceDir = dir; }
 void AudioEngine::setChartPath(const QString& path) {
     m_waveformTasks.cancelAll();
     m_waveforms.clear();
+    m_waveformRequested.clear();
     if (path.isEmpty()) {
         m_sourceDir.clear();
         return;
@@ -325,53 +327,62 @@ void AudioEngine::setChartPath(const QString& path) {
 
 void AudioEngine::requestSampleWaveform(const QString& file) {
     if (file.isEmpty()) return;
-    QString resolved = file;
-    if (QDir::isRelativePath(file) && !m_sourceDir.isEmpty())
-        resolved = QDir(m_sourceDir).filePath(file);
-    const QString path = resolveAudioPath(resolved);
-    if (path.isEmpty()) return;
-    if (m_waveforms.count(path)) return;
-    // 线程模型：m_waveforms 是 UI 线程容器（sampleWaveform/count 在 UI 线程读）——
-    // work（worker 线程）只解码并经槽移交结果，写入与 emit 全在 done（UI 线程）。
-    // 解码失败也缓存空 pyramid：会话内不重试（避免坏文件反复解码）；
-    // 采样重绑定走 invalidateSampleWaveforms 统一清缓存。
+    if (m_waveforms.count(file)) return;
+    if (m_waveformRequested.contains(file)) return;
+    m_waveformRequested.insert(file);
+    const QString sourceDir = m_sourceDir;
+    // 线程模型：m_waveforms/m_waveformRequested 是 UI 线程容器；work 只解码，
+    // 路径解析也放在 work 内，paint 不再做 QFileInfo/exists。
     auto slot = std::make_shared<std::shared_ptr<const beatbench::audio::WaveformPyramid>>();
     m_waveformTasks.submit(
-        path,
-        [this, path, slot](AudioTaskRunner::Generation gen) {
+        file,
+        [this, file, sourceDir, slot](AudioTaskRunner::Generation gen) {
             if (m_waveformTasks.cancelled(gen)) return;
-#ifdef _WIN32
-            const beatbench::audio::SampleCacheResult r = m_cache.get_w(path.toStdWString());
-#else
-            const beatbench::audio::SampleCacheResult r = m_cache.get(path.toStdString());
-#endif
+            QString resolved = file;
+            if (QDir::isRelativePath(file) && !sourceDir.isEmpty())
+                resolved = QDir(sourceDir).filePath(file);
+            const QString path = AudioEngine::resolveAudioPath(resolved);
             auto wf = std::make_shared<beatbench::audio::WaveformPyramid>();
-            if (r.ok && r.sample) {
-                wf->build(r.sample->pcm().data(), r.sample->frameCount(), 2, r.sample->sampleRate);
-                beatbench::audio::decoded_sample_release(r.sample);
+            if (!path.isEmpty()) {
+#ifdef _WIN32
+                const beatbench::audio::SampleCacheResult r = m_cache.get_w(path.toStdWString());
+#else
+                const beatbench::audio::SampleCacheResult r = m_cache.get(path.toStdString());
+#endif
+                if (r.ok && r.sample) {
+                    wf->build(r.sample->pcm().data(), r.sample->frameCount(), 2,
+                              r.sample->sampleRate);
+                    beatbench::audio::decoded_sample_release(r.sample);
+                }
             }
             *slot = std::move(wf);
         },
-        [this, path, slot](AudioTaskRunner::Generation) {
-            if (!slot || !*slot) return;  // 旧代际 done 不回调；空槽防御
-            m_waveforms[path] = *slot;
-            emit sampleWaveformReady(path);
+        [this, file, slot](AudioTaskRunner::Generation, std::exception_ptr error) {
+            m_waveformRequested.remove(file);
+            if (error || !slot || !*slot) {
+                // 解码/构建异常也缓存空金字塔：会话内不反复重试坏文件。
+                m_waveforms[file] = std::make_shared<beatbench::audio::WaveformPyramid>();
+            } else {
+                m_waveforms[file] = *slot;
+            }
+            emit sampleWaveformReady(file);
         });
 }
 
 void AudioEngine::invalidateSampleWaveforms() {
     m_waveformTasks.cancelAll();
     m_waveforms.clear();
+    m_waveformRequested.clear();
+}
+
+void AudioEngine::cancelPendingWaveforms() {
+    m_waveformTasks.cancelAll();
+    m_waveformRequested.clear();
 }
 
 std::shared_ptr<const beatbench::audio::WaveformPyramid> AudioEngine::sampleWaveform(
     const QString& file) const {
-    QString resolved = file;
-    if (QDir::isRelativePath(file) && !m_sourceDir.isEmpty())
-        resolved = QDir(m_sourceDir).filePath(file);
-    const QString path = resolveAudioPath(resolved);
-    if (path.isEmpty()) return nullptr;
-    const auto it = m_waveforms.find(path);
+    const auto it = m_waveforms.find(file);
     return it == m_waveforms.end() ? nullptr : it->second;
 }
 

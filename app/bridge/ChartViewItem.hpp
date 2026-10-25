@@ -517,15 +517,16 @@ class ChartViewItem : public QQuickPaintedItem {
     qreal m_hoverY = -1.0;  // 悬停线（屏幕 y；-1 = 无）
     qreal m_hoverX = -1.0;  // 悬停 x（M6 预览：列命中用；-1 = 无）
     // —— M6 编辑预览（用户 2026-09）——
-    QString m_previewNoteKind;     // 放置工具 ghost 类型（"normal"/"ln"/"mine"；空 = 关）
-    bool m_movePreview = false;    // 移动预览总开关（拖拽时 QML 置 true）
-    qreal m_moveDeltaF = 0.0;      // 移动预览位移（拍位小数）
-    QVariantMap m_moveSourceLane;  // 拖起 lane（{player,kind,index}）
-    QVariantMap m_moveTargetLane;  // 目标 lane（跨通道移动）；空 = 不改列
-    int m_moveSourceSubLine = -1;  // 拖起 note 的 BGM 子通道行号（-1=非 BGM；相对平移基准）
-    QVariantList m_selection;      // 选中 note 集合（NoteRef 语义；绘制高亮用）
-    QVariantList m_metaSelection;  // 选中 BGA/BPM/STOP 对象集合（绘制高亮用）
-    int m_lastVisibleNotes = 0;    // 最近一次 paint 的可见 note 数（--perf-log）
+    QString m_previewNoteKind;      // 放置工具 ghost 类型（"normal"/"ln"/"mine"；空 = 关）
+    bool m_movePreview = false;     // 移动预览总开关（拖拽时 QML 置 true）
+    qreal m_moveDeltaF = 0.0;       // 移动预览位移（拍位小数）
+    QVariantMap m_moveSourceLane;   // 拖起 lane（{player,kind,index}）
+    QVariantMap m_moveTargetLane;   // 目标 lane（跨通道移动）；空 = 不改列
+    int m_moveSourceSubLine = -1;   // 拖起 note 的 BGM 子通道行号（-1=非 BGM；相对平移基准）
+    QVariantList m_selection;       // 选中 note 集合（NoteRef 语义；绘制高亮用）
+    QSet<QString> m_selectionKeys;  // 选中集预计算 key（波形/高亮共用，避免每帧转换）
+    QVariantList m_metaSelection;   // 选中 BGA/BPM/STOP 对象集合（绘制高亮用）
+    int m_lastVisibleNotes = 0;     // 最近一次 paint 的可见 note 数（--perf-log）
 };
 
 }  // namespace beatbench::app

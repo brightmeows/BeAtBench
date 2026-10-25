@@ -122,29 +122,6 @@ void ChartViewItem::drawNoteWaveforms(QPainter* p, const beatbench::Chart& chart
     color.setAlpha(75);
     QPen pen(color, 1.0);
     p->setPen(pen);
-    QSet<QString> selected;
-    for (const auto& v : m_selection) {
-        const QVariantMap m = v.toMap();
-        if (m.isEmpty()) continue;
-        const QVariantMap lane = m.value(QStringLiteral("lane")).toMap();
-        const QVariantMap pos = m.value(QStringLiteral("pos")).toMap();
-        selected.insert(noteRefKey(
-            static_cast<std::uint32_t>(m.value(QStringLiteral("measure")).toInt()),
-            beatbench::Rational(pos.value(QStringLiteral("num")).toLongLong(),
-                                pos.value(QStringLiteral("den")).toLongLong()),
-            beatbench::Lane{
-                static_cast<std::uint8_t>(lane.value(QStringLiteral("player")).toInt()),
-                lane.value(QStringLiteral("kind")).toString() == QStringLiteral("scratch")
-                    ? beatbench::LaneKind::Scratch
-                : lane.value(QStringLiteral("kind")).toString() == QStringLiteral("bgm")
-                    ? beatbench::LaneKind::Bgm
-                : lane.value(QStringLiteral("kind")).toString() == QStringLiteral("pedal")
-                    ? beatbench::LaneKind::Pedal
-                    : beatbench::LaneKind::Key,
-                static_cast<std::uint8_t>(lane.value(QStringLiteral("index")).toInt())},
-            static_cast<std::uint32_t>(m.value(QStringLiteral("sample")).toInt()),
-            static_cast<std::uint32_t>(m.value(QStringLiteral("sub_line")).toInt())));
-    }
     // notes 按 measure 单调；只扫可视小节段，避免每帧遍历整张谱。
     auto it = std::lower_bound(chart.notes.begin(), chart.notes.end(), first,
                                [](const beatbench::Event<beatbench::Note>& e, int m) {
@@ -155,8 +132,8 @@ void ChartViewItem::drawNoteWaveforms(QPainter* p, const beatbench::Chart& chart
         const int m = static_cast<int>(ev.measure);
         if (m > last) break;
         if (ev.value.sample.id == 0 ||
-            !selected.contains(noteRefKey(ev.measure, ev.pos, ev.value.lane, ev.value.sample.id,
-                                          ev.value.sub_line)))
+            !m_selectionKeys.contains(noteRefKey(ev.measure, ev.pos, ev.value.lane,
+                                                 ev.value.sample.id, ev.value.sub_line)))
             continue;
         const int col =
             columnFor(ev.value.lane, ev.value.sample.id, static_cast<int>(ev.value.sub_line));
@@ -225,6 +202,30 @@ void ChartViewItem::onSessionContentChanged() {
 void ChartViewItem::setSelection(const QVariantList& v) {
     if (m_selection == v) return;
     m_selection = v;
+    m_selectionKeys.clear();
+    for (const auto& item : m_selection) {
+        const QVariantMap m = item.toMap();
+        if (m.isEmpty()) continue;
+        const QVariantMap lane = m.value(QStringLiteral("lane")).toMap();
+        const QVariantMap pos = m.value(QStringLiteral("pos")).toMap();
+        m_selectionKeys.insert(noteRefKey(
+            static_cast<std::uint32_t>(m.value(QStringLiteral("measure")).toInt()),
+            beatbench::Rational(pos.value(QStringLiteral("num")).toLongLong(),
+                                pos.value(QStringLiteral("den")).toLongLong()),
+            beatbench::Lane{
+                static_cast<std::uint8_t>(lane.value(QStringLiteral("player")).toInt()),
+                lane.value(QStringLiteral("kind")).toString() == QStringLiteral("scratch")
+                    ? beatbench::LaneKind::Scratch
+                : lane.value(QStringLiteral("kind")).toString() == QStringLiteral("bgm")
+                    ? beatbench::LaneKind::Bgm
+                : lane.value(QStringLiteral("kind")).toString() == QStringLiteral("pedal")
+                    ? beatbench::LaneKind::Pedal
+                    : beatbench::LaneKind::Key,
+                static_cast<std::uint8_t>(lane.value(QStringLiteral("index")).toInt())},
+            static_cast<std::uint32_t>(m.value(QStringLiteral("sample")).toInt()),
+            static_cast<std::uint32_t>(m.value(QStringLiteral("sub_line")).toInt())));
+    }
+    if (auto* ae = qobject_cast<AudioEngine*>(m_audioEngine)) ae->cancelPendingWaveforms();
     emit selectionChanged();
     update();
 }

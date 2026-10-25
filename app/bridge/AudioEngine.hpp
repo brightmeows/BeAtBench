@@ -98,6 +98,8 @@ class AudioEngine : public QObject {
         const QString& file) const;
     /// 采样文件重绑/改名后清空波形缓存并取消在途解码。
     Q_INVOKABLE void invalidateSampleWaveforms();
+    /// 选择集变化：取消在途解码但保留已完成缓存；下次绘制按需重提。
+    void cancelPendingWaveforms();
 
     // ---- M5 播放控制（QML 调用；PcmPlayback 封装在 m_playback） ----
     /// 装载渲染 PCM（ChartSession.renderFinished 后由 QML 或内部调用；见 setChartSession）。
@@ -237,6 +239,7 @@ class AudioEngine : public QObject {
     std::atomic<bool> m_busy{false};
     std::atomic<bool> m_initialized{false};
     std::map<QString, std::shared_ptr<const beatbench::audio::WaveformPyramid>> m_waveforms;
+    QSet<QString> m_waveformRequested;  ///< UI 线程在途键（按 #WAV file 去重）
     AudioTaskRunner m_waveformTasks;
     QString m_statusText;
     beatbench::audio::AudioSettings m_settings;  ///< 当前设置（设备/采样率/缓冲）
