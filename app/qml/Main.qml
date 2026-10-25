@@ -2027,7 +2027,15 @@ ApplicationWindow {
         uiActions.setChecked("view.page.test", currentPage === 2)
     }
     onChartMetaChanged: { updateActionStates(); updateCheckedStates() }
-    onSelectionRefsChanged: { updateActionStates(); updateCheckedStates() }
+    onSelectionRefsChanged: {
+        updateActionStates()
+        updateCheckedStates()
+        // 选择变化：作废旧试听渲染/播放，避免旧选择结果回来播放。
+        if (typeof audioEngine !== "undefined" && audioEngine && audioEngine.auditionPlaying)
+            audioEngine.auditionStop()
+        if (typeof chartSession !== "undefined" && chartSession && chartSession.cancelAudition)
+            chartSession.cancelAudition()
+    }
     onClipboardLinesChanged: { updateActionStates(); updateCheckedStates() }
     onCurrentPageChanged: {
         updateActionStates()

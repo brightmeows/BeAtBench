@@ -334,6 +334,9 @@ void AudioEngine::setChartPath(const QString& path) {
     m_waveformTasks.cancelAll();
     m_waveforms.clear();
     m_waveformRequested.clear();
+    m_auditionPlayback.stop();
+    m_auditionPlayback.load(nullptr, 0.0);
+    emit auditionChanged();
     if (path.isEmpty()) {
         m_sourceDir.clear();
         return;
@@ -616,7 +619,7 @@ bool AudioEngine::auditionPlay() {
         return false;
     }
     if (m_playback.playing()) {
-        m_playback.pause();
+        m_playback.stop();
         emit playbackChanged();
     }
     if (m_refPlayback.playing()) {

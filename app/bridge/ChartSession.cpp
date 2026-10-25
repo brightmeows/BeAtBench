@@ -7,6 +7,7 @@
 #include <QMetaObject>
 #include <QThreadPool>
 #include <bit>
+#include <exception>
 #include <set>
 
 #include "beatbench/audio/ChartRenderer.hpp"
@@ -296,7 +297,11 @@ bool ChartSession::renderAudition(const QVariantList& selection, double startSec
                 std::max(0.0, startSec), 0.0, sourceDir,
                 [this, gen] { return m_auditionTasks.cancelled(gen); });
         },
-        [this, result](AudioTaskRunner::Generation) {
+        [this, result](AudioTaskRunner::Generation, std::exception_ptr error) {
+            if (error) {
+                emit auditionFinished(false, QStringLiteral("试听渲染异常"));
+                return;
+            }
             if (result->cancelled) return;  // 主动取消：静默丢弃，不冒错误提示
             if (!result->ok) {
                 emit auditionFinished(false, QString::fromStdString(result->message));
@@ -645,11 +650,21 @@ int ChartSession::decodeId(const QString& idText) const {
                                 : beatbench::bms::c36_to_u32(t, 2));
 }
 
-void ChartSession::resetRenderState() {
+void ChartSession::cancelAudition() {
     m_auditionTasks.cancelAll();
     m_auditionPcm.reset();
     m_auditionRate = 0.0;
     m_auditionDuration = 0.0;
+}
+
+void ChartSession::invalidateAuditionCache() {
+    cancelAudition();
+    m_auditionCache.clear();
+}
+
+void ChartSession::resetRenderState() {
+    cancelAudition();
+    m_auditionCache.clear();
     m_renderVersion.fetch_add(1, std::memory_order_relaxed);
     m_rendered.reset();
     m_waveform.reset();

@@ -131,6 +131,10 @@ class ChartSession : public QObject {
     /// 结果通过 auditionReady / auditionFinished 通知；不覆盖普通播放渲染。
     Q_INVOKABLE bool renderAudition(const QVariantList& selection, double startSec,
                                     qreal sampleRate = 44100.0);
+    /// 选择变化/取消：作废在途渲染与已装载的试听 PCM。
+    Q_INVOKABLE void cancelAudition();
+    /// 采样文件重绑/改名：清空试听解码缓存并作废在途结果。
+    Q_INVOKABLE void invalidateAuditionCache();
     std::shared_ptr<const std::vector<float>> auditionPcm() const { return m_auditionPcm; }
     double auditionSampleRate() const { return m_auditionRate; }
     double auditionDurationSec() const { return m_auditionDuration; }
