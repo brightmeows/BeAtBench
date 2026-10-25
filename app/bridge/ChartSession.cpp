@@ -282,7 +282,7 @@ bool ChartSession::renderAudition(const QVariantList& selection, double startSec
     }
     if (!has_after) return false;  // 选中 note 全在红线之前（或时间无效）
 
-    const std::wstring sourceDir = QFileInfo(m_path).absolutePath().toStdWString();
+    const std::filesystem::path sourceDir = path_from_qstring(QFileInfo(m_path).absolutePath());
     auto result = std::make_shared<beatbench::audio::RenderResult>();
     m_auditionTasks.cancelAll();
     m_auditionTasks.submit(
@@ -292,7 +292,7 @@ bool ChartSession::renderAudition(const QVariantList& selection, double startSec
             if (m_auditionTasks.cancelled(gen)) return;
             beatbench::TimingEngine timing;
             timing.rebuild(filtered);
-            *result = beatbench::audio::render_chart_range_w(
+            *result = beatbench::audio::render_chart_range(
                 filtered, timing, m_auditionCache, static_cast<double>(sampleRate),
                 std::max(0.0, startSec), 0.0, sourceDir,
                 [this, gen] { return m_auditionTasks.cancelled(gen); });
