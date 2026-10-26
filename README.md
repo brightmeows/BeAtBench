@@ -16,10 +16,12 @@
 **Windows 10/11 64 位（免安装）**
 
 <!-- 版本块由 release-please 自动改写（见 release-please-config.json 的 extra-files）。
-     块标记必须在代码段外：行内 HTML 注释会原样显示在反引号代码里，用户复制到的是假文件名。 -->
+     块标记必须在代码段外：行内 HTML 注释会原样显示在反引号代码里，用户复制到的是假文件名。
+     Qt 运行时版本不是项目版本，必须留在版本块外，否则会被 release-please 一起替换。 -->
 <!-- x-release-please-start-version -->
 1. 下载 `beatbench-v0.4.2-win64.zip`（校验同目录的 `.zip.sha256`），解压到任意目录；
 2. 双击 `beatbench.exe` 启动图形界面，或运行 `beatbench-cli.exe` 使用命令行；
+<!-- x-release-please-end -->
 3. 无需安装运行库，Qt 运行时（6.11.2）已内置。
 
 >  请整目录保留解压结果：`skins/`（内置皮肤）、`BeatBench/`（QML 模块）与 Qt DLL 必须与
@@ -29,6 +31,7 @@
 
 发行版包使用**系统 Qt**（需 Qt 6.4+），GUI 与 CLI 同包安装到 `/usr/bin`：
 
+<!-- x-release-please-start-version -->
 ```bash
 sudo apt install ./beatbench-v0.4.2-1-amd64.deb       # Debian 12+ / Ubuntu 24.04+
 sudo dnf install ./beatbench-v0.4.2-1.fc43.x86_64.rpm # Fedora 43+
