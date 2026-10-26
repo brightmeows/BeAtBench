@@ -485,11 +485,8 @@ void MoveNoteCommand::apply(Chart& chart) {
           m_to_lane->player == m_from.lane.player && m_to_lane->index == m_from.lane.index);
     if (cross_lane) {
         main_ev.value.ln_channel = false;
-        // 原伙伴（若存在 ln_pair）也退出 LN 通道（数据层；rebuild 会清其配对）
-        if (m_moved->value.ln_pair && *m_moved->value.ln_pair < chart.notes.size() &&
-            chart.notes.size() > *m_moved->value.ln_pair) {
-            // 注意：主 note 已删除、下标已调——伙伴下标在删除前记录，这里用 partner_val 找
-        }
+        // 原伙伴（若存在 ln_pair）也退出 LN 通道（数据层；rebuild 会清其配对）。
+        // 主 note 已删除、下标已调——伙伴下标在删除前记录，这里用 partner_val 找。
         if (partner_val) {
             const auto& [pm, pp, pl, ps, pbl] = *partner_val;
             const auto partner_idx = find_note(chart.notes, pm, pp, pl, ps, pbl);
